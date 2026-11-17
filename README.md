@@ -79,7 +79,7 @@ Device names are built from up to three levels, leaving out any that aren't set:
 
 Most installations have one CCA and one PyTap entry, and can leave the inverter name blank. With more than one CCA (for example one per inverter), add one PyTap entry per gateway and give each an inverter name so their devices don't share names.
 
-Entity IDs are generated from the device names when entities are first created, for example `sensor.tigo_master_s2_p01_power`. Home Assistant doesn't change existing entity IDs when names change later; rename them in Home Assistant if you want them to match. History is kept when you do.
+Entity IDs are generated from the device names when entities are first created, for example `sensor.tigo_master_s2_p01_power`. If the device is in an area, recent Home Assistant versions may put the area name first (`sensor.outside_tigo_master_s2_p01_power`). Home Assistant doesn't change existing entity IDs when names change later; rename them in Home Assistant if you want them to match. History and statistics move with the rename.
 
 ### Dual-module optimizers
 
