@@ -25,9 +25,12 @@ from homeassistant.config_entries import (
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 import voluptuous as vol
 
 from .const import (
+    CONF_INVERTER,
     CONF_LIVE_REPORTING,
     CONF_MODULE_BARCODE,
     CONF_MODULE_NAME,
@@ -35,6 +38,7 @@ from .const import (
     CONF_MODULE_STRING,
     CONF_MODULES,
     CONF_WRITE_INTERVAL,
+    DEFAULT_INVERTER,
     DEFAULT_LIVE_REPORTING,
     DEFAULT_PEAK_POWER,
     DEFAULT_PORT,
@@ -53,8 +57,12 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): str,
         vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
+        vol.Optional(CONF_INVERTER, default=DEFAULT_INVERTER): str,
     }
 )
+
+# Sensor keys of the per-string aggregate entities (see sensor.py).
+_STRING_SENSOR_KEYS = ("performance", "power", "daily_energy", "total_energy")
 
 ADD_MODULE_SCHEMA = vol.Schema(
     {
@@ -116,7 +124,7 @@ def _modules_description(modules: list[dict[str, Any]]) -> str:
 class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for PyTap."""
 
-    VERSION = 5
+    VERSION = 6
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -136,7 +144,10 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            self._user_data = user_input
+            self._user_data = {
+                **user_input,
+                CONF_INVERTER: user_input.get(CONF_INVERTER, "").strip(),
+            }
             # Stable unique ID — not tied to mutable connection settings
             await self.async_set_unique_id(uuid.uuid4().hex)
 
@@ -239,9 +250,15 @@ class PyTapOptionsFlow(OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
         self._config_entry = config_entry
-        self._modules: list[dict[str, str]] = list(
-            config_entry.data.get(CONF_MODULES, [])
-        )
+        # Copy each module: edits must not touch the entry's own data, or
+        # saving would see no change and skip the reload.
+        self._modules: list[dict[str, str]] = [
+            dict(m) for m in config_entry.data.get(CONF_MODULES, [])
+        ]
+        self._inverter: str = config_entry.data.get(CONF_INVERTER, "") or ""
+        # Original string name -> new name, applied to the registries on save.
+        self._string_renames: dict[str, str] = {}
+        self._edit_barcode: str | None = None
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -252,7 +269,10 @@ class PyTapOptionsFlow(OptionsFlow):
             menu_options=[
                 "change_connection",
                 "change_reporting",
+                "change_inverter",
                 "add_module",
+                "edit_module",
+                "rename_string",
                 "remove_module",
                 "done",
             ],
@@ -265,9 +285,175 @@ class PyTapOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Save modules and close the options flow."""
-        new_data = {**self._config_entry.data, CONF_MODULES: self._modules}
+        self._migrate_renamed_strings()
+        new_data = {
+            **self._config_entry.data,
+            CONF_MODULES: self._modules,
+            CONF_INVERTER: self._inverter,
+        }
         self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
         return self.async_create_entry(title="", data={})
+
+    def _migrate_renamed_strings(self) -> None:
+        """Move string aggregate entities and devices to their new names.
+
+        String aggregates are keyed by string name, so without this a rename
+        would create new entities and orphan the old ones with their history.
+        """
+        if not self._string_renames:
+            return
+        entry_id = self._config_entry.entry_id
+        ent_reg = er.async_get(self.hass)
+        dev_reg = dr.async_get(self.hass)
+        for old, new in self._string_renames.items():
+            if old == new:
+                continue
+            for key in _STRING_SENSOR_KEYS:
+                old_uid = f"{DOMAIN}_{entry_id}_string_{old}_{key}"
+                new_uid = f"{DOMAIN}_{entry_id}_string_{new}_{key}"
+                entity_id = ent_reg.async_get_entity_id("sensor", DOMAIN, old_uid)
+                if entity_id is None:
+                    continue
+                if ent_reg.async_get_entity_id("sensor", DOMAIN, new_uid):
+                    _LOGGER.warning(
+                        "Not moving %s to string %s: an entity already exists",
+                        entity_id,
+                        new,
+                    )
+                    continue
+                ent_reg.async_update_entity(entity_id, new_unique_id=new_uid)
+            device = dev_reg.async_get_device(
+                identifiers={(DOMAIN, f"{entry_id}_string_{old}")}
+            )
+            new_ident = (DOMAIN, f"{entry_id}_string_{new}")
+            if device is not None and dev_reg.async_get_device(
+                identifiers={new_ident}
+            ) is None:
+                dev_reg.async_update_device(device.id, new_identifiers={new_ident})
+
+    async def async_step_change_inverter(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Set the optional inverter name used in device names."""
+        if user_input is not None:
+            self._inverter = user_input.get(CONF_INVERTER, "").strip()
+            return await self.async_step_init()
+
+        return self.async_show_form(
+            step_id="change_inverter",
+            data_schema=vol.Schema(
+                {vol.Optional(CONF_INVERTER, default=self._inverter): str}
+            ),
+        )
+
+    async def async_step_edit_module(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Pick a module to edit."""
+        if not self._modules:
+            return await self.async_step_init()
+
+        if user_input is not None:
+            self._edit_barcode = user_input.get("edit_barcode")
+            return await self.async_step_edit_module_details()
+
+        barcode_options = {
+            m[CONF_MODULE_BARCODE]: f"{m[CONF_MODULE_NAME]} ({m[CONF_MODULE_BARCODE]})"
+            for m in self._modules
+            if m.get(CONF_MODULE_BARCODE)
+        }
+        return self.async_show_form(
+            step_id="edit_module",
+            data_schema=vol.Schema(
+                {vol.Required("edit_barcode"): vol.In(barcode_options)}
+            ),
+        )
+
+    async def async_step_edit_module_details(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Edit a module's string, name and peak power (barcode stays)."""
+        module = next(
+            (m for m in self._modules if m[CONF_MODULE_BARCODE] == self._edit_barcode),
+            None,
+        )
+        if module is None:
+            return await self.async_step_init()
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            name = user_input.get(CONF_MODULE_NAME, "").strip()
+            string_group = user_input.get(CONF_MODULE_STRING, "").strip()
+            if not string_group:
+                errors[CONF_MODULE_STRING] = "missing_string"
+            elif not name:
+                errors[CONF_MODULE_NAME] = "missing_name"
+            if not errors:
+                module[CONF_MODULE_STRING] = string_group
+                module[CONF_MODULE_NAME] = name
+                module[CONF_MODULE_PEAK_POWER] = user_input.get(
+                    CONF_MODULE_PEAK_POWER, DEFAULT_PEAK_POWER
+                )
+                return await self.async_step_init()
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_MODULE_STRING, default=module.get(CONF_MODULE_STRING, "")
+                ): str,
+                vol.Required(CONF_MODULE_NAME, default=module[CONF_MODULE_NAME]): str,
+                vol.Optional(
+                    CONF_MODULE_PEAK_POWER,
+                    default=module.get(CONF_MODULE_PEAK_POWER, DEFAULT_PEAK_POWER),
+                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=1000)),
+            }
+        )
+        return self.async_show_form(
+            step_id="edit_module_details",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"barcode": module[CONF_MODULE_BARCODE]},
+        )
+
+    async def async_step_rename_string(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Rename a string for all its modules, keeping the string's history."""
+        strings = sorted(
+            {m.get(CONF_MODULE_STRING, "") for m in self._modules} - {""}
+        )
+        if not strings:
+            return await self.async_step_init()
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            old = user_input["old_string"]
+            new = user_input.get("new_string", "").strip()
+            if not new:
+                errors["new_string"] = "missing_string"
+            elif new != old and new in strings:
+                errors["new_string"] = "string_exists"
+            if not errors:
+                for m in self._modules:
+                    if m.get(CONF_MODULE_STRING) == old:
+                        m[CONF_MODULE_STRING] = new
+                # Track the rename from the string's original (saved) name.
+                original = next(
+                    (k for k, v in self._string_renames.items() if v == old), old
+                )
+                self._string_renames[original] = new
+                return await self.async_step_init()
+
+        return self.async_show_form(
+            step_id="rename_string",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("old_string"): vol.In(strings),
+                    vol.Required("new_string"): str,
+                }
+            ),
+            errors=errors,
+        )
 
     async def async_step_change_connection(
         self, user_input: dict[str, Any] | None = None

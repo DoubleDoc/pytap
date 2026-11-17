@@ -1,0 +1,53 @@
+"""Device naming for PyTap.
+
+Names are built from up to three levels, leaving out any that are not set:
+
+* inverter: optional, per config entry (one PyTap instance per CCA gateway,
+  usually one per inverter). Most installations have a single instance and
+  leave it blank.
+* string: the module's string group.
+* module: the module's own name, usually its position (``P01``).
+
+Examples::
+
+    inverter="Master", string="2", module="P01" -> "Tigo Master S2 P01"
+    inverter="",       string="East", module="P01" -> "Tigo East P01"
+
+Entity IDs are generated from these names when entities are first created,
+so ``sensor.tigo_master_s2_p01_power`` follows from the device name.
+"""
+
+from __future__ import annotations
+
+PREFIX = "Tigo"
+
+
+def _join(*parts: str) -> str:
+    return " ".join(p.strip() for p in parts if p and p.strip())
+
+
+def string_label(string_name: str) -> str:
+    """Return the short label for a string inside an optimizer name.
+
+    Numeric strings get an ``S`` prefix so they read as strings rather than
+    as panel numbers (``2`` -> ``S2``). Other labels are used as they are.
+    """
+    string_name = (string_name or "").strip()
+    if string_name.isdigit():
+        return f"S{string_name}"
+    return string_name
+
+
+def optimizer_device_name(inverter: str, string_name: str, module_name: str) -> str:
+    """Name of an optimizer device, e.g. ``Tigo Master S2 P01``."""
+    return _join(PREFIX, inverter, string_label(string_name), module_name)
+
+
+def string_device_name(inverter: str, string_name: str) -> str:
+    """Name of a string aggregate device, e.g. ``Tigo Master String 2``."""
+    return _join(PREFIX, inverter, "String", string_name)
+
+
+def total_device_name(inverter: str) -> str:
+    """Name of the instance total device, e.g. ``Tigo Master Total``."""
+    return _join(PREFIX, inverter, "Total")

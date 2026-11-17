@@ -33,7 +33,9 @@ Please note that this integration requires RS485 to TCP converter that needs to 
     even before the first live frame arrives (for example after a night restart).
 - **Energy accumulation** — Trapezoidal Wh integration with proactive midnight reset and monotonic lifetime totals. Daily sensors zero at exactly midnight local time.
 - **No external dependencies** — The protocol parser library is fully embedded; nothing to install from PyPI.
-- **Options flow** — Add or remove optimizer modules at any time without reconfiguring.
+- **Options flow** — Add, edit or remove optimizer modules and rename strings at any time without reconfiguring.
+- **Structured device names** — `Tigo [inverter] [string] [module]`, with an optional inverter name for installations with more than one gateway (see [Device naming](#device-naming)).
+- **Node mapping sensor** — Shows whether readings can be matched to your modules yet, so a new installation that is still waiting for its first node table is visibly working (see [First start: what to expect](#first-start-what-to-expect)).
 
 ## Sensors
 
@@ -56,8 +58,33 @@ Each configured Tigo TS4 optimizer exposes the following sensors:
 
 PyTap also creates aggregate virtual devices:
 
-- **Tigo String <name>** — `performance`, `power`, `daily_energy`, `total_energy`
-- **Tigo Installation** — `performance`, `power`, `daily_energy`, `total_energy`
+- **Tigo [inverter] String <name>** — `performance`, `power`, `daily_energy`, `total_energy`. Created for every string, even when there is only one, so a string keeps its history when more strings are added later.
+- **Tigo [inverter] Total** — `performance`, `power`, `daily_energy`, `total_energy`, plus the diagnostic **Node mapping** sensor.
+
+### Device naming
+
+Device names are built from up to three levels, leaving out any that aren't set:
+
+| Level | Set in | Example |
+| --- | --- | --- |
+| Inverter | Optional per gateway: **Inverter name** | `Master` |
+| String | Each module's **String group** | `2` (numbers are shown as `S2`) or `East` |
+| Module | Each module's **Name**, usually its position | `P01` |
+
+| Device | One gateway (no inverter name) | Two gateways (`Master`, `Slave`) |
+| --- | --- | --- |
+| Optimizer | `Tigo S2 P01` | `Tigo Master S2 P01` |
+| String total | `Tigo String 2` | `Tigo Master String 2` |
+| Gateway total | `Tigo Total` | `Tigo Master Total` |
+
+Most installations have one CCA and one PyTap entry, and can leave the inverter name blank. With more than one CCA (for example one per inverter), add one PyTap entry per gateway and give each an inverter name so their devices don't share names.
+
+Entity IDs are generated from the device names when entities are first created, for example `sensor.tigo_master_s2_p01_power`. Home Assistant doesn't change existing entity IDs when names change later; rename them in Home Assistant if you want them to match. History is kept when you do.
+
+### Dual-module optimizers
+
+- **TS4-A-O-DUO / TS4-R-O-DUO** connect two panels in series to one optimizer. It has one barcode and sends one set of readings, so it appears as one device whose voltage, power and energy cover both panels. Name it for both positions (for example `P01+P02`) and set its peak power to the two panels combined.
+- **TS4-A-F / TS4-A-2F** are rapid-shutdown-only devices that don't report to the TAP, so PyTap can't see them.
 
 ---
 
@@ -87,6 +114,7 @@ PyTap is configured entirely through the Home Assistant UI — no YAML needed.
 1. Go to **Settings → Devices & Services → Add Integration**.
 2. Search for **PyTap**.
 3. Enter your Tigo gateway's **host** (IP address or hostname) and **port** (default: 502).
+4. Optionally enter an **Inverter name**. Leave it blank if you have one gateway; see [Device naming](#device-naming).
 
 > **Note:** The connection test is non-blocking. If the gateway is temporarily
 > unreachable (e.g., powered off at night), setup will proceed and connect
@@ -98,12 +126,34 @@ After entering connection details, you'll see a modules menu:
 
 1. Click **"Add a module"**.
 2. Fill in the fields:
-    - **String group** — Required label to group optimizers by string (e.g., `A`, `East`).
-   - **Name** — A friendly name for the optimizer (e.g., `Roof_Panel_01`).
+   - **String group** — Required label to group optimizers by string (e.g., `1`, `2`, `East`).
+   - **Name** — The optimizer's position within the string (e.g., `P01`). The device name adds the inverter and string for you, so don't repeat them here.
    - **Barcode** — The Tigo optimizer barcode printed on the module (e.g., `A-1234567B`).
    - **Peak power (Wp)** — The panel's peak power rating in watts (default: 455 Wp). Used to calculate performance percentage.
 3. Repeat for each optimizer you want to monitor.
 4. Click **"Finish setup"** when done.
+
+### First start: what to expect
+
+**On a new installation, expect no readings until the next morning.** That's normal; here's why.
+
+1. Optimizers identify themselves in every reading by a short **node ID** (for example `node 12`), not by the barcode you entered.
+2. The link between node IDs and barcodes is the gateway's **node table**. PyTap only listens on the RS-485 bus, so it learns the table only when it overhears the CCA reading it from the gateway.
+3. That happens when the optimizer network forms, which in practice means **when the optimizers power up at sunrise** after being dark overnight.
+4. Until then PyTap can't tell which panel sent each reading, so it drops them, and your sensors stay *unknown*.
+5. Once a node table has been seen, the mapping is saved. Later Home Assistant restarts resolve readings straight away, without waiting for another morning.
+
+The **Node mapping** sensor on the **Tigo Total** device shows where things stand:
+
+| State | Meaning |
+| --- | --- |
+| Waiting for node table | No configured module can be matched yet. If **Unidentified nodes reporting** is above 0, readings are arriving and the wiring is fine: wait for the next morning. |
+| Partly mapped | A node table arrived, but some configured barcodes weren't in it. Check **Unmapped barcodes** for typos. |
+| Complete | Every configured module is matched. |
+
+If it still says *Waiting for node table* after a full morning and **Unidentified nodes reporting** is 0, PyTap isn't receiving data: check the RS-485 converter's wiring and the host and port.
+
+The log also explains what's happening: `Power report for node … waiting for node table` when readings first arrive, and `First node table this session … configured barcodes matched` when the table is seen.
 
 ### Finding Barcodes
 
@@ -114,7 +164,7 @@ INFO: Discovered unconfigured Tigo optimizer barcode: A-9999999Z
       (gateway=1, node=55). Add it to your PyTap module list to start tracking.
 ```
 
-Check your Home Assistant logs after the gateway has been running for a while (up to 24 hours for full discovery).
+Barcodes are discovered from the node table, so they appear in the log after the first node table is seen, normally the first morning after setup (see [First start: what to expect](#first-start-what-to-expect)).
 
 ### Managing Modules After Setup
 
@@ -122,7 +172,10 @@ Go to **Settings → Devices & Services → PyTap → Configure** to:
 
 - **Change connection** — Update the gateway IP address and port.
 - **Change reporting settings** — Toggle live reporting or set the averaged reporting interval (see [Reporting modes](#reporting-modes)).
+- **Change inverter name** — Set or clear the inverter name used in device names.
 - **Add** new optimizer modules (if the barcode was previously seen on the bus, it resolves instantly).
+- **Edit** a module's string, name or peak power. The barcode can't be edited; remove and re-add the module to replace an optimizer.
+- **Rename a string** for all of its modules. The string's total sensors keep their history.
 - **Remove** modules you no longer want to track.
 - **Save and close** to apply changes.
 

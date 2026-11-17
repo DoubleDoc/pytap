@@ -27,6 +27,7 @@ from custom_components.pytap.const import (
 from custom_components.pytap.coordinator import PyTapDataUpdateCoordinator
 from custom_components.pytap.sensor import (
     SENSOR_DESCRIPTIONS,
+    PyTapNodeMappingSensor,
     _coerce_restored_state_value,
     async_setup_entry,
 )
@@ -151,7 +152,7 @@ async def test_sensor_entities_created(hass: HomeAssistant) -> None:
     await async_setup_entry(hass, entry, capture_entities)
 
     # 2 modules × 12 + 2 strings × 4 + installation 4 = 36 entities
-    assert len(entities) == 36
+    assert len(entities) == 37  # + node mapping
 
 
 async def test_sensor_unique_ids(hass: HomeAssistant) -> None:
@@ -211,6 +212,9 @@ async def test_sensor_unavailable_without_data(hass: HomeAssistant) -> None:
     await async_setup_entry(hass, entry, lambda e: entities.extend(e))
 
     for entity in entities:
+        if isinstance(entity, PyTapNodeMappingSensor):
+            # Reports "waiting" rather than going unavailable.
+            continue
         assert entity.available is False
 
 
@@ -238,7 +242,7 @@ async def test_sensor_skips_modules_without_barcode(hass: HomeAssistant) -> None
     await async_setup_entry(hass, entry, lambda e: entities.extend(e))
 
     # Only the 2 valid modules should contribute to entities: 2*12 + 2*4 + 4 = 36
-    assert len(entities) == 36
+    assert len(entities) == 37  # + node mapping
 
 
 async def test_sensor_device_info(hass: HomeAssistant) -> None:
@@ -325,7 +329,7 @@ async def test_aggregate_entity_count_single_string(hass: HomeAssistant) -> None
     entities = []
     await async_setup_entry(hass, entry, lambda e: entities.extend(e))
 
-    assert len(entities) == 32
+    assert len(entities) == 33  # + node mapping
 
 
 async def test_readings_today_sensor_metadata(hass: HomeAssistant) -> None:
@@ -824,7 +828,7 @@ async def test_installation_aggregate_device_info(hass: HomeAssistant) -> None:
     )
     device_info = sensor.device_info
     assert (DOMAIN, f"{entry.entry_id}_installation") in device_info["identifiers"]
-    assert device_info["name"] == "Tigo Installation"
+    assert device_info["name"] == "Tigo Total"
     assert device_info["manufacturer"] == "Tigo Energy"
     assert device_info["model"] == "Installation Aggregate"
 

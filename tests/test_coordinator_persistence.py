@@ -621,9 +621,12 @@ class TestPowerReportDeferredBeforeInfra:
         )
         result = coordinator._handle_power_report(event)
 
-        # Should be deferred (return False), not stored
-        assert result is False
+        # Should be deferred, not stored. The first report from a node
+        # returns True so the node mapping sensor updates; later ones don't.
+        assert result is True
         assert "A-1234567B" not in coordinator.data["nodes"]
+        assert coordinator.mapping_status()["unidentified_nodes"] == 1
+        assert coordinator._handle_power_report(event) is False
 
     def test_fallback_allowed_after_infra(self, hass: HomeAssistant) -> None:
         """Power report fallback should work after infra event is received."""

@@ -6,11 +6,13 @@
         "description": "Provide the connection details for your Tigo gateway.",
         "data": {
           "host": "Host",
-          "port": "Port"
+          "port": "Port",
+          "inverter": "Inverter name (optional)"
         },
         "data_description": {
           "host": "The hostname or IP address of your Tigo gateway.",
-          "port": "The port number (default: 502)."
+          "port": "The port number (default: 502).",
+          "inverter": "Only needed with more than one gateway: a short label such as Master or East, used at the start of device names. Leave blank for a single gateway."
         }
       },
       "modules_menu": {
@@ -117,6 +119,31 @@
       },
       "rssi": {
         "name": "RSSI"
+      },
+      "node_mapping": {
+        "name": "Node mapping",
+        "state": {
+          "waiting": "Waiting for node table",
+          "partial": "Partly mapped",
+          "complete": "Complete"
+        },
+        "state_attributes": {
+          "configured": {
+            "name": "Configured modules"
+          },
+          "mapped": {
+            "name": "Mapped modules"
+          },
+          "unmapped_barcodes": {
+            "name": "Unmapped barcodes"
+          },
+          "unidentified_nodes": {
+            "name": "Unidentified nodes reporting"
+          },
+          "last_node_table": {
+            "name": "Last node table"
+          }
+        }
       }
     }
   },
@@ -130,7 +157,10 @@
           "add_module": "Add a module",
           "remove_module": "Remove a module",
           "done": "Save and close",
-          "change_reporting": "Change reporting settings"
+          "change_reporting": "Change reporting settings",
+          "change_inverter": "Change inverter name",
+          "edit_module": "Edit a module",
+          "rename_string": "Rename a string"
         }
       },
       "change_connection": {
@@ -169,7 +199,7 @@
       },
       "change_reporting": {
         "title": "Reporting Settings",
-        "description": "Configure how this integration delivers data to Home Assistant.\n\nWhen **Live reporting** is enabled (default), readings are pushed as they arrive from the gateway with sub-second latency.\n\nTurn it off to cache readings and deliver a time-weighted average instead \u2014 you'll set the interval on the next screen. This reduces CPU and I/O load for installations with many panels.",
+        "description": "Configure how this integration delivers data to Home Assistant.\n\nWhen **Live reporting** is enabled (default), readings are pushed as they arrive from the gateway with sub-second latency.\n\nTurn it off to cache readings and deliver a time-weighted average instead — you'll set the interval on the next screen. This reduces CPU and I/O load for installations with many panels.",
         "data": {
           "live_reporting": "Live reporting"
         },
@@ -184,9 +214,49 @@
           "write_interval": "Reporting interval (seconds)"
         },
         "data_description": {
-          "write_interval": "How often (in seconds) to push time-weighted averaged updates to Home Assistant. Range: 5\u2013300. Default: 30 seconds."
+          "write_interval": "How often (in seconds) to push time-weighted averaged updates to Home Assistant. Range: 5–300. Default: 30 seconds."
+        }
+      },
+      "change_inverter": {
+        "title": "Inverter Name",
+        "description": "Device names are built as Tigo [inverter] [string] [module], for example Tigo Master S2 P01. Leave the inverter name blank if you have a single gateway. Existing entity IDs do not change; rename them in Home Assistant if you want them to match.",
+        "data": {
+          "inverter": "Inverter name"
+        }
+      },
+      "edit_module": {
+        "title": "Edit Module",
+        "data": {
+          "edit_barcode": "Select module to edit"
+        }
+      },
+      "edit_module_details": {
+        "title": "Edit Module",
+        "description": "Barcode {barcode}. The barcode identifies the optimizer and cannot be changed; remove and re-add the module to replace it.",
+        "data": {
+          "string": "String group",
+          "name": "Name",
+          "peak_power": "Peak power (Wp)"
+        },
+        "data_description": {
+          "string": "String group label (e.g. A, B, East, West). Required for aggregate energy tracking.",
+          "name": "A friendly name for this optimizer (e.g. Panel_01).",
+          "peak_power": "The peak power rating of this panel in watts (STC). Used to calculate performance percentage. Default: 455 Wp."
+        }
+      },
+      "rename_string": {
+        "title": "Rename String",
+        "description": "Renames the string for all of its modules. The string total keeps its history.",
+        "data": {
+          "old_string": "String",
+          "new_string": "New name"
         }
       }
+    },
+    "error": {
+      "string_exists": "Another string already has this name.",
+      "missing_string": "String group is required.",
+      "missing_name": "Module name is required."
     }
   }
 }

@@ -9,6 +9,9 @@ CONF_PORT = "port"
 CONF_MODULES = "modules"
 CONF_LIVE_REPORTING = "live_reporting"
 CONF_WRITE_INTERVAL = "write_interval"
+# Optional per-entry label for the inverter (or array) this gateway serves.
+# Used as the first part of device names; blank for single-gateway installs.
+CONF_INVERTER = "inverter"
 
 # Module dict keys
 CONF_MODULE_STRING = "string"
@@ -23,6 +26,7 @@ DEFAULT_PEAK_POWER = 455
 DEFAULT_SCAN_INTERVAL = 30
 DEFAULT_LIVE_REPORTING = True
 DEFAULT_WRITE_INTERVAL = 30
+DEFAULT_INVERTER = ""
 MIN_WRITE_INTERVAL = 5
 MAX_WRITE_INTERVAL = 300
 RECONNECT_TIMEOUT = 60
@@ -32,3 +36,8 @@ RECONNECT_RETRIES = 0
 # Energy accumulation tuning
 ENERGY_GAP_THRESHOLD_SECONDS = 120
 ENERGY_LOW_POWER_THRESHOLD_W = 1.0
+
+# Node mapping status (diagnostic sensor)
+MAPPING_WAITING = "waiting"
+MAPPING_PARTIAL = "partial"
+MAPPING_COMPLETE = "complete"

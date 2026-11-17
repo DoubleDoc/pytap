@@ -37,6 +37,9 @@ from .const import (
     DOMAIN,
     ENERGY_GAP_THRESHOLD_SECONDS,
     ENERGY_LOW_POWER_THRESHOLD_W,
+    MAPPING_COMPLETE,
+    MAPPING_PARTIAL,
+    MAPPING_WAITING,
     RECONNECT_DELAY,
     RECONNECT_RETRIES,
     RECONNECT_TIMEOUT,
@@ -152,6 +155,12 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # know data IS flowing but resolution is blocked.
         self._pending_power_reports: int = 0
 
+        # Node IDs seen in power reports this session that could not be
+        # resolved to a barcode, and when the last full node table arrived.
+        # Both feed the node mapping diagnostic sensor.
+        self._unidentified_nodes: set[int] = set()
+        self._last_node_table: datetime | None = None
+
         # Listener task handle
         self._listener_task: asyncio.Task | None = None
         self._stop_event = threading.Event()
@@ -197,9 +206,42 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return current data (push-based, no polling needed)."""
         return self.data
 
+    @property
+    def configured_barcodes(self) -> set[str]:
+        """Barcodes of the modules configured for this entry."""
+        return set(self._configured_barcodes)
+
+    def mapping_status(self) -> dict[str, Any]:
+        """Summarise barcode resolution for the node mapping sensor.
+
+        Power reports identify optimizers by a short node ID. The gateway's
+        node table maps those IDs to barcodes; PyTap learns it only by
+        overhearing the CCA read it, which normally happens when the
+        optimizers power up in the morning. Until then reports are dropped.
+        """
+        mapped = self._configured_barcodes & set(self._barcode_to_node)
+        unmapped = self._configured_barcodes - mapped
+        if not mapped:
+            state = MAPPING_WAITING
+        elif unmapped:
+            state = MAPPING_PARTIAL
+        else:
+            state = MAPPING_COMPLETE
+        return {
+            "state": state,
+            "configured": len(self._configured_barcodes),
+            "mapped": len(mapped),
+            "unmapped_barcodes": sorted(unmapped),
+            "unidentified_nodes": len(self._unidentified_nodes),
+            "last_node_table": (
+                self._last_node_table.isoformat() if self._last_node_table else None
+            ),
+        }
+
     def get_diagnostics_data(self) -> dict[str, Any]:
         """Return coordinator diagnostics snapshot."""
         return {
+            "node_mapping_status": self.mapping_status(),
             "node_mappings": {
                 "barcode_to_node": dict(self._barcode_to_node),
                 "node_to_barcode": {
@@ -564,6 +606,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if not barcode:
             self._pending_power_reports += 1
+            new_unidentified = event.node_id not in self._unidentified_nodes
+            if new_unidentified:
+                self._unidentified_nodes.add(event.node_id)
             if not self._infra_received:
                 # Log at INFO every 50 reports so operator sees data is flowing
                 if self._pending_power_reports == 1:
@@ -594,7 +639,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     event.node_id,
                     event.gateway_id,
                 )
-            return False
+            # Push an update the first time a node is seen so the node
+            # mapping sensor shows that data is arriving.
+            return new_unidentified
 
         # Check if this barcode is in our configured allowlist
         if barcode not in self._configured_barcodes:
@@ -772,6 +819,8 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         self._barcode_to_node = new_barcode_to_node
         self._node_to_barcode = new_node_to_barcode
+        self._last_node_table = dt_util.utcnow()
+        self._unidentified_nodes = set()
 
         # Reset pending counter now that resolution is possible
         if self._pending_power_reports > 0:

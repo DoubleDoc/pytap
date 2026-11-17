@@ -15,12 +15,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
+    CONF_INVERTER,
     CONF_LIVE_REPORTING,
     CONF_MODULE_BARCODE,
     CONF_MODULE_PEAK_POWER,
     CONF_MODULE_STRING,
     CONF_MODULES,
     CONF_WRITE_INTERVAL,
+    DEFAULT_INVERTER,
     DEFAULT_LIVE_REPORTING,
     DEFAULT_PEAK_POWER,
     DEFAULT_STRING_NAME,
@@ -39,7 +41,8 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 # Bumped from 2 → 3 when module string labels became mandatory.
 # Bumped from 3 → 4 when module peak_power became mandatory in config.
 # Bumped from 4 → 5 when live_reporting toggle was added.
-CONFIG_ENTRY_VERSION = 5
+# Bumped from 5 → 6 when the optional inverter name was added.
+CONFIG_ENTRY_VERSION = 6
 
 # Old unique IDs that were replaced by the _in/_out split.
 _LEGACY_UNIQUE_ID_RENAMES: dict[str, str] = {
@@ -111,6 +114,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     v2 → v3: module string labels are mandatory.
     v3 → v4: module peak power is added with default value.
     v4 → v5: live_reporting toggle added (default True).
+    v5 → v6: optional inverter name added (default blank).
     """
     if entry.version == 1:
         _LOGGER.info(
@@ -179,6 +183,15 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 MIN_WRITE_INTERVAL, min(MAX_WRITE_INTERVAL, interval)
             )
         hass.config_entries.async_update_entry(entry, data=new_data, version=5)
+
+    if entry.version == 5:
+        _LOGGER.info(
+            "Migrating PyTap config entry %s from version 5 to 6",
+            entry.entry_id,
+        )
+        new_data = {**entry.data}
+        new_data.setdefault(CONF_INVERTER, DEFAULT_INVERTER)
+        hass.config_entries.async_update_entry(entry, data=new_data, version=6)
 
     return True
 

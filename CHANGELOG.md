@@ -4,6 +4,25 @@
 
 ### Added
 
+- **Inverter name** — Optional per-entry label (set during setup or under **Configure → Change inverter name**) for installations with more than one CCA gateway. Device names are now built as `Tigo [inverter] [string] [module]`, e.g. `Tigo Master S2 P01`, `Tigo Master String 2` and `Tigo Master Total`; numeric strings are shown as `S2`.
+- **Node mapping sensor** — Diagnostic sensor on the total device: *waiting for node table*, *partly mapped* or *complete*, with configured/mapped counts, unmapped barcodes, the number of unidentified nodes reporting, and the time of the last node table. Also included in diagnostics.
+- **Edit a module** — Change a module's string, name or peak power from the options flow, keeping its barcode and entities.
+- **Rename a string** — Renames the string for all its modules and moves the string's aggregate entities and device, so their history is kept.
+- README: *First start: what to expect* (why there is no data until the first morning), device naming, and dual-module optimizers.
+
+### Changed
+
+- Device names: optimizers `Tigo TS4 <name>` → `Tigo [inverter] [string] <name>`; the installation device `Tigo Installation` → `Tigo [inverter] Total`. Existing entity IDs are not changed.
+- Config entry schema bumped to version 6 (adds `inverter`, default blank, via automatic migration).
+
+### Fixed
+
+- The per-optimizer `last_update` attribute is no longer recorded. It changed with every reading, so the recorder stored a new attributes row for every state write.
+
+## [1.3.0]
+
+### Added
+
 - **Configurable reporting mode** — New "Live reporting" toggle (default on) under **Configure → Change reporting settings**. When disabled, readings are cached and delivered as a time-weighted average every *reporting interval* (5–300 s, default 30), reducing CPU and recorder load on installations with many panels. Energy totals are always integrated from raw readings, so only the instantaneous values are averaged.
 
 ### Changed

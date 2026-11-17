@@ -38,6 +38,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_INVERTER,
     CONF_MODULE_BARCODE,
     CONF_MODULE_NAME,
     CONF_MODULE_PEAK_POWER,
@@ -45,8 +46,12 @@ from .const import (
     CONF_MODULES,
     DEFAULT_PEAK_POWER,
     DOMAIN,
+    MAPPING_COMPLETE,
+    MAPPING_PARTIAL,
+    MAPPING_WAITING,
 )
 from .coordinator import PyTapDataUpdateCoordinator
+from .naming import optimizer_device_name, string_device_name, total_device_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -270,6 +275,7 @@ async def async_setup_entry(
     """
     coordinator: PyTapDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
     modules: list[dict[str, str]] = entry.data.get(CONF_MODULES, [])
+    inverter: str = entry.data.get(CONF_INVERTER, "") or ""
 
     entities: list[SensorEntity] = []
     string_to_barcodes: dict[str, list[str]] = {}
@@ -291,13 +297,14 @@ async def async_setup_entry(
                     description=description,
                     module_config=module_config,
                     entry=entry,
+                    inverter=inverter,
                 )
             )
 
     for string_name, barcodes in string_to_barcodes.items():
         device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{entry.entry_id}_string_{string_name}")},
-            name=f"Tigo String {string_name}",
+            name=string_device_name(inverter, string_name),
             manufacturer="Tigo Energy",
             model="String Aggregate",
         )
@@ -314,13 +321,15 @@ async def async_setup_entry(
                 )
             )
 
+    total_device_info = DeviceInfo(
+        identifiers={(DOMAIN, f"{entry.entry_id}_installation")},
+        name=total_device_name(inverter),
+        manufacturer="Tigo Energy",
+        model="Installation Aggregate",
+    )
+
     if all_barcodes:
-        device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_installation")},
-            name="Tigo Installation",
-            manufacturer="Tigo Energy",
-            model="Installation Aggregate",
-        )
+        device_info = total_device_info
         for description in INSTALLATION_SENSOR_DESCRIPTIONS:
             entities.append(
                 PyTapAggregateSensor(
@@ -333,6 +342,14 @@ async def async_setup_entry(
                     ),
                 )
             )
+
+        entities.append(
+            PyTapNodeMappingSensor(
+                coordinator=coordinator,
+                device_info=total_device_info,
+                unique_id=f"{DOMAIN}_{entry.entry_id}_node_mapping",
+            )
+        )
 
     async_add_entities(entities)
 
@@ -356,6 +373,7 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
         description: PyTapSensorEntityDescription,
         module_config: dict[str, str],
         entry: ConfigEntry,
+        inverter: str = "",
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
@@ -371,7 +389,9 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
         # Device info — groups all sensors for one optimizer under one device
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._barcode)},
-            name=f"Tigo TS4 {self._module_name}",
+            name=optimizer_device_name(
+                inverter, self._module_string, self._module_name
+            ),
             manufacturer="Tigo Energy",
             model="TS4",
             serial_number=self._barcode,
@@ -643,3 +663,44 @@ class PyTapAggregateSensor(
             "optimizer_count": len(self._barcodes),
             "reporting_count": len(reporting),
         }
+
+
+class PyTapNodeMappingSensor(
+    CoordinatorEntity[PyTapDataUpdateCoordinator], SensorEntity
+):
+    """Shows whether optimizer readings can be matched to configured modules.
+
+    Readings identify optimizers by node ID; the barcode mapping comes from
+    the gateway's node table, which PyTap only sees when the CCA reads it
+    (normally when the optimizers wake up in the morning). Until then the
+    other sensors stay unknown, and this sensor says why.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "node_mapping"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = [MAPPING_WAITING, MAPPING_PARTIAL, MAPPING_COMPLETE]
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self,
+        coordinator: PyTapDataUpdateCoordinator,
+        device_info: DeviceInfo,
+        unique_id: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_unique_id = unique_id
+
+    @property
+    def native_value(self) -> str:
+        """Return waiting, partial or complete."""
+        return self.coordinator.mapping_status()["state"]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return mapping counts and the last node table time."""
+        status = self.coordinator.mapping_status()
+        status.pop("state")
+        return status
