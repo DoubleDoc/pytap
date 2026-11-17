@@ -31,6 +31,7 @@ MIN_WRITE_INTERVAL = 5
 MAX_WRITE_INTERVAL = 300
 RECONNECT_TIMEOUT = 60
 RECONNECT_DELAY = 5
+RECONNECT_MAX_DELAY = 60
 RECONNECT_RETRIES = 0
 
 # Energy accumulation tuning
@@ -41,3 +42,30 @@ ENERGY_LOW_POWER_THRESHOLD_W = 1.0
 MAPPING_WAITING = "waiting"
 MAPPING_PARTIAL = "partial"
 MAPPING_COMPLETE = "complete"
+
+# Reading health (see coordinator.reading_state)
+# Optimizers stop reporting at night, and by day they can drop off the radio
+# link for a while (2.4 GHz interference), so silence alone means little.
+# Below LOW_SUN_ELEVATION a silent optimizer is treated as asleep: live
+# readings go to 0. Above it, a silent optimizer keeps its last value until
+# SILENT_UNAVAILABLE_SECONDS have passed, then its live readings become
+# unavailable. Energy sensors are never affected.
+HEALTH_CHECK_INTERVAL_SECONDS = 60
+LOW_SUN_ELEVATION = 10.0
+NIGHT_QUIET_SECONDS = 10 * 60
+SILENT_UNAVAILABLE_SECONDS = 30 * 60
+# No bytes at all from the converter for this long: live readings unavailable.
+LINK_DOWN_SECONDS = 5 * 60
+# Pending node table: how often to repeat the INFO reminder.
+PENDING_LOG_INTERVAL_SECONDS = 10 * 60
+# RS-485 frame error rate that triggers a wiring warning.
+BUS_ERROR_WINDOW_SECONDS = 10 * 60
+BUS_ERROR_MIN_FRAMES = 500
+BUS_ERROR_RATE_WARN = 0.02
+BUS_ERROR_LOG_INTERVAL_SECONDS = 60 * 60
+
+# Per-optimizer reading states
+READING_OK = "ok"
+READING_ASLEEP = "asleep"
+READING_SILENT = "silent"
+READING_OFFLINE = "offline"

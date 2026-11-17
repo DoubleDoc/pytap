@@ -69,6 +69,7 @@ When you add PyTap, enter the converter's IP address as the **host** and its Dev
 - **Restart-safe availability** — Last known node readings are persisted and
     restored on startup, so sensors stay available with the most recent value
     even before the first live frame arrives (for example after a night restart).
+- **Night and dropout handling** — Live readings go to 0 when the optimizers fall asleep at night, and become unavailable only after a long daytime silence or when the converter stops sending data (see [When readings go to 0 or unavailable](#when-readings-go-to-0-or-unavailable)).
 - **Energy accumulation** — Trapezoidal Wh integration with proactive midnight reset and monotonic lifetime totals. Daily sensors zero at exactly midnight local time.
 - **No external dependencies** — The protocol parser library is fully embedded; nothing to install from PyPI.
 - **Options flow** — Add, edit or remove optimizer modules and rename strings at any time without reconfiguring.
@@ -97,7 +98,21 @@ Each configured Tigo TS4 optimizer exposes the following sensors:
 PyTap also creates aggregate virtual devices:
 
 - **Tigo [inverter] String <name>** — `performance`, `power`, `daily_energy`, `total_energy`. Created for every string, even when there is only one, so a string keeps its history when more strings are added later.
-- **Tigo [inverter] Total** — `performance`, `power`, `daily_energy`, `total_energy`, plus the diagnostic **Node mapping** sensor.
+- **Tigo [inverter] Total** — `performance`, `power`, `daily_energy`, `total_energy`, plus the diagnostic **Node mapping** sensor. Its attributes also show whether the converter connection is `up` or `down`, and which modules are silent (`silent_modules`).
+
+### When readings go to 0 or unavailable
+
+Optimizers stop reporting when it gets dark, and by day one can drop off the radio link to the TAP for a while (2.4 GHz interference) and come back by itself. PyTap therefore treats silence differently depending on the sun's position, which it works out from your Home Assistant location:
+
+| Situation | Live readings | Energy and Readings Today |
+| --- | --- | --- |
+| Reporting | Latest values | Counting |
+| Sun below 10° and no report for 10 minutes (asleep) | Power, voltage, current, performance and duty cycle read **0**; temperature and RSSI keep their last value | Kept |
+| Daylight, no report yet since the optimizers went to sleep | Stay at 0 | Kept |
+| Daylight, no report for **30 minutes** (silent) | **Unavailable**, and a warning is logged | Kept |
+| No data at all from the converter for 5 minutes (offline) | **Unavailable**, and a warning is logged | Kept |
+
+Short daytime gaps keep the last value, so a brief radio dropout doesn't zero a panel or break its history. The string and total power sensors skip silent optimizers and count sleeping ones as 0, so a single silent panel lowers the total rather than making it unavailable; their `reporting_count` attribute shows how many are reporting. If Home Assistant has no location set, PyTap never assumes it is night.
 
 ### Device naming
 
@@ -266,6 +281,17 @@ Each optimizer, string and gateway total has a **Total energy** sensor (Wh, `tot
 
 [`dashboards/`](dashboards/pv_production.md) has a roof-layout dashboard that colours each panel by daily energy, connectivity or power, for Home Assistant (Lovelace) and Grafana. It's laid out for one specific roof, so you'll need to replace its panel entity IDs and positions; its helper sensors in `tigo.yaml` work on any installation.
 
+### Log messages
+
+Every PyTap line starts with the inverter name (or the converter's address when no inverter name is set), e.g. `[Master]`, so installations with more than one gateway can tell them apart. At the default log level you only see problems:
+
+- **Connection to the RS-485 converter failed** or **No data from the RS-485 converter**: logged once per outage; retries back off from 5 to 60 seconds and are logged at debug level. An info line follows when data has flowed again for a minute.
+- **No data from the RS-485 converter for 5 min; live readings are unavailable**: the outage has lasted long enough that the sensors are marked unavailable.
+- **Optimizer P03 (…) has not reported for 30 min while others have**: one optimizer is silent by day. If it persists, check that optimizer and its distance from the TAP. If every optimizer is silent while the converter is still sending data, a single warning points at the CCA instead.
+- **N of M RS-485 frames failed their checks**: more than 2% of frames are corrupted, so readings are being lost; check the wiring, termination and the converter's serial settings. Repeated at most hourly.
+- **Configured barcodes NOT found in node table**: a configured barcode doesn't exist on the bus; check it for typos.
+- **Unexpected error while processing data**: a bug. It is logged once with a traceback; please report it.
+
 ### Debug logging
 
 To see what PyTap receives, add this to `configuration.yaml` and restart, or turn on debug logging from the integration's page:
@@ -275,6 +301,8 @@ logger:
   logs:
     custom_components.pytap: debug
 ```
+
+In normal running, debug adds one line per write interval and gateway listing how many readings each module sent, e.g. `[Master] HA update: 6 node(s) — P01: 16 reading(s), …`, plus each node table page, reconnect attempt and change in a module's reading state.
 
 ### Removing the integration
 

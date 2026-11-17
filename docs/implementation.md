@@ -514,7 +514,7 @@ DeviceInfo(
 All 12 sensors for the same barcode are grouped under one device.
 
 **Availability:**
-Returns `True` only when `coordinator.data["nodes"][barcode]` exists (i.e., at least one `PowerReportEvent` has been received for this optimizer). There is no unavailable timeout — sensors hold their last received value indefinitely.
+Returns `True` when `coordinator.data["nodes"][barcode]` exists (or a value was restored), except that live-reading sensors are unavailable while `coordinator.reading_state(barcode)` is `silent` or `offline`. While it is `asleep`, power, voltage, current, performance and duty cycle read 0. See *Entity Availability* in `architecture.md`.
 
 **Value updates** (`_handle_coordinator_update`):
 - Reads from `coordinator.data["nodes"][barcode][value_key]`.

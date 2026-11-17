@@ -131,7 +131,11 @@ class Parser:
     def __init__(
         self,
         persistent_state: PersistentState | None = None,
+        log: logging.Logger | logging.LoggerAdapter | None = None,
     ):
+        # Logger; callers can pass an adapter that tags each line with
+        # the gateway it came from.
+        self._log = log if log is not None else logger
         # Frame accumulator state
         self._state: _FrameState = _FrameState.IDLE
         self._buffer: bytearray = bytearray()
@@ -324,7 +328,7 @@ class Parser:
         try:
             ft = FrameType(frame.frame_type)
         except ValueError:
-            logger.debug(
+            self._log.debug(
                 "Unknown frame type 0x%04X from gw=%d (is_from=%s, %d bytes)",
                 frame.frame_type,
                 frame.address.gateway_id.value,
@@ -335,7 +339,7 @@ class Parser:
 
         # Only log non-routine frames; RECEIVE and PING are too frequent.
         if ft not in _HIGH_FREQUENCY_FRAME_TYPES:
-            logger.debug(
+            self._log.debug(
                 "Frame %s from gw=%d (is_from=%s, %d bytes)",
                 ft.name,
                 frame.address.gateway_id.value,
@@ -469,7 +473,7 @@ class Parser:
             pkt_name = PacketType(packet_type).name
         except ValueError:
             pkt_name = f"0x{packet_type:02X}"
-        logger.debug(
+        self._log.debug(
             "COMMAND_REQUEST gw=%d seq=%d pkt_type=%s (%d bytes payload)",
             gw_id,
             sequence_number,
@@ -505,7 +509,7 @@ class Parser:
         key = (gw_id, resp_seq)
         request_data = self._commands_awaiting.pop(key, None)
         if request_data is None:
-            logger.warning(
+            self._log.warning(
                 "COMMAND_RESPONSE gw=%d seq=%d pkt_type=%s — "
                 "no matching request (awaiting keys: %s)",
                 gw_id,
@@ -521,7 +525,7 @@ class Parser:
             req_name = PacketType(req_type).name
         except ValueError:
             req_name = f"0x{req_type:02X}"
-        logger.debug(
+        self._log.debug(
             "COMMAND pair correlated gw=%d seq=%d: req=%s → resp=%s",
             gw_id,
             resp_seq,
@@ -632,7 +636,7 @@ class Parser:
         if not frame.address.is_from:
             return []
         if self._enum_state is not None:
-            logger.info(
+            self._log.info(
                 "Enumeration ended: %d gateway identities, %d versions discovered",
                 len(self._enum_state.gateway_identities),
                 len(self._enum_state.gateway_versions),
@@ -695,7 +699,7 @@ class Parser:
 
         slot_clock = self._slot_clocks.get(gw_id)
         if slot_clock is None:
-            logger.warning(
+            self._log.warning(
                 "No slot clock for gateway %d, discarding power report", gw_id
             )
             return []
@@ -776,7 +780,7 @@ class Parser:
         An entries_count of 0 signals end-of-table.
         """
         if len(req_payload) < 2:
-            logger.warning(
+            self._log.warning(
                 "NODE_TABLE_REQUEST gw=%d: req_payload too short (%d bytes)",
                 gw_id,
                 len(req_payload),
@@ -785,7 +789,7 @@ class Parser:
         start_address = NodeAddress.from_bytes(req_payload[0:2])
 
         if len(resp_payload) < 4:
-            logger.warning(
+            self._log.warning(
                 "NODE_TABLE_RESPONSE gw=%d: resp_payload too short "
                 "(%d bytes, need at least 4)",
                 gw_id,
@@ -801,7 +805,7 @@ class Parser:
         if entries_count == 0:
             entries = []
         elif len(entries_data) < entries_count * 10:
-            logger.warning(
+            self._log.warning(
                 "NODE_TABLE_RESPONSE gw=%d: corrupt page — "
                 "entries_count=%d but data=%d bytes (expected %d)",
                 gw_id,
@@ -812,7 +816,7 @@ class Parser:
             return []  # corrupt — not enough data to parse entries
         else:
             if len(entries_data) > entries_count * 10:
-                logger.debug(
+                self._log.debug(
                     "NODE_TABLE_RESPONSE gw=%d: %d trailing bytes after "
                     "%d entries (ignored)",
                     gw_id,
@@ -829,7 +833,7 @@ class Parser:
                 # so that table keys match power-report node addresses.
                 masked_value = raw_node_addr.value & 0x7FFF
                 if raw_node_addr.value != masked_value:
-                    logger.debug(
+                    self._log.debug(
                         "NODE_TABLE gw=%d: node address 0x%04X has bit-15 "
                         "set, using masked value %d",
                         gw_id,
@@ -839,7 +843,7 @@ class Parser:
                 node_addr = NodeAddress(masked_value)
                 entries.append((node_addr, long_addr))
 
-        logger.info(
+        self._log.info(
             "NODE_TABLE page gw=%d: start_addr=%d (echo=%d), %d entries%s",
             gw_id,
             start_address.value,
@@ -851,7 +855,7 @@ class Parser:
         builder = self._node_table_builders.setdefault(gw_id, NodeTableBuilder())
         result = builder.push(start_address, entries)
         if result is not None:
-            logger.info(
+            self._log.info(
                 "NODE_TABLE complete for gw=%d: %d nodes resolved",
                 gw_id,
                 len(result),
@@ -859,7 +863,7 @@ class Parser:
             self._persistent_state.gateway_node_tables[gw_id] = result
             return self._emit_infrastructure_event()
 
-        logger.debug(
+        self._log.debug(
             "NODE_TABLE gw=%d: %d entries accumulated so far",
             gw_id,
             len(builder._entries),

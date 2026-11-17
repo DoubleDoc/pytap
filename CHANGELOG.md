@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.4.2] - 2026-11-17
+
+### Added
+
+- **Night and dropout handling** — Live readings no longer freeze overnight at the last daytime value (upstream issue #17). Using the sun's position from the Home Assistant location: an optimizer that is quiet for 10 minutes with the sun below 10° reads 0 for power, voltage, current, performance and duty cycle (temperature and RSSI keep their last value). By day a quiet optimizer keeps its last value for 30 minutes, since optimizers can drop off the radio link for a while, then its live readings become unavailable. Energy sensors are never affected.
+- **Converter offline** — Live readings become unavailable after 5 minutes without any data from the RS-485 converter.
+- Node mapping sensor attributes `connection` (`up`/`down`) and `silent_modules`; diagnostics section `reading_health`.
+- Warnings when one optimizer (or all of them) stops reporting by day, and when more than 2% of RS-485 frames fail their checks (wiring or termination problem).
+
+### Changed
+
+- Log lines start with the inverter name (or the converter address), so two gateways can be told apart.
+- Connection failures are logged once per outage as a warning instead of an error every 5 seconds; retries back off from 5 to 60 seconds; recovery is logged once data has flowed for a minute.
+- The "waiting for the node table" reminder is logged every 10 minutes instead of every 50 reports.
+- String and total power skip silent optimizers and count sleeping ones as 0; `reporting_count` counts only optimizers that are reporting.
+
+### Fixed
+
+- Unexpected errors while processing data were logged as "Connection error" without a traceback; they are now logged once with the traceback.
+- Failures to load or save PyTap's stored state now include the reason, and a failed load is a warning instead of a debug message.
+
 ## [1.4.1] - 2026-11-17
 
 ### Changed

@@ -14,17 +14,19 @@ logger = logging.getLogger(__name__)
 
 def create_parser(
     persistent_state: PersistentState | None = None,
+    log: logging.Logger | logging.LoggerAdapter | None = None,
 ) -> Parser:
     """Create a new protocol parser instance.
 
     Args:
         persistent_state: Optional pre-loaded PersistentState object.
             If None, the parser starts with empty state.
+        log: Optional logger (or adapter) for parser messages.
 
     Returns:
         A Parser ready to accept bytes via feed().
     """
-    return Parser(persistent_state=persistent_state)
+    return Parser(persistent_state=persistent_state, log=log)
 
 
 def parse_bytes(data: bytes) -> list[Event]:

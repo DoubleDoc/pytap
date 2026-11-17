@@ -49,11 +49,46 @@ from .const import (
     MAPPING_COMPLETE,
     MAPPING_PARTIAL,
     MAPPING_WAITING,
+    READING_ASLEEP,
+    READING_OFFLINE,
+    READING_SILENT,
 )
 from .coordinator import PyTapDataUpdateCoordinator
 from .naming import optimizer_device_name, string_device_name, total_device_name
 
 _LOGGER = logging.getLogger(__name__)
+
+# Sensor keys that describe what the optimizer is doing right now. They go
+# unavailable when the optimizer is silent by day or the converter is
+# offline. Energy and readings-today sensors are never affected.
+LIVE_KEYS = frozenset(
+    {
+        "performance",
+        "power",
+        "voltage_in",
+        "voltage_out",
+        "current_in",
+        "current_out",
+        "temperature",
+        "dc_dc_duty_cycle",
+        "rssi",
+    }
+)
+# Live keys that read 0 while the optimizer is asleep (low sun, quiet).
+# Temperature and RSSI keep their last value.
+ZERO_WHEN_ASLEEP_KEYS = frozenset(
+    {
+        "performance",
+        "power",
+        "voltage_in",
+        "voltage_out",
+        "current_in",
+        "current_out",
+        "dc_dc_duty_cycle",
+    }
+)
+# Aggregate keys that follow the live state of their optimizers.
+AGGREGATE_LIVE_KEYS = frozenset({"performance", "power"})
 
 
 def _coerce_restored_state_value(raw_state: str, sensor_key: str) -> int | float | None:
@@ -430,8 +465,13 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
 
     @property
     def available(self) -> bool:
-        """Return True if the sensor has received data."""
+        """Return True if the sensor has data that can still be trusted."""
         if not self.coordinator.data:
+            return False
+        if self.entity_description.key in LIVE_KEYS and (
+            self.coordinator.reading_state(self._barcode)
+            in (READING_SILENT, READING_OFFLINE)
+        ):
             return False
         node_data = self.coordinator.data.get("nodes", {}).get(self._barcode)
         return node_data is not None or self._restored_native_value
@@ -450,6 +490,11 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
         else:
             if not self._restored_native_value:
                 self._attr_native_value = None
+        if (
+            self.entity_description.key in ZERO_WHEN_ASLEEP_KEYS
+            and self.coordinator.reading_state(self._barcode) == READING_ASLEEP
+        ):
+            self._attr_native_value = 0.0
         self.async_write_ha_state()
 
     @property
@@ -567,14 +612,35 @@ class PyTapAggregateSensor(
 
     @property
     def available(self) -> bool:
-        """Return True when at least one constituent has data."""
+        """Return True when at least one constituent has data.
+
+        Power and performance also need the converter online and at least
+        one optimizer that isn't silent.
+        """
         if not self.coordinator.data:
             return False
+        if self.entity_description.key in AGGREGATE_LIVE_KEYS:
+            if not self.coordinator.link_up:
+                return False
+            if all(
+                self.coordinator.reading_state(b) == READING_SILENT
+                for b in self._barcodes
+            ):
+                return False
         nodes = self.coordinator.data.get("nodes", {})
         return (
             any(nodes.get(barcode) is not None for barcode in self._barcodes)
             or self._restored_native_value
         )
+
+    def _live_power(self, barcode: str, node_data: dict[str, Any]) -> Any:
+        """Return a constituent's power: None if silent, 0 if asleep."""
+        state = self.coordinator.reading_state(barcode)
+        if state in (READING_SILENT, READING_OFFLINE):
+            return None
+        if state == READING_ASLEEP:
+            return 0.0
+        return node_data.get("power")
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -599,7 +665,7 @@ class PyTapAggregateSensor(
                 if node_data is None:
                     continue
 
-                power = node_data.get("power")
+                power = self._live_power(barcode, node_data)
                 peak_power = node_data.get(CONF_MODULE_PEAK_POWER, DEFAULT_PEAK_POWER)
                 if power is None:
                     continue
@@ -632,7 +698,10 @@ class PyTapAggregateSensor(
             node_data = nodes.get(barcode)
             if node_data is None:
                 continue
-            value = node_data.get(self.entity_description.value_key)
+            if self.entity_description.key == "power":
+                value = self._live_power(barcode, node_data)
+            else:
+                value = node_data.get(self.entity_description.value_key)
             if value is not None:
                 total = (total or 0.0) + value
 
@@ -657,7 +726,11 @@ class PyTapAggregateSensor(
         """Return additional aggregate state attributes."""
         nodes = self.coordinator.data.get("nodes", {})
         reporting = [
-            barcode for barcode in self._barcodes if nodes.get(barcode) is not None
+            barcode
+            for barcode in self._barcodes
+            if nodes.get(barcode) is not None
+            and self.coordinator.reading_state(barcode)
+            not in (READING_SILENT, READING_OFFLINE)
         ]
         return {
             "optimizer_count": len(self._barcodes),

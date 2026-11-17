@@ -461,10 +461,16 @@ def _handle_coordinator_update(self) -> None:
 
 #### Entity Availability
 
-Entities are marked unavailable only when:
-- The node's barcode has **never** been seen on the bus (no `PowerReportEvent` received yet for this barcode).
+Entities are unavailable until the node's barcode has been seen on the bus (or a value was restored). After that, `coordinator.reading_state(barcode)` decides how live readings (power, voltage, current, performance, duty cycle, temperature, RSSI) are shown. Energy and readings-today sensors are never affected.
 
-Once a sensor receives its first value, it remains available and holds the last received value indefinitely. This is intentional: solar optimizers stop reporting overnight, and displaying the last known values (rather than marking entities unavailable) provides a better user experience for dashboards and history.
+| State | Condition | Live readings |
+| --- | --- | --- |
+| `ok` | Reporting, or quiet for less than the limits below | Last value |
+| `asleep` | Sun below `LOW_SUN_ELEVATION` (10°) and quiet for `NIGHT_QUIET_SECONDS` (10 min); or daylight but no report since before daylight began | 0 (temperature and RSSI keep their last value) |
+| `silent` | Daylight and quiet for `SILENT_UNAVAILABLE_SECONDS` (30 min), counted from the later of the last report and the start of daylight | Unavailable |
+| `offline` | No bytes from the converter for `LINK_DOWN_SECONDS` (5 min) | Unavailable |
+
+The daytime limit is deliberately long: optimizers can drop off the 2.4 GHz link to the TAP for minutes at a time and recover by themselves (upstream issue #17), so holding the last value through short gaps is better than zeroing a producing panel. A health check runs every `HEALTH_CHECK_INTERVAL_SECONDS` (60 s); it refreshes the sun position, logs state changes and pushes an update to the sensors when any state changes. String and total power skip silent optimizers and count asleep ones as 0; they are unavailable when the converter is offline or every constituent is silent.
 
 ### 6. `manifest.json` — Integration Metadata
 
