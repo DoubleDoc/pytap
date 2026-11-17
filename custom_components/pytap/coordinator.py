@@ -75,6 +75,7 @@ from .const import (
     VALIDITY_OFFLINE,
     VALIDITY_REPORTING,
     VALIDITY_SILENT,
+    VALIDITY_SILENT_ESTIMATED,
 )
 from .energy import (
     EnergyAccumulator,
@@ -386,6 +387,10 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if state == READING_OFFLINE:
             return VALIDITY_OFFLINE
         if self.estimated_power(barcode) is not None:
+            # After SILENT_UNAVAILABLE_SECONDS its own live sensors are
+            # unavailable even though the string still estimates it.
+            if state == READING_SILENT:
+                return VALIDITY_SILENT_ESTIMATED
             return VALIDITY_ESTIMATED
         if state == READING_ASLEEP:
             return VALIDITY_ASLEEP

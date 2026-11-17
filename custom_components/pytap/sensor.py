@@ -827,10 +827,12 @@ class PyTapDataValiditySensor(
     """How trustworthy an optimizer's current readings are.
 
     reporting: fresh readings. holding: quiet for a couple of minutes, last
-    values held. estimated: silent; the string and total sensors use an
-    estimate from the rest of its string. asleep: night, live readings 0.
-    silent: quiet for a long time by day with no estimate, live readings
-    unavailable. offline: no data from the converter.
+    values held. estimated: quiet; the string and total sensors use an
+    estimate from the rest of its string. silent_estimated: quiet for a
+    long time by day, own live readings unavailable, still estimated in
+    the string. asleep: night, live readings 0. silent: quiet for a long
+    time by day with no estimate, live readings unavailable. offline: no
+    data from the converter.
     """
 
     _attr_has_entity_name = True

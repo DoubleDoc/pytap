@@ -481,7 +481,7 @@ String and total sensors can estimate an optimizer that has gone quiet (option `
 
 Aggregate power per constituent: the estimate if there is one; otherwise 0 when asleep; when silent, left out (estimating on) or its last value (estimating off); nothing when offline. Power and performance are unavailable when the converter is offline or no constituent contributes.
 
-`PyTapDataValiditySensor` (enum, diagnostic, one per optimizer) shows `coordinator.data_validity()`: `reporting`, `holding`, `estimated`, `asleep`, `silent` or `offline`.
+`PyTapDataValiditySensor` (enum, diagnostic, one per optimizer) shows `coordinator.data_validity()`: `reporting`, `holding`, `estimated`, `silent_estimated` (silent for `SILENT_UNAVAILABLE_SECONDS`, own live readings unavailable, still estimated in aggregates), `asleep`, `silent` or `offline`.
 
 ### 6. `manifest.json` — Integration Metadata
 

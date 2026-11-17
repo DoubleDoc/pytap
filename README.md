@@ -148,12 +148,13 @@ Each optimizer has a diagnostic **Data validity** sensor that shows how much its
 | --- | --- |
 | Reporting | Readings received within the last 2 minutes. |
 | Holding last value | Quiet for more than 2 minutes; its sensors hold the last values, and no estimate is possible (or estimating is off). |
-| Estimated from string | Quiet; string and total sensors are using an estimate from the rest of its string. Its own sensors still hold the last values, and become unavailable after 30 minutes. |
+| Estimated from string | Quiet for less than 30 minutes; string and total sensors are using an estimate from the rest of its string. Its own sensors hold the last values. |
+| Silent, estimated in string | Quiet for 30 minutes or more in daylight. Its own live readings are unavailable, but the rest of its string is producing, so string and total sensors still use an estimate. A long dropout like this usually means a weak radio link to the TAP. |
 | Asleep | Night: live readings read 0. |
 | Silent | Quiet for 30 minutes in daylight with no estimate; live readings are unavailable. |
 | Converter offline | No data from the RS-485 converter. |
 
-Its attributes show the last report time, the learned share of the string average, and the energy estimated for it today. A panel that often shows *Estimated* or *Silent* has a weak radio link to the TAP.
+Its attributes show the last report time, the learned share of the string average, and the energy estimated for it today. A panel that often shows *Estimated*, *Silent, estimated in string* or *Silent* has a weak radio link to the TAP.
 
 ### Device naming
 

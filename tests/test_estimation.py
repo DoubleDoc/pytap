@@ -27,6 +27,7 @@ from custom_components.pytap.const import (
     VALIDITY_HOLDING,
     VALIDITY_REPORTING,
     VALIDITY_SILENT,
+    VALIDITY_SILENT_ESTIMATED,
 )
 from custom_components.pytap.coordinator import PyTapDataUpdateCoordinator
 from custom_components.pytap.energy import (
@@ -225,6 +226,15 @@ def test_estimating_on_silent_without_estimate_is_left_out(hass: HomeAssistant) 
     coordinator._update_estimates(time.monotonic())
     assert coordinator.estimated_power(A) is None
     assert not _aggregate(hass, coordinator, "power").available
+
+
+def test_long_dropout_is_silent_but_still_estimated(hass: HomeAssistant) -> None:
+    coordinator = _coordinator(hass)
+    _learn_shares(coordinator)
+    _quiet(coordinator, A, SILENT_UNAVAILABLE_SECONDS + 1)
+    coordinator._update_estimates(time.monotonic())
+    assert coordinator.estimated_power(A) is not None
+    assert coordinator.data_validity(A) == VALIDITY_SILENT_ESTIMATED
 
 
 def test_data_validity_sensor(hass: HomeAssistant) -> None:
