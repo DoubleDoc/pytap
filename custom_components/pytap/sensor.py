@@ -345,6 +345,9 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
     """
 
     _attr_has_entity_name = True
+    # last_update changes on every reading; recording it creates a new
+    # attributes row per state write.
+    _unrecorded_attributes = frozenset({"last_update"})
     entity_description: PyTapSensorEntityDescription
 
     def __init__(
