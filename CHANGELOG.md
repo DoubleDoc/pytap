@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.1] - 2026-11-17
+
+### Changed
+
+- Setup and connection screens now ask for the RS-485 to TCP converter's address (they said "Tigo gateway", which isn't what PyTap connects to).
+- Minimum Home Assistant version is 2024.4 (`hacs.json` said 2023.9; the integration uses `ConfigFlowResult`, added in 2024.4).
+- README: hardware setup (RS-485 wiring, Waveshare converter example), installation from the Home Assistant 2026.11 Marketplace or HACS, upgrade notes, energy dashboard, debug logging, removal and known limitations.
+
+### Fixed
+
+- Example dashboards: `Tigo Max Daily Energy` and the Grafana daily-energy panels showed Wh values labelled as kWh. The max sensors in `dashboards/tigo.yaml` now find the panels themselves instead of listing one installation's entity IDs.
+
 ## [1.4.0] - 2026-11-17
 
 ### Added
