@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.3] - 2026-11-17
+
+### Fixed
+
+- Home Assistant 2026.10 warned at startup that `get_astral_location` (used for the sun position) is deprecated and will be removed in 2027.7. PyTap now computes the sun elevation with astral directly, which works on all supported versions.
+
 ## [1.4.2] - 2026-11-17
 
 ### Added

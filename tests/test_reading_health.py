@@ -181,7 +181,7 @@ def test_no_bytes_is_offline(hass: HomeAssistant) -> None:
 
 def test_unknown_location_never_counts_as_night(hass: HomeAssistant) -> None:
     coordinator = _coordinator(hass)
-    with patch.object(coord_mod, "get_astral_location", side_effect=RuntimeError):
+    with patch.object(coord_mod, "solar_elevation", side_effect=ValueError):
         coordinator._update_sun()
     assert coordinator._sun_low is False
     assert coordinator._day_since is not None
@@ -503,3 +503,22 @@ def test_bus_status_sensor(hass: HomeAssistant) -> None:
     assert sensor.native_value == BUS_CONVERTER_UNREACHABLE
     assert sensor.extra_state_attributes["last_data"] is not None
     assert "last_data" in sensor._unrecorded_attributes
+
+
+def test_sun_elevation_from_home_location(hass: HomeAssistant) -> None:
+    """Noon and midnight at the configured location give day and night."""
+    from datetime import UTC
+    from datetime import datetime as dt
+
+    coordinator = _coordinator(hass)
+    hass.config.latitude, hass.config.longitude = 40.0, -75.0
+    with patch.object(
+        coord_mod.dt_util, "utcnow", return_value=dt(2026, 6, 21, 17, 0, tzinfo=UTC)
+    ):
+        coordinator._update_sun()
+    assert coordinator._sun_low is False
+    with patch.object(
+        coord_mod.dt_util, "utcnow", return_value=dt(2026, 6, 21, 5, 0, tzinfo=UTC)
+    ):
+        coordinator._update_sun()
+    assert coordinator._sun_low is True

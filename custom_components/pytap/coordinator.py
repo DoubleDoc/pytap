@@ -16,12 +16,13 @@ import threading
 import time
 from typing import Any
 
+from astral import Observer
+from astral.sun import elevation as solar_elevation
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
-from homeassistant.helpers.sun import get_astral_location
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -535,8 +536,11 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _update_sun(self) -> None:
         """Refresh the cached low-sun flag and when daylight began."""
         try:
-            location, elevation = get_astral_location(self.hass)
-            sun = location.solar_elevation(dt_util.utcnow(), elevation)
+            # astral directly: HA's get_astral_location is deprecated and
+            # its replacement doesn't exist in older HA versions.
+            config = self.hass.config
+            observer = Observer(config.latitude, config.longitude, config.elevation)
+            sun = solar_elevation(observer, dt_util.utcnow())
         except Exception:  # noqa: BLE001 - no location: never treat as night
             self._log.debug("Could not compute sun elevation", exc_info=True)
             sun = None
