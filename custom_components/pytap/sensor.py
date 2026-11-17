@@ -38,6 +38,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BUS_STATES,
     CONF_INVERTER,
     CONF_MODULE_BARCODE,
     CONF_MODULE_NAME,
@@ -391,6 +392,13 @@ async def async_setup_entry(
                 coordinator=coordinator,
                 device_info=total_device_info,
                 unique_id=f"{DOMAIN}_{entry.entry_id}_node_mapping",
+            )
+        )
+        entities.append(
+            PyTapBusStatusSensor(
+                coordinator=coordinator,
+                device_info=total_device_info,
+                unique_id=f"{DOMAIN}_{entry.entry_id}_bus_status",
             )
         )
 
@@ -831,8 +839,8 @@ class PyTapDataValiditySensor(
     estimate from the rest of its string. silent_estimated: quiet for a
     long time by day, own live readings unavailable, still estimated in
     the string. asleep: night, live readings 0. silent: quiet for a long
-    time by day with no estimate, live readings unavailable. offline: no
-    data from the converter.
+    time by day with no estimate, live readings unavailable. Unavailable
+    while the gateway's bus status isn't normal.
     """
 
     _attr_has_entity_name = True
@@ -866,7 +874,12 @@ class PyTapDataValiditySensor(
         )
 
     @property
-    def native_value(self) -> str:
+    def available(self) -> bool:
+        """Unavailable while the gateway's bus status isn't normal."""
+        return self.coordinator.link_up
+
+    @property
+    def native_value(self) -> str | None:
         """Return the validity state."""
         return self.coordinator.data_validity(self._barcode)
 
@@ -882,3 +895,45 @@ class PyTapDataValiditySensor(
                 self.coordinator.estimated_energy(self._barcode)[0], 1
             ),
         }
+
+
+class PyTapBusStatusSensor(
+    CoordinatorEntity[PyTapDataUpdateCoordinator], SensorEntity
+):
+    """Whether data is arriving from this gateway's CCA bus.
+
+    normal: bytes are arriving. converter_unreachable: the TCP connection to
+    the RS-485 converter fails or drops (converter power or network).
+    bus_quiet: connected, but nothing on the bus (CCA off, or the
+    converter's wiring to the bus). Not normal after LINK_DOWN_SECONDS
+    without data; every optimizer's live readings are then unavailable.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "bus_status"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = BUS_STATES
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _unrecorded_attributes = frozenset({"last_data"})
+
+    def __init__(
+        self,
+        coordinator: PyTapDataUpdateCoordinator,
+        device_info: DeviceInfo,
+        unique_id: str,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_device_info = device_info
+        self._attr_unique_id = unique_id
+
+    @property
+    def native_value(self) -> str:
+        """Return normal, converter_unreachable or bus_quiet."""
+        return self.coordinator.bus_status
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return when data last arrived."""
+        last = self.coordinator.last_data
+        return {"last_data": last.isoformat() if last else None}

@@ -71,7 +71,8 @@ When you add PyTap, enter the converter's IP address as the **host** and its Dev
     even before the first live frame arrives (for example after a night restart).
 - **Night and dropout handling** — Live readings go to 0 when the optimizers fall asleep at night, and become unavailable only after a long daytime silence or when the converter stops sending data (see [When readings go to 0 or unavailable](#when-readings-go-to-0-or-unavailable)).
 - **Estimating silent optimizers** — While an optimizer is silent but the rest of its string is producing normally, string and total sensors use an estimate based on its usual share of the string, including the energy it produced while silent. Its own sensors only ever show what it reported (see [Estimating silent optimizers](#estimating-silent-optimizers)).
-- **Data validity sensor** — Per optimizer: reporting, holding last value, estimated, asleep, silent or converter offline.
+- **Data validity sensor** — Per optimizer: reporting, holding last value, estimated, asleep or silent.
+- **Bus status sensor** — Per gateway: normal, RS-485 converter unreachable, or bus quiet (CCA off or wiring), so an outage points at the right box.
 - **Energy accumulation** — Trapezoidal Wh integration with proactive midnight reset and monotonic lifetime totals. Daily sensors zero at exactly midnight local time.
 - **No external dependencies** — The protocol parser library is fully embedded; nothing to install from PyPI.
 - **Options flow** — Add, edit or remove optimizer modules and rename strings at any time without reconfiguring.
@@ -101,7 +102,19 @@ Each configured Tigo TS4 optimizer exposes the following sensors:
 PyTap also creates aggregate virtual devices:
 
 - **Tigo [inverter] String <name>** — `performance`, `power`, `daily_energy`, `total_energy`. Created for every string, even when there is only one, so a string keeps its history when more strings are added later.
-- **Tigo [inverter] Total** — `performance`, `power`, `daily_energy`, `total_energy`, plus the diagnostic **Node mapping** sensor. Its attributes also show whether the converter connection is `up` or `down`, and which modules are silent (`silent_modules`).
+- **Tigo [inverter] Total** — `performance`, `power`, `daily_energy`, `total_energy`, plus two diagnostic sensors: **Node mapping** (whose `silent_modules` attribute lists silent modules) and **Bus status** (see below).
+
+### Bus status
+
+Each gateway (each PyTap entry, i.e. each CCA) has a **Bus status** sensor on its Total device. The Tigo CCA polls its optimizers around the clock, so the bus is never quiet in normal operation, even at night. If no data arrives for 5 minutes, PyTap can't tell anything about any optimizer on that gateway, so **every optimizer's live readings and Data validity become unavailable** until data returns. Energy totals are kept.
+
+| State | Meaning | Check |
+| --- | --- | --- |
+| Normal | Data is arriving from the bus. | — |
+| RS-485 converter unreachable | The TCP connection to the converter fails or keeps dropping. | The converter's power, network cable or Wi-Fi, IP address and port. |
+| Bus quiet | The converter accepts the connection but has nothing to forward. | That the Tigo CCA is powered and running, and the converter's A/B wiring to the CCA's gateway bus. |
+
+The `last_data` attribute shows when data last arrived.
 
 ### When readings go to 0 or unavailable
 
@@ -113,7 +126,7 @@ Optimizers stop reporting when it gets dark, and by day one can drop off the rad
 | Sun below 10° and no report for 10 minutes (asleep) | Power, voltage, current, performance and duty cycle read **0**; temperature and RSSI keep their last value | Kept |
 | Daylight, no report yet since the optimizers went to sleep | Stay at 0 | Kept |
 | Daylight, no report for **30 minutes** (silent) | **Unavailable**, and a warning is logged | Kept |
-| No data at all from the converter for 5 minutes (offline) | **Unavailable**, and a warning is logged | Kept |
+| Bus status not normal: no data from the bus for 5 minutes | **Unavailable** for every optimizer on that gateway, and a warning is logged | Kept |
 
 Short daytime gaps keep the last value, so a brief radio dropout doesn't zero a panel or break its history. If Home Assistant has no location set, PyTap never assumes it is night.
 
@@ -152,7 +165,8 @@ Each optimizer has a diagnostic **Data validity** sensor that shows how much its
 | Silent, estimated in string | Quiet for 30 minutes or more in daylight. Its own live readings are unavailable, but the rest of its string is producing, so string and total sensors still use an estimate. A long dropout like this usually means a weak radio link to the TAP. |
 | Asleep | Night: live readings read 0. |
 | Silent | Quiet for 30 minutes in daylight with no estimate; live readings are unavailable. |
-| Converter offline | No data from the RS-485 converter. |
+
+While the gateway's [Bus status](#bus-status) isn't normal, Data validity is unavailable too: the problem is the whole gateway, not the optimizer.
 
 Its attributes show the last report time, the learned share of the string average, and the energy estimated for it today. A panel that often shows *Estimated*, *Silent, estimated in string* or *Silent* has a weak radio link to the TAP.
 
@@ -330,7 +344,7 @@ Each optimizer, string and gateway total has a **Total energy** sensor (Wh, `tot
 Every PyTap line starts with the inverter name (or the converter's address when no inverter name is set), e.g. `[Master]`, so installations with more than one gateway can tell them apart. At the default log level you only see problems:
 
 - **Connection to the RS-485 converter failed** or **No data from the RS-485 converter**: logged once per outage; retries back off from 5 to 60 seconds and are logged at debug level. An info line follows when data has flowed again for a minute.
-- **No data from the RS-485 converter for 5 min; live readings are unavailable**: the outage has lasted long enough that the sensors are marked unavailable.
+- **Converter unreachable: no connection to the RS-485 converter … for 5 min** or **Bus quiet: the RS-485 converter is connected but has received nothing for 5 min**: the outage has lasted long enough that live readings are unavailable; the message says what to check (see [Bus status](#bus-status)).
 - **Optimizer P03 (…) has not reported for 30 min while others have**: one optimizer is silent by day. If it persists, check that optimizer and its distance from the TAP. If every optimizer is silent while the converter is still sending data, a single warning points at the CCA instead.
 - **N of M RS-485 frames failed their checks**: more than 2% of frames are corrupted, so readings are being lost; check the wiring, termination and the converter's serial settings. Repeated at most hourly.
 - **Configured barcodes NOT found in node table**: a configured barcode doesn't exist on the bus; check it for typos.

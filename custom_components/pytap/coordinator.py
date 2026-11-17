@@ -26,10 +26,13 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BUS_CONVERTER_UNREACHABLE,
     BUS_ERROR_LOG_INTERVAL_SECONDS,
     BUS_ERROR_MIN_FRAMES,
     BUS_ERROR_RATE_WARN,
     BUS_ERROR_WINDOW_SECONDS,
+    BUS_NORMAL,
+    BUS_QUIET,
     CONF_ESTIMATE_SILENT,
     CONF_INVERTER,
     CONF_LIVE_REPORTING,
@@ -72,7 +75,6 @@ from .const import (
     VALIDITY_ASLEEP,
     VALIDITY_ESTIMATED,
     VALIDITY_HOLDING,
-    VALIDITY_OFFLINE,
     VALIDITY_REPORTING,
     VALIDITY_SILENT,
     VALIDITY_SILENT_ESTIMATED,
@@ -240,6 +242,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._health_states: dict[str, str] = {}
         self._validity_states: dict[str, str] = {}
         self._link_was_up: bool = True
+        # Why data stopped, as last seen by the listener thread: the TCP
+        # connection failed/dropped, or it was up but no bytes arrived.
+        self._outage_cause: str = BUS_CONVERTER_UNREACHABLE
         self._health_unsub: Any = None
         # Estimating silent optimizers from their string (see
         # _update_estimates). share: learned power relative to the string
@@ -309,6 +314,29 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def link_up(self) -> bool:
         """Return False once no bytes have arrived for LINK_DOWN_SECONDS."""
         return time.monotonic() - self._last_data_mono < LINK_DOWN_SECONDS
+
+    @property
+    def bus_status(self) -> str:
+        """Return the CCA bus status: normal, converter unreachable or quiet.
+
+        Not normal once no bytes have arrived for LINK_DOWN_SECONDS. The
+        listener tells the two apart: a failed or dropped TCP connection
+        means the converter (or the network to it) is down; a connection
+        that stays up with nothing on it means the bus is quiet, so the
+        CCA is off or the converter's wiring to the bus is broken.
+        """
+        if self.link_up:
+            return BUS_NORMAL
+        return self._outage_cause
+
+    @property
+    def last_data(self) -> datetime | None:
+        """Return the wall-clock time bytes last arrived, if any did."""
+        if self._last_data_mono == self._started_mono:
+            return None
+        return dt_util.utcnow() - timedelta(
+            seconds=time.monotonic() - self._last_data_mono
+        )
 
     def reading_state(self, barcode: str) -> str:
         """Return how far an optimizer's live readings can be trusted.
@@ -381,11 +409,15 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return the optimizer's learned share of its string's average power."""
         return self._share.get(barcode)
 
-    def data_validity(self, barcode: str) -> str:
-        """Return how trustworthy the optimizer's current readings are."""
+    def data_validity(self, barcode: str) -> str | None:
+        """Return how trustworthy the optimizer's current readings are.
+
+        None while the bus status isn't normal: the gateway-level bus
+        status sensor explains why, and every live reading is unavailable.
+        """
         state = self.reading_state(barcode)
         if state == READING_OFFLINE:
-            return VALIDITY_OFFLINE
+            return None
         if self.estimated_power(barcode) is not None:
             # After SILENT_UNAVAILABLE_SECONDS its own live sensors are
             # unavailable even though the string still estimates it.
@@ -523,13 +555,26 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         link_up = self.link_up
         changed = link_up != self._link_was_up
         if not link_up and self._link_was_up:
-            self._log.warning(
-                "No data from the RS-485 converter for %s; live readings "
-                "are unavailable until it returns. Energy totals are kept",
-                _format_duration(now - self._last_data_mono),
-            )
+            quiet_for = _format_duration(now - self._last_data_mono)
+            if self._outage_cause == BUS_QUIET:
+                self._log.warning(
+                    "Bus quiet: the RS-485 converter is connected but has "
+                    "received nothing for %s. Check that the Tigo CCA is "
+                    "powered and the converter's A/B wiring to the bus. Live "
+                    "readings are unavailable; energy totals are kept",
+                    quiet_for,
+                )
+            else:
+                self._log.warning(
+                    "Converter unreachable: no connection to the RS-485 "
+                    "converter at %s:%s for %s. Check its power and network. "
+                    "Live readings are unavailable; energy totals are kept",
+                    self._host,
+                    self._port,
+                    quiet_for,
+                )
         elif link_up and not self._link_was_up:
-            self._log.info("Data is arriving again; live readings restored")
+            self._log.info("Bus status normal again; live readings restored")
         self._link_was_up = link_up
 
         states = {b: self.reading_state(b) for b in self._configured_barcodes}
@@ -660,7 +705,6 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "last_node_table": (
                 self._last_node_table.isoformat() if self._last_node_table else None
             ),
-            "connection": "up" if self.link_up else "down",
             "silent_modules": self.silent_modules(),
         }
 
@@ -677,7 +721,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 },
             },
             "reading_health": {
-                "link_up": self.link_up,
+                "bus_status": self.bus_status,
                 "seconds_since_data": round(now - self._last_data_mono, 1),
                 "sun_low": self._sun_low,
                 "estimate_enabled": self._estimate_enabled,
@@ -918,6 +962,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             RECONNECT_TIMEOUT > 0
                             and (now - last_data_time) > RECONNECT_TIMEOUT
                         ):
+                            self._outage_cause = BUS_QUIET
                             if outage_since is None:
                                 outage_since = last_data_time
                                 self._log.warning(
@@ -936,6 +981,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # Socket errors, refused/timed-out connects, peer resets.
                 if self._stop_event.is_set():
                     return
+                self._outage_cause = BUS_CONVERTER_UNREACHABLE
                 if outage_since is None:
                     outage_since = time.monotonic()
                     self._log.warning(

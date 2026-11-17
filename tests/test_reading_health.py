@@ -12,7 +12,10 @@ import pytest
 
 from custom_components.pytap import coordinator as coord_mod
 from custom_components.pytap.const import (
+    BUS_CONVERTER_UNREACHABLE,
     BUS_ERROR_WINDOW_SECONDS,
+    BUS_NORMAL,
+    BUS_QUIET,
     CONF_INVERTER,
     CONF_MODULE_BARCODE,
     CONF_MODULE_NAME,
@@ -34,6 +37,8 @@ from custom_components.pytap.sensor import (
     INSTALLATION_SENSOR_DESCRIPTIONS,
     SENSOR_DESCRIPTIONS,
     PyTapAggregateSensor,
+    PyTapBusStatusSensor,
+    PyTapDataValiditySensor,
     PyTapSensor,
 )
 
@@ -163,7 +168,15 @@ def test_no_bytes_is_offline(hass: HomeAssistant) -> None:
     coordinator._last_data_mono = time.monotonic() - LINK_DOWN_SECONDS - 1
     assert not coordinator.link_up
     assert coordinator.reading_state(A) == READING_OFFLINE
-    assert coordinator.mapping_status()["connection"] == "down"
+    assert coordinator.bus_status == BUS_CONVERTER_UNREACHABLE
+    coordinator._outage_cause = BUS_QUIET
+    assert coordinator.bus_status == BUS_QUIET
+    assert coordinator.data_validity(A) is None
+    validity = PyTapDataValiditySensor(coordinator, MODULES[0], "Master")
+    assert not validity.available
+    coordinator._last_data_mono = time.monotonic()
+    assert coordinator.bus_status == BUS_NORMAL
+    assert validity.available
 
 
 def test_unknown_location_never_counts_as_night(hass: HomeAssistant) -> None:
@@ -303,7 +316,8 @@ def test_health_check_logs_link_down_and_back(
             coordinator._async_health_check()
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
-    assert "live readings are unavailable" in warnings[0].getMessage()
+    assert "Converter unreachable" in warnings[0].getMessage()
+    assert "Live readings are unavailable" in warnings[0].getMessage()
     assert "live readings restored" in caplog.text
 
 
@@ -449,3 +463,43 @@ def test_pending_reminder_is_rate_limited(
             coordinator._handle_power_report(report)
     infos = [r for r in caplog.records if r.levelno == logging.INFO]
     assert len(infos) == 1  # first report only; reminders every 10 min
+
+
+def test_connected_but_no_bytes_is_bus_quiet(
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The converter accepts the connection but forwards nothing."""
+    coordinator = _coordinator(hass)
+    monkeypatch.setattr(coord_mod, "RECONNECT_TIMEOUT", 0.001)
+
+    def quiet():
+        time_ns = time.monotonic() + 0.002
+        while time.monotonic() < time_ns:
+            pass
+        return b""
+
+    with caplog.at_level(logging.WARNING, logger=LOGGER):
+        _run_listener(coordinator, [_FakeSource([quiet, quiet, quiet])])
+    assert coordinator._outage_cause == BUS_QUIET
+    coordinator._last_data_mono = time.monotonic() - LINK_DOWN_SECONDS - 1
+    assert coordinator.bus_status == BUS_QUIET
+    with patch.object(coordinator, "_update_sun"), caplog.at_level(
+        logging.WARNING, logger=LOGGER
+    ):
+        coordinator.async_update_listeners = MagicMock()
+        coordinator._async_health_check()
+    assert "Bus quiet" in caplog.text
+    assert "Tigo CCA is powered" in caplog.text
+
+
+def test_bus_status_sensor(hass: HomeAssistant) -> None:
+    coordinator = _coordinator(hass)
+    sensor = PyTapBusStatusSensor(coordinator, MagicMock(), "u")
+    assert sensor.native_value == BUS_NORMAL
+    assert sensor.extra_state_attributes == {"last_data": None}
+    coordinator._last_data_mono = time.monotonic() - LINK_DOWN_SECONDS - 1
+    assert sensor.native_value == BUS_CONVERTER_UNREACHABLE
+    assert sensor.extra_state_attributes["last_data"] is not None
+    assert "last_data" in sensor._unrecorded_attributes

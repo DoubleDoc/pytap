@@ -84,7 +84,6 @@ VALIDITY_ESTIMATED = "estimated"
 VALIDITY_SILENT_ESTIMATED = "silent_estimated"
 VALIDITY_ASLEEP = "asleep"
 VALIDITY_SILENT = "silent"
-VALIDITY_OFFLINE = "offline"
 VALIDITY_STATES = [
     VALIDITY_REPORTING,
     VALIDITY_HOLDING,
@@ -92,8 +91,14 @@ VALIDITY_STATES = [
     VALIDITY_SILENT_ESTIMATED,
     VALIDITY_ASLEEP,
     VALIDITY_SILENT,
-    VALIDITY_OFFLINE,
 ]
+
+# CCA bus status (per gateway / config entry). When it isn't normal, every
+# optimizer's live readings are unavailable.
+BUS_NORMAL = "normal"
+BUS_CONVERTER_UNREACHABLE = "converter_unreachable"
+BUS_QUIET = "bus_quiet"
+BUS_STATES = [BUS_NORMAL, BUS_CONVERTER_UNREACHABLE, BUS_QUIET]
 
 # Per-optimizer reading states
 READING_OK = "ok"

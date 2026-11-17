@@ -153,8 +153,7 @@
           "estimated": "Estimated from string",
           "silent_estimated": "Silent, estimated in string",
           "asleep": "Asleep",
-          "silent": "Silent",
-          "offline": "Converter offline"
+          "silent": "Silent"
         },
         "state_attributes": {
           "last_report": {
@@ -165,6 +164,19 @@
           },
           "estimated_energy_today": {
             "name": "Estimated energy today"
+          }
+        }
+      },
+      "bus_status": {
+        "name": "Bus status",
+        "state": {
+          "normal": "Normal",
+          "converter_unreachable": "RS-485 converter unreachable",
+          "bus_quiet": "Bus quiet"
+        },
+        "state_attributes": {
+          "last_data": {
+            "name": "Last data received"
           }
         }
       }
