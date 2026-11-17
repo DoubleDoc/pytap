@@ -27,6 +27,8 @@ DEFAULT_SCAN_INTERVAL = 30
 DEFAULT_LIVE_REPORTING = True
 DEFAULT_WRITE_INTERVAL = 30
 DEFAULT_INVERTER = ""
+CONF_ESTIMATE_SILENT = "estimate_silent"
+DEFAULT_ESTIMATE_SILENT = True
 MIN_WRITE_INTERVAL = 5
 MAX_WRITE_INTERVAL = 300
 RECONNECT_TIMEOUT = 60
@@ -63,6 +65,33 @@ BUS_ERROR_WINDOW_SECONDS = 10 * 60
 BUS_ERROR_MIN_FRAMES = 500
 BUS_ERROR_RATE_WARN = 0.02
 BUS_ERROR_LOG_INTERVAL_SECONDS = 60 * 60
+
+# Estimating silent optimizers (string and total sensors only)
+# Optimizers in a string carry the same current, so while most of a
+# string's optimizers report normally a silent one is almost certainly
+# producing too. Its power is estimated as its learned share of the
+# string's average, and the estimate is added to string/total energy.
+ESTIMATE_AFTER_SECONDS = ENERGY_GAP_THRESHOLD_SECONDS
+ESTIMATE_MIN_PEER_FRACTION = 0.5
+SHARE_MIN_PEER_POWER_W = 10.0
+SHARE_SMOOTHING = 0.2
+SHARE_MAX = 2.0
+
+# Data validity sensor states (per optimizer)
+VALIDITY_REPORTING = "reporting"
+VALIDITY_HOLDING = "holding"
+VALIDITY_ESTIMATED = "estimated"
+VALIDITY_ASLEEP = "asleep"
+VALIDITY_SILENT = "silent"
+VALIDITY_OFFLINE = "offline"
+VALIDITY_STATES = [
+    VALIDITY_REPORTING,
+    VALIDITY_HOLDING,
+    VALIDITY_ESTIMATED,
+    VALIDITY_ASLEEP,
+    VALIDITY_SILENT,
+    VALIDITY_OFFLINE,
+]
 
 # Per-optimizer reading states
 READING_OK = "ok"

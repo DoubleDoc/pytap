@@ -22,6 +22,10 @@ class EnergyAccumulator:
     last_power_w: float = 0.0
     last_reading_ts: datetime | None = None
     readings_today: int = 0
+    # Energy estimated while the optimizer was silent (string/total only;
+    # never shown on the optimizer's own sensors).
+    estimated_daily_wh: float = 0.0
+    estimated_total_wh: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -48,9 +52,7 @@ def accumulate_energy(
     today = now.date().isoformat()
 
     if acc.daily_reset_date != today:
-        acc.daily_energy_wh = 0.0
-        acc.readings_today = 0
-        acc.daily_reset_date = today
+        reset_daily(acc, today)
 
     increment_wh = 0.0
     discarded_gap_during_production = False
@@ -78,3 +80,21 @@ def accumulate_energy(
         increment_wh=increment_wh,
         discarded_gap_during_production=discarded_gap_during_production,
     )
+
+
+def reset_daily(acc: EnergyAccumulator, today: str) -> None:
+    """Start a new day: zero the daily measured and estimated energy."""
+    acc.daily_energy_wh = 0.0
+    acc.estimated_daily_wh = 0.0
+    acc.readings_today = 0
+    acc.daily_reset_date = today
+
+
+def add_estimated_energy(acc: EnergyAccumulator, energy_wh: float, today: str) -> None:
+    """Add energy estimated for a silent optimizer."""
+    if energy_wh <= 0:
+        return
+    if acc.daily_reset_date != today:
+        reset_daily(acc, today)
+    acc.estimated_daily_wh += energy_wh
+    acc.estimated_total_wh += energy_wh

@@ -6,6 +6,8 @@
 
 - **Night and dropout handling** — Live readings no longer freeze overnight at the last daytime value (upstream issue #17). Using the sun's position from the Home Assistant location: an optimizer that is quiet for 10 minutes with the sun below 10° reads 0 for power, voltage, current, performance and duty cycle (temperature and RSSI keep their last value). By day a quiet optimizer keeps its last value for 30 minutes, since optimizers can drop off the radio link for a while, then its live readings become unavailable. Energy sensors are never affected.
 - **Converter offline** — Live readings become unavailable after 5 minutes without any data from the RS-485 converter.
+- **Estimating silent optimizers** — Optimizers in a string carry the same current, so while most of a string reports normally a silent optimizer is almost certainly producing too. String and total sensors now estimate its power from its learned share of the string's average, and add the energy it produced while silent (`estimated_count` and `estimated_energy` attributes). An optimizer's own sensors still show only what it reported. On by default; turn off under **Change reporting settings** to hold the last value instead.
+- **Data validity sensor** — Diagnostic enum sensor per optimizer: reporting, holding last value, estimated from string, asleep, silent or converter offline, with the learned share and today's estimated energy as attributes.
 - Node mapping sensor attributes `connection` (`up`/`down`) and `silent_modules`; diagnostics section `reading_health`.
 - Warnings when one optimizer (or all of them) stops reporting by day, and when more than 2% of RS-485 frames fail their checks (wiring or termination problem).
 
@@ -14,7 +16,7 @@
 - Log lines start with the inverter name (or the converter address), so two gateways can be told apart.
 - Connection failures are logged once per outage as a warning instead of an error every 5 seconds; retries back off from 5 to 60 seconds; recovery is logged once data has flowed for a minute.
 - The "waiting for the node table" reminder is logged every 10 minutes instead of every 50 reports.
-- String and total power skip silent optimizers and count sleeping ones as 0; `reporting_count` counts only optimizers that are reporting.
+- String and total power count sleeping optimizers as 0 and silent ones as their estimate (or leave them out when none is possible); `reporting_count` counts only optimizers that are reporting.
 
 ### Fixed
 

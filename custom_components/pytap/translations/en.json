@@ -144,6 +144,28 @@
             "name": "Last node table"
           }
         }
+      },
+      "data_validity": {
+        "name": "Data validity",
+        "state": {
+          "reporting": "Reporting",
+          "holding": "Holding last value",
+          "estimated": "Estimated from string",
+          "asleep": "Asleep",
+          "silent": "Silent",
+          "offline": "Converter offline"
+        },
+        "state_attributes": {
+          "last_report": {
+            "name": "Last report"
+          },
+          "share": {
+            "name": "Share of string average"
+          },
+          "estimated_energy_today": {
+            "name": "Estimated energy today"
+          }
+        }
       }
     }
   },
@@ -201,10 +223,12 @@
         "title": "Reporting Settings",
         "description": "Configure how this integration delivers data to Home Assistant.\n\nWhen **Live reporting** is enabled (default), readings are pushed as they arrive from the gateway with sub-second latency.\n\nTurn it off to cache readings and deliver a time-weighted average instead — you'll set the interval on the next screen. This reduces CPU and I/O load for installations with many panels.",
         "data": {
-          "live_reporting": "Live reporting"
+          "live_reporting": "Live reporting",
+          "estimate_silent": "Estimate silent optimizers"
         },
         "data_description": {
-          "live_reporting": "Deliver each reading as it arrives from the gateway (recommended for most setups). Turn this off to set an averaging interval."
+          "live_reporting": "Deliver each reading as it arrives from the gateway (recommended for most setups). Turn this off to set an averaging interval.",
+          "estimate_silent": "When an optimizer stops reporting but the rest of its string is producing normally, estimate its power from its usual share of the string, and add the estimated energy to the string and total sensors. Its own sensors always show only what it reported. Turn off to hold its last reported value in the string and total instead."
         }
       },
       "set_interval": {

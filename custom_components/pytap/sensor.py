@@ -52,6 +52,7 @@ from .const import (
     READING_ASLEEP,
     READING_OFFLINE,
     READING_SILENT,
+    VALIDITY_STATES,
 )
 from .coordinator import PyTapDataUpdateCoordinator
 from .naming import optimizer_device_name, string_device_name, total_device_name
@@ -306,7 +307,7 @@ async def async_setup_entry(
     """Set up PyTap sensors from a config entry.
 
     Creates sensor entities deterministically from the configured module list.
-    Each configured module gets the full set of 12 sensor entities.
+    Each configured module gets the 12 measurement sensors plus a Data validity sensor.
     """
     coordinator: PyTapDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
     modules: list[dict[str, str]] = entry.data.get(CONF_MODULES, [])
@@ -335,6 +336,13 @@ async def async_setup_entry(
                     inverter=inverter,
                 )
             )
+        entities.append(
+            PyTapDataValiditySensor(
+                coordinator=coordinator,
+                module_config=module_config,
+                inverter=inverter,
+            )
+        )
 
     for string_name, barcodes in string_to_barcodes.items():
         device_info = DeviceInfo(
@@ -619,25 +627,38 @@ class PyTapAggregateSensor(
         """
         if not self.coordinator.data:
             return False
+        nodes = self.coordinator.data.get("nodes", {})
         if self.entity_description.key in AGGREGATE_LIVE_KEYS:
             if not self.coordinator.link_up:
                 return False
             if all(
-                self.coordinator.reading_state(b) == READING_SILENT
+                (node := nodes.get(b)) is None or self._live_power(b, node) is None
                 for b in self._barcodes
-            ):
+            ) and not self._restored_native_value:
                 return False
-        nodes = self.coordinator.data.get("nodes", {})
         return (
             any(nodes.get(barcode) is not None for barcode in self._barcodes)
             or self._restored_native_value
         )
 
     def _live_power(self, barcode: str, node_data: dict[str, Any]) -> Any:
-        """Return a constituent's power: None if silent, 0 if asleep."""
+        """Return the power a constituent contributes to this aggregate.
+
+        An estimate from its string when it is silent and estimating is on;
+        0 when asleep; None (left out) when offline, or silent with no
+        estimate. With estimating turned off, a silent optimizer's last
+        reported value is held instead.
+        """
+        estimate = self.coordinator.estimated_power(barcode)
+        if estimate is not None:
+            return estimate
         state = self.coordinator.reading_state(barcode)
-        if state in (READING_SILENT, READING_OFFLINE):
+        if state == READING_OFFLINE:
             return None
+        if state == READING_SILENT:
+            if self.coordinator.estimate_enabled:
+                return None
+            return node_data.get("power")
         if state == READING_ASLEEP:
             return 0.0
         return node_data.get("power")
@@ -702,6 +723,13 @@ class PyTapAggregateSensor(
                 value = self._live_power(barcode, node_data)
             else:
                 value = node_data.get(self.entity_description.value_key)
+                # String and total energy include energy estimated while an
+                # optimizer was silent; its own sensors never do.
+                est_today, est_total = self.coordinator.estimated_energy(barcode)
+                if self.entity_description.key == "daily_energy":
+                    value = (value or 0.0) + est_today
+                elif self.entity_description.key == "total_energy":
+                    value = (value or 0.0) + est_total
             if value is not None:
                 total = (total or 0.0) + value
 
@@ -732,10 +760,24 @@ class PyTapAggregateSensor(
             and self.coordinator.reading_state(barcode)
             not in (READING_SILENT, READING_OFFLINE)
         ]
-        return {
+        attrs: dict[str, Any] = {
             "optimizer_count": len(self._barcodes),
             "reporting_count": len(reporting),
         }
+        key = self.entity_description.key
+        if key in AGGREGATE_LIVE_KEYS:
+            attrs["estimated_count"] = sum(
+                1
+                for b in self._barcodes
+                if self.coordinator.estimated_power(b) is not None
+            )
+        elif key in ("daily_energy", "total_energy"):
+            index = 0 if key == "daily_energy" else 1
+            attrs["estimated_energy"] = round(
+                sum(self.coordinator.estimated_energy(b)[index] for b in self._barcodes),
+                1,
+            )
+        return attrs
 
 
 class PyTapNodeMappingSensor(
@@ -777,3 +819,64 @@ class PyTapNodeMappingSensor(
         status = self.coordinator.mapping_status()
         status.pop("state")
         return status
+
+
+class PyTapDataValiditySensor(
+    CoordinatorEntity[PyTapDataUpdateCoordinator], SensorEntity
+):
+    """How trustworthy an optimizer's current readings are.
+
+    reporting: fresh readings. holding: quiet for a couple of minutes, last
+    values held. estimated: silent; the string and total sensors use an
+    estimate from the rest of its string. asleep: night, live readings 0.
+    silent: quiet for a long time by day with no estimate, live readings
+    unavailable. offline: no data from the converter.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "data_validity"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = VALIDITY_STATES
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    # Both change with every reading or every minute.
+    _unrecorded_attributes = frozenset({"last_report", "share"})
+
+    def __init__(
+        self,
+        coordinator: PyTapDataUpdateCoordinator,
+        module_config: dict[str, str],
+        inverter: str = "",
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._barcode = module_config[CONF_MODULE_BARCODE]
+        self._attr_unique_id = f"{DOMAIN}_{self._barcode}_data_validity"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, self._barcode)},
+            name=optimizer_device_name(
+                inverter,
+                module_config.get(CONF_MODULE_STRING, ""),
+                module_config[CONF_MODULE_NAME],
+            ),
+            manufacturer="Tigo Energy",
+            model="TS4",
+            serial_number=self._barcode,
+        )
+
+    @property
+    def native_value(self) -> str:
+        """Return the validity state."""
+        return self.coordinator.data_validity(self._barcode)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the last report time, learned share and estimated energy."""
+        node = self.coordinator.data.get("nodes", {}).get(self._barcode) or {}
+        share = self.coordinator.share(self._barcode)
+        return {
+            "last_report": node.get("last_update"),
+            "share": round(share, 2) if share is not None else None,
+            "estimated_energy_today": round(
+                self.coordinator.estimated_energy(self._barcode)[0], 1
+            ),
+        }

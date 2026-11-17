@@ -30,6 +30,7 @@ from homeassistant.helpers import entity_registry as er
 import voluptuous as vol
 
 from .const import (
+    CONF_ESTIMATE_SILENT,
     CONF_INVERTER,
     CONF_LIVE_REPORTING,
     CONF_MODULE_BARCODE,
@@ -38,6 +39,7 @@ from .const import (
     CONF_MODULE_STRING,
     CONF_MODULES,
     CONF_WRITE_INTERVAL,
+    DEFAULT_ESTIMATE_SILENT,
     DEFAULT_INVERTER,
     DEFAULT_LIVE_REPORTING,
     DEFAULT_PEAK_POWER,
@@ -259,6 +261,7 @@ class PyTapOptionsFlow(OptionsFlow):
         # Original string name -> new name, applied to the registries on save.
         self._string_renames: dict[str, str] = {}
         self._edit_barcode: str | None = None
+        self._estimate_choice: bool | None = None
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -520,10 +523,14 @@ class PyTapOptionsFlow(OptionsFlow):
         """
         if user_input is not None:
             live = user_input.get(CONF_LIVE_REPORTING, DEFAULT_LIVE_REPORTING)
+            self._estimate_choice = user_input.get(
+                CONF_ESTIMATE_SILENT, DEFAULT_ESTIMATE_SILENT
+            )
             if live:
                 # Live mode — clear any stored interval and finish.
                 new_data = {**self._config_entry.data}
                 new_data[CONF_LIVE_REPORTING] = True
+                new_data[CONF_ESTIMATE_SILENT] = self._estimate_choice
                 new_data.pop(CONF_WRITE_INTERVAL, None)
                 self.hass.config_entries.async_update_entry(
                     self._config_entry, data=new_data
@@ -535,9 +542,13 @@ class PyTapOptionsFlow(OptionsFlow):
         current_live = self._config_entry.data.get(
             CONF_LIVE_REPORTING, DEFAULT_LIVE_REPORTING
         )
+        current_estimate = self._config_entry.data.get(
+            CONF_ESTIMATE_SILENT, DEFAULT_ESTIMATE_SILENT
+        )
         schema = vol.Schema(
             {
                 vol.Optional(CONF_LIVE_REPORTING, default=current_live): bool,
+                vol.Optional(CONF_ESTIMATE_SILENT, default=current_estimate): bool,
             }
         )
 
@@ -553,6 +564,8 @@ class PyTapOptionsFlow(OptionsFlow):
         if user_input is not None:
             new_data = {**self._config_entry.data}
             new_data[CONF_LIVE_REPORTING] = False
+            if self._estimate_choice is not None:
+                new_data[CONF_ESTIMATE_SILENT] = self._estimate_choice
             new_data[CONF_WRITE_INTERVAL] = user_input.get(
                 CONF_WRITE_INTERVAL, DEFAULT_WRITE_INTERVAL
             )

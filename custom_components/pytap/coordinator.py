@@ -11,6 +11,7 @@ import asyncio
 from datetime import datetime, timedelta
 from datetime import time as dt_time
 import logging
+import math
 import threading
 import time
 from typing import Any
@@ -29,6 +30,7 @@ from .const import (
     BUS_ERROR_MIN_FRAMES,
     BUS_ERROR_RATE_WARN,
     BUS_ERROR_WINDOW_SECONDS,
+    CONF_ESTIMATE_SILENT,
     CONF_INVERTER,
     CONF_LIVE_REPORTING,
     CONF_MODULE_BARCODE,
@@ -37,6 +39,7 @@ from .const import (
     CONF_MODULE_STRING,
     CONF_MODULES,
     CONF_WRITE_INTERVAL,
+    DEFAULT_ESTIMATE_SILENT,
     DEFAULT_LIVE_REPORTING,
     DEFAULT_PEAK_POWER,
     DEFAULT_PORT,
@@ -44,6 +47,8 @@ from .const import (
     DOMAIN,
     ENERGY_GAP_THRESHOLD_SECONDS,
     ENERGY_LOW_POWER_THRESHOLD_W,
+    ESTIMATE_AFTER_SECONDS,
+    ESTIMATE_MIN_PEER_FRACTION,
     HEALTH_CHECK_INTERVAL_SECONDS,
     LINK_DOWN_SECONDS,
     LOW_SUN_ELEVATION,
@@ -60,9 +65,23 @@ from .const import (
     RECONNECT_MAX_DELAY,
     RECONNECT_RETRIES,
     RECONNECT_TIMEOUT,
+    SHARE_MAX,
+    SHARE_MIN_PEER_POWER_W,
+    SHARE_SMOOTHING,
     SILENT_UNAVAILABLE_SECONDS,
+    VALIDITY_ASLEEP,
+    VALIDITY_ESTIMATED,
+    VALIDITY_HOLDING,
+    VALIDITY_OFFLINE,
+    VALIDITY_REPORTING,
+    VALIDITY_SILENT,
 )
-from .energy import EnergyAccumulator, accumulate_energy
+from .energy import (
+    EnergyAccumulator,
+    accumulate_energy,
+    add_estimated_energy,
+    reset_daily,
+)
 from .pytap.core.events import (
     Event,
     InfrastructureEvent,
@@ -166,6 +185,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (TypeError, ValueError):
             self._write_interval = float(DEFAULT_WRITE_INTERVAL)
         self._write_interval = max(0.0, self._write_interval)
+        self._estimate_enabled: bool = bool(
+            entry.data.get(CONF_ESTIMATE_SILENT, DEFAULT_ESTIMATE_SILENT)
+        )
 
         # Build barcode allowlist from configured modules
         self._configured_barcodes: set[str] = {
@@ -215,8 +237,18 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._sun_low: bool = False
         self._day_since: float | None = None
         self._health_states: dict[str, str] = {}
+        self._validity_states: dict[str, str] = {}
         self._link_was_up: bool = True
         self._health_unsub: Any = None
+        # Estimating silent optimizers from their string (see
+        # _update_estimates). share: learned power relative to the string
+        # average; est_power: current estimates; est_cursor: monotonic time
+        # estimated energy has been added up to; est_close: when a silent
+        # optimizer reported again (set by the listener thread).
+        self._share: dict[str, float] = {}
+        self._est_power: dict[str, float] = {}
+        self._est_cursor: dict[str, float] = {}
+        self._est_close: dict[str, float] = {}
         # RS-485 frame error tracking
         self._parser: Any = None
         self._bus_window: tuple[float, int, int] | None = None
@@ -304,6 +336,152 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return READING_ASLEEP
         return READING_OK
 
+    @property
+    def estimate_enabled(self) -> bool:
+        """Return True when silent optimizers are estimated from their string."""
+        return self._estimate_enabled
+
+    def _strings(self) -> dict[str, list[str]]:
+        """Return configured barcodes grouped by string label."""
+        groups: dict[str, list[str]] = {}
+        for module in self._modules:
+            barcode = module.get(CONF_MODULE_BARCODE)
+            string = (module.get(CONF_MODULE_STRING) or "").strip()
+            if barcode and string:
+                groups.setdefault(string, []).append(barcode)
+        return groups
+
+    def _is_fresh(self, barcode: str, now: float) -> bool:
+        last = self._last_report.get(barcode)
+        return last is not None and now - last < ESTIMATE_AFTER_SECONDS
+
+    def estimated_power(self, barcode: str) -> float | None:
+        """Return the estimated power of a silent optimizer, or None.
+
+        Only string and total sensors use this; the optimizer's own sensors
+        always show what it reported.
+        """
+        if barcode not in self._est_power or self._is_fresh(
+            barcode, time.monotonic()
+        ):
+            return None
+        return self._est_power[barcode]
+
+    def estimated_energy(self, barcode: str) -> tuple[float, float]:
+        """Return (today, lifetime) energy estimated for a silent optimizer."""
+        acc = self._energy_state.get(barcode)
+        if acc is None:
+            return 0.0, 0.0
+        if acc.daily_reset_date != dt_util.now().date().isoformat():
+            return 0.0, acc.estimated_total_wh
+        return acc.estimated_daily_wh, acc.estimated_total_wh
+
+    def share(self, barcode: str) -> float | None:
+        """Return the optimizer's learned share of its string's average power."""
+        return self._share.get(barcode)
+
+    def data_validity(self, barcode: str) -> str:
+        """Return how trustworthy the optimizer's current readings are."""
+        state = self.reading_state(barcode)
+        if state == READING_OFFLINE:
+            return VALIDITY_OFFLINE
+        if self.estimated_power(barcode) is not None:
+            return VALIDITY_ESTIMATED
+        if state == READING_ASLEEP:
+            return VALIDITY_ASLEEP
+        if state == READING_SILENT:
+            return VALIDITY_SILENT
+        if not self._is_fresh(barcode, time.monotonic()):
+            return VALIDITY_HOLDING
+        return VALIDITY_REPORTING
+
+    def _update_estimates(self, now: float) -> bool:
+        """Learn shares, estimate silent optimizers and add estimated energy.
+
+        Optimizers in a string carry the same current. While an optimizer
+        and most of its string report, its power relative to the string
+        average (its share, which captures shading) is learned. Once it has
+        been quiet for ESTIMATE_AFTER_SECONDS and at least
+        ESTIMATE_MIN_PEER_FRACTION of the rest of its string is reporting,
+        its power is estimated as share × the reporting optimizers' average,
+        and that power is added up as estimated energy from its last report.
+        If the string's current collapses (e.g. a broken panel), the
+        estimate collapses with it.
+
+        Returns True if any estimate is active or just ended.
+        """
+        nodes = self.data.get("nodes", {})
+
+        def power(barcode: str) -> float | None:
+            node = nodes.get(barcode)
+            value = node.get("power") if node else None
+            return max(float(value), 0.0) if value is not None else None
+
+        new_est: dict[str, float] = {}
+        for members in self._strings().values():
+            for barcode in members:
+                peers = [b for b in members if b != barcode]
+                if not peers:
+                    continue
+                reporting = [
+                    pw
+                    for b in peers
+                    if self._is_fresh(b, now) and (pw := power(b)) is not None
+                ]
+                needed = max(1, math.ceil(len(peers) * ESTIMATE_MIN_PEER_FRACTION))
+                if len(reporting) < needed:
+                    continue
+                peer_avg = sum(reporting) / len(reporting)
+                if self._is_fresh(barcode, now):
+                    own = power(barcode)
+                    if own is not None and peer_avg >= SHARE_MIN_PEER_POWER_W:
+                        ratio = min(own / peer_avg, SHARE_MAX)
+                        old = self._share.get(barcode)
+                        self._share[barcode] = (
+                            ratio if old is None else old + SHARE_SMOOTHING * (ratio - old)
+                        )
+                    continue
+                if self._estimate_enabled and self.link_up:
+                    new_est[barcode] = self._share.get(barcode, 1.0) * peer_avg
+
+        today = dt_util.now().date().isoformat()
+        backfill_limit = ESTIMATE_AFTER_SECONDS + HEALTH_CHECK_INTERVAL_SECONDS
+        for barcode in set(self._est_cursor) | set(new_est):
+            cursor = self._est_cursor.pop(barcode, None)
+            close = self._est_close.pop(barcode, None)
+            previous = self._est_power.get(barcode)
+            energy_wh = 0.0
+            if cursor is not None and close is not None and previous is not None:
+                # Reported again: estimate up to the first new report.
+                energy_wh += previous * max(0.0, close - cursor) / 3600
+                cursor = None
+            if barcode in new_est:
+                if cursor is None:
+                    # Start from the last report (its measured energy stops
+                    # there), but never further back than the gap that
+                    # triggered estimating.
+                    last = self._last_report.get(barcode, now)
+                    cursor = max(last, now - backfill_limit)
+                energy_wh += new_est[barcode] * max(0.0, now - cursor) / 3600
+                self._est_cursor[barcode] = now
+            if energy_wh > 0:
+                acc = self._energy_state.setdefault(
+                    barcode, EnergyAccumulator(daily_reset_date=today)
+                )
+                add_estimated_energy(acc, energy_wh, today)
+                self._schedule_save()
+
+        active = bool(new_est) or bool(self._est_power)
+        for barcode in set(new_est) - set(self._est_power):
+            self._log.debug(
+                "Estimating %s from its string: %.0f W (share %.2f)",
+                self._module_label(barcode),
+                new_est[barcode],
+                self._share.get(barcode, 1.0),
+            )
+        self._est_power = new_est
+        return active
+
     def _module_label(self, barcode: str) -> str:
         """Return 'P03 (4-ABC123D)' style label for log lines."""
         name = self._module_lookup.get(barcode, {}).get(CONF_MODULE_NAME)
@@ -352,9 +530,13 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         states = {b: self.reading_state(b) for b in self._configured_barcodes}
         if link_up:
             self._log_state_changes(states, now)
-        if states != self._health_states:
+        if self._update_estimates(now):
+            changed = True
+        validity = {b: self.data_validity(b) for b in self._configured_barcodes}
+        if states != self._health_states or validity != self._validity_states:
             changed = True
         self._health_states = states
+        self._validity_states = validity
 
         self._check_bus_errors(now)
         if changed:
@@ -493,9 +675,17 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "link_up": self.link_up,
                 "seconds_since_data": round(now - self._last_data_mono, 1),
                 "sun_low": self._sun_low,
+                "estimate_enabled": self._estimate_enabled,
                 "modules": {
                     barcode: {
                         "state": self.reading_state(barcode),
+                        "validity": self.data_validity(barcode),
+                        "share": (
+                            round(self._share[barcode], 3)
+                            if barcode in self._share
+                            else None
+                        ),
+                        "estimated_power": self.estimated_power(barcode),
                         "seconds_since_report": (
                             round(now - self._last_report[barcode], 1)
                             if barcode in self._last_report
@@ -523,6 +713,8 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         else None
                     ),
                     "readings_today": acc.readings_today,
+                    "estimated_daily_wh": round(acc.estimated_daily_wh, 2),
+                    "estimated_total_wh": round(acc.estimated_total_wh, 2),
                 }
                 for barcode, acc in self._energy_state.items()
             },
@@ -608,9 +800,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for barcode, acc in self._energy_state.items():
             if acc.daily_reset_date == today:
                 continue
-            acc.daily_energy_wh = 0.0
-            acc.readings_today = 0
-            acc.daily_reset_date = today
+            reset_daily(acc, today)
 
             node_data = self.data.get("nodes", {}).get(barcode)
             if node_data is not None:
@@ -1011,7 +1201,10 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return True
             return False
 
-        self._last_report[barcode] = time.monotonic()
+        mono = time.monotonic()
+        if barcode in self._est_cursor and barcode not in self._est_close:
+            self._est_close[barcode] = mono
+        self._last_report[barcode] = mono
 
         # Get module metadata
         module_meta = self._module_lookup.get(barcode, {})
@@ -1433,6 +1626,12 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 last_power_w=float(energy_data.get("last_power_w", 0.0)),
                 last_reading_ts=last_reading_ts,
                 readings_today=readings_today,
+                estimated_daily_wh=(
+                    float(energy_data.get("estimated_daily_wh", 0.0))
+                    if energy_data.get("daily_reset_date") == today
+                    else 0.0
+                ),
+                estimated_total_wh=float(energy_data.get("estimated_total_wh", 0.0)),
             )
 
         # Restore last known node snapshots for configured barcodes, and
@@ -1487,6 +1686,8 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         if acc.last_reading_ts is not None
                         else None
                     ),
+                    "estimated_daily_wh": acc.estimated_daily_wh,
+                    "estimated_total_wh": acc.estimated_total_wh,
                 }
                 for barcode, acc in self._energy_state.items()
             },

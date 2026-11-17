@@ -511,7 +511,7 @@ DeviceInfo(
 )
 ```
 
-All 12 sensors for the same barcode are grouped under one device.
+All 12 measurement sensors and the Data validity sensor for the same barcode are grouped under one device.
 
 **Availability:**
 Returns `True` when `coordinator.data["nodes"][barcode]` exists (or a value was restored), except that live-reading sensors are unavailable while `coordinator.reading_state(barcode)` is `silent` or `offline`. While it is `asleep`, power, voltage, current, performance and duty cycle read 0. See *Entity Availability* in `architecture.md`.

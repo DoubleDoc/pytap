@@ -54,9 +54,9 @@ When you add PyTap, enter the converter's IP address as the **host** and its Dev
 
 - **Real-time streaming** — Push-based data delivery with sub-second latency (no polling).
 - **Configurable reporting** — Choose **live reporting** (default; every reading delivered as it arrives) or a **time-weighted averaged interval** that caches readings and pushes a single representative value every few seconds to reduce CPU and recorder load on large installations.
-- **Per-optimizer sensors** — 12 sensor entities per Tigo TS4 module: performance,
+- **Per-optimizer sensors** — 13 sensor entities per Tigo TS4 module: performance,
   power, voltage in/out, current in/out, temperature, DC-DC duty cycle, RSSI,
-  daily energy, total energy, and readings today.
+  daily energy, total energy, readings today and data validity.
 - **Aggregate sensors** — 4 sensors per string and 4 per gateway total: performance, power, daily energy, total energy.
 - **Performance tracking** — Per-optimizer, per-string and per-gateway performance percentage based on configurable peak panel power (Wp).
 - **Diagnostics download** — Integration diagnostics export includes parser counters, infrastructure/mapping state, and per-node summaries.
@@ -70,6 +70,8 @@ When you add PyTap, enter the converter's IP address as the **host** and its Dev
     restored on startup, so sensors stay available with the most recent value
     even before the first live frame arrives (for example after a night restart).
 - **Night and dropout handling** — Live readings go to 0 when the optimizers fall asleep at night, and become unavailable only after a long daytime silence or when the converter stops sending data (see [When readings go to 0 or unavailable](#when-readings-go-to-0-or-unavailable)).
+- **Estimating silent optimizers** — While an optimizer is silent but the rest of its string is producing normally, string and total sensors use an estimate based on its usual share of the string, including the energy it produced while silent. Its own sensors only ever show what it reported (see [Estimating silent optimizers](#estimating-silent-optimizers)).
+- **Data validity sensor** — Per optimizer: reporting, holding last value, estimated, asleep, silent or converter offline.
 - **Energy accumulation** — Trapezoidal Wh integration with proactive midnight reset and monotonic lifetime totals. Daily sensors zero at exactly midnight local time.
 - **No external dependencies** — The protocol parser library is fully embedded; nothing to install from PyPI.
 - **Options flow** — Add, edit or remove optimizer modules and rename strings at any time without reconfiguring.
@@ -94,6 +96,7 @@ Each configured Tigo TS4 optimizer exposes the following sensors:
 | Daily Energy | Wh | `energy` |
 | Total Energy | Wh | `energy` |
 | Readings Today | — | — (diagnostic) |
+| Data validity | — | `enum` (diagnostic): see below |
 
 PyTap also creates aggregate virtual devices:
 
@@ -112,7 +115,45 @@ Optimizers stop reporting when it gets dark, and by day one can drop off the rad
 | Daylight, no report for **30 minutes** (silent) | **Unavailable**, and a warning is logged | Kept |
 | No data at all from the converter for 5 minutes (offline) | **Unavailable**, and a warning is logged | Kept |
 
-Short daytime gaps keep the last value, so a brief radio dropout doesn't zero a panel or break its history. The string and total power sensors skip silent optimizers and count sleeping ones as 0, so a single silent panel lowers the total rather than making it unavailable; their `reporting_count` attribute shows how many are reporting. If Home Assistant has no location set, PyTap never assumes it is night.
+Short daytime gaps keep the last value, so a brief radio dropout doesn't zero a panel or break its history. If Home Assistant has no location set, PyTap never assumes it is night.
+
+These rules apply to each optimizer's own sensors. For string and total sensors, see the next section.
+
+### Estimating silent optimizers
+
+An optimizer that stops reporting hasn't necessarily stopped producing. The optimizers in a string are wired in series and carry the same current, so if the rest of the string is producing normally, the silent one almost certainly is too; it just isn't being heard. If it really had failed in a way that broke the string, the others would show it, because the string's current would drop.
+
+PyTap uses this for string and total sensors:
+
+1. **Learning each optimizer's share.** While an optimizer and the rest of its string are reporting, PyTap keeps a rolling average (over roughly the last 10 minutes) of its power divided by the average power of the others in its string. This captures shading: a panel that is shaded in the afternoon has a share below 1 at that time.
+2. **Estimating.** Once an optimizer has been quiet for 2 minutes, and at least half of the other optimizers in its string are reporting, its estimated power is its share × their current average. If no share has been learned yet, it is assumed to produce the average.
+3. **Estimated energy.** The estimated power is added up as *estimated energy* from its last report until it reports again, and checked every minute.
+
+| | Optimizer's own sensors | String and total sensors |
+| --- | --- | --- |
+| Power | What it reported (held, then 0 or unavailable as above) | The estimate while one is available |
+| Daily and total energy | **Only what it reported** | What all optimizers reported **plus** estimated energy |
+
+So a string's energy can be slightly more than the sum of its optimizers' energy sensors, by exactly the string's `estimated_energy` attribute. The string and total power sensors have an `estimated_count` attribute showing how many optimizers are being estimated right now, and `reporting_count` showing how many are reporting.
+
+Estimating needs neighbours: an optimizer that is alone in its string, or without a string, is never estimated, and nothing is estimated when fewer than half of the others in its string are reporting (for example at night). A silent optimizer without an estimate is left out of the string and total power until it reports again.
+
+**Turning it off.** Untick **Estimate silent optimizers** under **Configure → Change reporting settings**. String and total sensors then hold a silent optimizer's last reported power instead, and no energy is added for the time it was silent. Energy already estimated stays in the lifetime totals, since those can't go down.
+
+#### Data validity sensor
+
+Each optimizer has a diagnostic **Data validity** sensor that shows how much its current readings can be trusted:
+
+| State | Meaning |
+| --- | --- |
+| Reporting | Readings received within the last 2 minutes. |
+| Holding last value | Quiet for more than 2 minutes; its sensors hold the last values, and no estimate is possible (or estimating is off). |
+| Estimated from string | Quiet; string and total sensors are using an estimate from the rest of its string. Its own sensors still hold the last values, and become unavailable after 30 minutes. |
+| Asleep | Night: live readings read 0. |
+| Silent | Quiet for 30 minutes in daylight with no estimate; live readings are unavailable. |
+| Converter offline | No data from the RS-485 converter. |
+
+Its attributes show the last report time, the learned share of the string average, and the energy estimated for it today. A panel that often shows *Estimated* or *Silent* has a weak radio link to the TAP.
 
 ### Device naming
 
@@ -262,6 +303,8 @@ PyTap can deliver readings to Home Assistant in two ways, selectable under **Con
 
 Energy totals (daily and lifetime) are always integrated from the raw readings, so the reporting mode only affects the instantaneous values (power, voltage, current, temperature) shown on dashboards — never the accumulated energy figures.
 
+The same screen has **Estimate silent optimizers** (on by default); see [Estimating silent optimizers](#estimating-silent-optimizers).
+
 ### Diagnostics Download
 
 PyTap diagnostics are available from the integration page:
@@ -315,6 +358,7 @@ In normal running, debug adds one line per write interval and gateway listing ho
 - **Listen-only.** PyTap never transmits, so it can't request data, change settings or trigger rapid shutdown. It needs a working Tigo CCA on the bus.
 - **One reading per optimizer.** A dual-module optimizer reports both panels combined. See [Dual-module optimizers](#dual-module-optimizers).
 - **Per-optimizer energy** is integrated from power readings by PyTap, so it can differ slightly from Tigo's cloud figures.
+- **Estimates can't see a shorted panel.** If a panel's bypass diode shorts, the string keeps running at full current but that panel contributes nothing. Its neighbours look normal, so while it is silent its estimate over-counts. Only the inverter's string voltage would reveal this.
 
 ---
 
