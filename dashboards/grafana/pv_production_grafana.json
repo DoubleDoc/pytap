@@ -146,7 +146,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -223,7 +223,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -326,7 +326,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -455,7 +455,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -532,7 +532,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -609,7 +609,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -686,7 +686,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -763,7 +763,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -840,7 +840,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -1125,7 +1125,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -1202,7 +1202,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -1279,7 +1279,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -1356,7 +1356,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -1433,7 +1433,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -1510,7 +1510,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -1587,7 +1587,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -1690,7 +1690,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -1767,7 +1767,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -1844,7 +1844,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -1921,7 +1921,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -1998,7 +1998,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -2075,7 +2075,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -2152,7 +2152,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -2229,7 +2229,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -2306,7 +2306,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -2383,7 +2383,7 @@
               }
             ]
           },
-          "unit": "kWh",
+          "unit": "watth",
           "max": 2
         },
         "overrides": []
@@ -2498,7 +2498,7 @@
               }
             ]
           },
-          "unit": "kWh"
+          "unit": "watth"
         },
         "overrides": [
           {
@@ -2864,7 +2864,7 @@
               }
             ]
           },
-          "unit": "kWh"
+          "unit": "watth"
         },
         "overrides": [
           {

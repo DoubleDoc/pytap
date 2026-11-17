@@ -2,29 +2,33 @@
 
 Home Assistant Lovelace dashboard displaying the physical solar panel layout with dynamic status coloring.
 
+> **This is a worked example for one roof**, not a drop-in dashboard. It lays out 26 panels named C1–D13 and uses entity IDs such as `sensor.tigo_ts4_c1_power`, which PyTap created for modules named `C1` before version 1.4.0. On your installation the IDs depend on your module, string and inverter names (for example `sensor.tigo_s2_p01_power`; see [Device naming](../README.md#device-naming)). To use it, replace the panel entity IDs and grid positions with your own. The max sensors in `tigo.yaml` work on any installation as they are.
+
 ## Files
 
 | File | Purpose |
 |------|---------|
 | [`pv_production_dashboard.yaml`](pv_production_dashboard.yaml) | Lovelace dashboard (3 views, ~901 lines) |
 | [`tigo.yaml`](tigo.yaml) | HA template sensors for max-value aggregation |
+| [`grafana/pv_production_grafana.json`](grafana/pv_production_grafana.json) | The same layout as a Grafana dashboard (InfluxDB v3) |
+| [`grafana/generate_grafana_dashboard.py`](grafana/generate_grafana_dashboard.py) | Script that generated the first version of the Grafana dashboard |
 
 ## Prerequisites
 
-**HACS frontend components:**
+**Frontend cards** (install from the Marketplace on Home Assistant 2026.11+, or from HACS on earlier versions):
 
 - **[custom:button-card](https://github.com/custom-cards/button-card)** — tile rendering with JS templates for dynamic styling
 - **[custom:layout-card](https://github.com/thomasloven/lovelace-layout-card)** — CSS Grid layout for precise column positioning
 
-**Template sensors** — include `tigo.yaml` in your HA configuration (e.g. via `template: !include tigo.yaml` or a packages directory). It provides:
+**Template sensors** — add `tigo.yaml` as a package (see the comment at the top of the file). It provides:
 
 | Sensor | Entity ID | Purpose |
 |--------|-----------|---------|
-| Tigo Max Daily Energy | `sensor.tigo_max_daily_energy` | Highest `_daily_energy` across all 26 panels (kWh) |
-| Tigo Max Readings Today | `sensor.tigo_max_readings_today` | Highest `_readings_today` across all 26 panels |
-| Tigo Max Power | `sensor.tigo_max_power` | Highest live `_power` across all 26 panels (W) |
+| Tigo Max Daily Energy | `sensor.tigo_max_daily_energy` | Highest `_daily_energy` across all panels (Wh) |
+| Tigo Max Readings Today | `sensor.tigo_max_readings_today` | Highest `_readings_today` across all panels |
+| Tigo Max Power | `sensor.tigo_max_power` | Highest live `_power` across all panels (W) |
 
-These are computed server-side with Jinja2 templates so each button-card only needs a single `states[]` lookup instead of scanning all 26 sensors in JavaScript.
+They find the panels themselves (every entity on a PyTap device of model TS4), so they need no editing. They're computed server-side so each button-card only needs a single `states[]` lookup instead of scanning every panel sensor in JavaScript.
 
 ## Views
 
@@ -48,7 +52,7 @@ Shows the live power output per panel using `sensor.tigo_ts4_<panel>_power`.
 
 ## Physical Layout
 
-Both views mirror the actual roof panel arrangement using a 26-column CSS grid. Panels have two orientations matching real hardware:
+All three views mirror the actual roof panel arrangement using a 26-column CSS grid. Panels have two orientations matching real hardware:
 
 - **Landscape (3:2)** — C2, C3 (top row)
 - **Portrait (2:3)** — all other panels
@@ -140,7 +144,7 @@ YAML anchors keep the file DRY:
 | `&pwr_tile_landscape` | Power | Landscape (3:2) | C2, C3 tiles (green by power) |
 | `&pwr_tile_portrait` | Power | Portrait (2:3) | All other tiles (green by power) |
 
-Both views use the same structural approach:
+All three views use the same structural approach:
 
 1. **Top roof** — `custom:layout-card` with `grid-template-columns: repeat(26, 1fr)`, 6px gap
 2. **Spacer** — blank `button-card` (20px height)
@@ -150,19 +154,20 @@ Each panel card specifies its exact position via `view_layout: { grid-row, grid-
 
 ## tigo.yaml — Template Sensors
 
-Server-side Jinja2 template sensors that aggregate all 26 panel values:
+Server-side Jinja2 template sensors that take the highest value across all panels. Each one selects the PyTap optimizer entities by device model and entity ID suffix, so no entity IDs are listed:
 
 ```yaml
 template:
   - sensor:
-      - name: "Tigo Max Daily Energy"         # sensor.tigo_max_daily_energy
-        state: "{{ [all 26 _daily_energy states] | map('float', 0) | max }}"
-
-      - name: "Tigo Max Readings Today"       # sensor.tigo_max_readings_today
-        state: "{{ [all 26 _readings_today states] | map('float', 0) | max }}"
-
-      - name: "Tigo Max Power"                # sensor.tigo_max_power
-        state: "{{ [all 26 _power states] | map('float', 0) | max }}"
+      - name: "Tigo Max Daily Energy"   # sensor.tigo_max_daily_energy, Wh
+        state: >
+          {% set values = integration_entities('pytap')
+               | select('is_device_attr', 'model', 'TS4')
+               | select('search', '_daily_energy$')
+               | map('states') | select('is_number') | map('float') | list %}
+          {{ values | max if values else 0 }}
+      # Tigo Max Readings Today and Tigo Max Power follow the same pattern
+      # with the _readings_today and _power suffixes.
 ```
 
-This offloads the max-value computation from the frontend (previously each of the 78 button-cards scanned all 26 sensors in JS) to a single HA template sensor that updates automatically.
+This offloads the max-value computation from the frontend (previously each of the 78 button-cards scanned all 26 sensors in JS) to a single HA template sensor that updates automatically. Unavailable or unknown panels are skipped.

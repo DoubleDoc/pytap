@@ -262,6 +262,10 @@ the node mapping status, discovered barcodes, connection state, and per-node sum
 
 Each optimizer, string and gateway total has a **Total energy** sensor (Wh, `total_increasing`). Add the gateway totals under **Settings → Dashboards → Energy → Solar production** to see PyTap's production there. If your inverter also reports production, add only one of them to avoid counting it twice.
 
+### Example dashboards
+
+[`dashboards/`](dashboards/pv_production.md) has a roof-layout dashboard that colours each panel by daily energy, connectivity or power, for Home Assistant (Lovelace) and Grafana. It's laid out for one specific roof, so you'll need to replace its panel entity IDs and positions; its helper sensors in `tigo.yaml` work on any installation.
+
 ### Debug logging
 
 To see what PyTap receives, add this to `configuration.yaml` and restart, or turn on debug logging from the integration's page:
