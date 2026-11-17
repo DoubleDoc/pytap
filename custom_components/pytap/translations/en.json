@@ -2,15 +2,15 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to Tigo Gateway",
-        "description": "Provide the connection details for your Tigo gateway.",
+        "title": "Connect to the RS-485 converter",
+        "description": "Enter the address of the RS-485 to TCP converter connected to your Tigo CCA's gateway bus.",
         "data": {
           "host": "Host",
           "port": "Port",
           "inverter": "Inverter name (optional)"
         },
         "data_description": {
-          "host": "The hostname or IP address of your Tigo gateway.",
+          "host": "The hostname or IP address of the RS-485 to TCP converter.",
           "port": "The port number (default: 502).",
           "inverter": "Only needed with more than one gateway: a short label such as Master or East, used at the start of device names. Leave blank for a single gateway."
         }
@@ -165,13 +165,13 @@
       },
       "change_connection": {
         "title": "Change Connection Settings",
-        "description": "Update the IP address and port of your Tigo gateway.",
+        "description": "Update the IP address and port of the RS-485 to TCP converter.",
         "data": {
           "host": "Host",
           "port": "Port"
         },
         "data_description": {
-          "host": "The hostname or IP address of your Tigo gateway.",
+          "host": "The hostname or IP address of the RS-485 to TCP converter.",
           "port": "The port number (default: 502)."
         }
       },

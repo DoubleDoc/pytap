@@ -1,16 +1,54 @@
 # PyTap
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-blue.svg)](https://www.home-assistant.io/)
+[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.4%2B-blue.svg)](https://www.home-assistant.io/)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
-[![Validate](https://github.com/azebro/pytap/actions/workflows/validate.yml/badge.svg)](https://github.com/azebro/pytap/actions/workflows/validate.yml)
+[![Validate](https://github.com/DoubleDoc/pytap/actions/workflows/validate.yml/badge.svg)](https://github.com/DoubleDoc/pytap/actions/workflows/validate.yml)
 
-A Home Assistant custom integration for monitoring **Tigo TAP solar energy systems**. PyTap connects to your Tigo gateway over TCP, passively listens to the RS-485 bus protocol, and exposes real-time per-optimizer sensor entities — power, voltage, current, temperature, and more.
+A Home Assistant custom integration for monitoring **Tigo TS4 optimizers** locally, without Tigo's cloud. PyTap listens to the RS-485 bus between a Tigo CCA and its TAP through an RS-485 to TCP converter, and exposes real-time per-optimizer sensors: power, voltage, current, temperature, energy and more.
 
 ---
 
 ## Hardware requirements
-Please note that this integration requires RS485 to TCP converter that needs to be connected to Tigo CCA to read the data from TAPs. It should be connected exactly the same way the TAP is connected to CCA. For detailed hardware requirements and connection details review this repo: [taptap](https://github.com/willglynn/taptap).
+
+PyTap needs an **RS-485 to TCP converter** connected to the bus between your Tigo CCA and its TAP(s). PyTap only listens: it never transmits, so the CCA and Tigo's cloud keep working as before. For background on the bus and other ways to connect, see [taptap](https://github.com/willglynn/taptap#connecting).
+
+You need one converter, and one PyTap entry, per CCA.
+
+### Wiring
+
+Connect the converter to the CCA's **GATEWAY** terminals, the same ones the TAP uses:
+
+| CCA GATEWAY terminal | Converter terminal |
+| --- | --- |
+| A | A (sometimes labelled A+ or 485+) |
+| B | B (sometimes labelled B- or 485-) |
+| – (ground) | GND, if the converter has one |
+| + | **Not connected.** This powers the TAPs; power the converter from its own supply or PoE. |
+
+- Keep the converter's wires short, or move the CCA's A and B wires to the converter and run new wires from it to the CCA.
+- The bus is already terminated at the CCA and at the last TAP. If your converter has a termination resistor (a jumper, DIP switch or setting, usually 120 Ω), **turn it off**.
+
+### Example: Waveshare RS485 to Ethernet converter
+
+Waveshare's RS485-to-Ethernet converters work well. Open the converter's web page (its IP address in a browser) and set:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Work Mode | **TCP Server** | PyTap connects to the converter. |
+| Device Port | **502** | PyTap's default port. Any port works if you enter the same one in PyTap. |
+| IP mode | DHCP with a reservation on your router, or Static | PyTap connects by address, so it must not change. |
+| Destination IP/DNS, Destination Port | (ignored) | Only used in client modes. |
+| Baud Rate | **38400** | Speed of the Tigo gateway bus. |
+| Databits / Parity / Stopbits | **8 / None / 1** | |
+| Flow control | **None** | |
+| No-Data-Restart | **Disable** | PyTap reconnects by itself when data stops. |
+| Protocol | **None** | Raw passthrough. Modbus conversion would corrupt the Tigo frames. |
+| Enable Multi-host | **No** | |
+
+![Waveshare RS485 to Ethernet settings for PyTap](docs/images/waveshare-rs485-eth-settings.png)
+
+When you add PyTap, enter the converter's IP address as the **host** and its Device Port as the **port**.
 
 ## Features
 
@@ -19,8 +57,8 @@ Please note that this integration requires RS485 to TCP converter that needs to 
 - **Per-optimizer sensors** — 12 sensor entities per Tigo TS4 module: performance,
   power, voltage in/out, current in/out, temperature, DC-DC duty cycle, RSSI,
   daily energy, total energy, and readings today.
-- **Aggregate sensors** — 4 sensors per string and 4 for the full installation: performance, power, daily energy, total energy.
-- **Performance tracking** — Per-optimizer, per-string, and installation-wide performance percentage based on configurable peak panel power (Wp).
+- **Aggregate sensors** — 4 sensors per string and 4 per gateway total: performance, power, daily energy, total energy.
+- **Performance tracking** — Per-optimizer, per-string and per-gateway performance percentage based on configurable peak panel power (Wp).
 - **Diagnostics download** — Integration diagnostics export includes parser counters, infrastructure/mapping state, and per-node summaries.
 - **Menu-driven setup** — Add optimizer modules one at a time with guided form fields.
 - **Barcode-based identification** — Stable hardware barcodes as entity identifiers (survives gateway restarts).
@@ -54,7 +92,7 @@ Each configured Tigo TS4 optimizer exposes the following sensors:
 | RSSI | dBm | `signal_strength` |
 | Daily Energy | Wh | `energy` |
 | Total Energy | Wh | `energy` |
-| Readings Today | — | — |
+| Readings Today | — | — (diagnostic) |
 
 PyTap also creates aggregate virtual devices:
 
@@ -90,18 +128,34 @@ Entity IDs are generated from the device names when entities are first created, 
 
 ## Installation
 
+PyTap isn't in the default HACS or Marketplace list, so add it as a custom repository. How you do that depends on your Home Assistant version: Home Assistant 2026.11 replaced HACS with the built-in **Marketplace**, and existing HACS installs move over automatically when you update.
+
+### Home Assistant 2026.11 and later (Marketplace)
+
+1. Go to **Settings → Marketplace**. The first time, accept the warning about community projects.
+2. Select **Add from link** (top right), enter `DoubleDoc/pytap` and select **Add**. This needs a GitHub connection; follow the prompt to sign in with a code on GitHub.
+3. Open **PyTap** under **Custom repositories** and select **Install**.
+4. Restart Home Assistant if a repair asks you to, then add the integration as described under [Configuration](#configuration).
+
+Updates appear in the Marketplace and as an update entity. Restart Home Assistant after updating; a repair offers to do it for you.
+
+### Home Assistant 2024.4 to 2026.10 (HACS)
+
+1. Open **HACS**, select the **three dots** menu (top right) and choose **Custom repositories**.
+2. Add `https://github.com/DoubleDoc/pytap` with type **Integration**.
+3. Search for **PyTap**, open it and select **Download**.
+4. Restart Home Assistant, then add the integration as described under [Configuration](#configuration).
+
+Updates appear in HACS and as an update entity; restart Home Assistant after updating.
+
 ### Manual
 
-1. Copy the `custom_components/pytap` folder into your Home Assistant `config/custom_components/` directory.
-2. Restart Home Assistant.
+1. Copy the `custom_components/pytap` folder from this repository into your Home Assistant `config/custom_components/` folder.
+2. Restart Home Assistant, then add the integration as described under [Configuration](#configuration).
 
-### HACS (Recommended)
+### Upgrading from 1.3.x
 
-1. Open **HACS** in your Home Assistant instance.
-2. Click the **three dots** menu in the top right and select **Custom repositories**.
-3. Add `https://github.com/azebro/pytap` with category **Integration**.
-4. Search for **PyTap** and click **Download**.
-5. Restart Home Assistant.
+Version 1.4.0 renames devices (see [Device naming](#device-naming)): optimizers change from `Tigo TS4 <name>` to `Tigo <string> <name>`, and `Tigo Installation` becomes `Tigo Total`. Entity IDs don't change, so automations and dashboards keep working. If your module names include the string or inverter (for example `Master-2-P01`), use **Edit a module** to shorten them to the position (`P01`), and set an inverter name if you have more than one gateway.
 
 ---
 
@@ -113,12 +167,11 @@ PyTap is configured entirely through the Home Assistant UI — no YAML needed.
 
 1. Go to **Settings → Devices & Services → Add Integration**.
 2. Search for **PyTap**.
-3. Enter your Tigo gateway's **host** (IP address or hostname) and **port** (default: 502).
+3. Enter your RS-485 converter's **host** (IP address or hostname) and **port** (default: 502). See [Hardware requirements](#hardware-requirements).
 4. Optionally enter an **Inverter name**. Leave it blank if you have one gateway; see [Device naming](#device-naming).
 
-> **Note:** The connection test is non-blocking. If the gateway is temporarily
-> unreachable (e.g., powered off at night), setup will proceed and connect
-> when the gateway becomes available.
+> **Note:** The connection test only warns. If the converter can't be reached
+> yet, setup continues and PyTap connects when it becomes available.
 
 ### Step 2: Add Modules
 
@@ -129,7 +182,7 @@ After entering connection details, you'll see a modules menu:
    - **String group** — Required label to group optimizers by string (e.g., `1`, `2`, `East`).
    - **Name** — The optimizer's position within the string (e.g., `P01`). The device name adds the inverter and string for you, so don't repeat them here.
    - **Barcode** — The Tigo optimizer barcode printed on the module (e.g., `A-1234567B`).
-   - **Peak power (Wp)** — The panel's peak power rating in watts (default: 455 Wp). Used to calculate performance percentage.
+   - **Peak power (Wp)** — The panel's peak power rating in watts (1–1000, default 455 Wp). Used to calculate performance percentage.
 3. Repeat for each optimizer you want to monitor.
 4. Click **"Finish setup"** when done.
 
@@ -170,7 +223,7 @@ Barcodes are discovered from the node table, so they appear in the log after the
 
 Go to **Settings → Devices & Services → PyTap → Configure** to:
 
-- **Change connection** — Update the gateway IP address and port.
+- **Change connection** — Update the RS-485 converter's IP address and port.
 - **Change reporting settings** — Toggle live reporting or set the averaged reporting interval (see [Reporting modes](#reporting-modes)).
 - **Change inverter name** — Set or clear the inverter name used in device names.
 - **Add** new optimizer modules (if the barcode was previously seen on the bus, it resolves instantly).
@@ -179,14 +232,18 @@ Go to **Settings → Devices & Services → PyTap → Configure** to:
 - **Remove** modules you no longer want to track.
 - **Save and close** to apply changes.
 
+Connection and reporting changes are saved as soon as you submit them. Inverter name and module changes (add, edit, rename string, remove) are saved only when you select **Save and close**; closing the dialog without it discards them.
+
 ### Reporting modes
 
 PyTap can deliver readings to Home Assistant in two ways, selectable under **Configure → Change reporting settings**:
 
-- **Live reporting (default)** — Each reading is pushed to Home Assistant as soon as it arrives from the gateway, giving sub-second latency. Best for most installations.
+- **Live reporting (default)** — Each reading is pushed to Home Assistant as soon as it arrives from the gateway, giving sub-second latency.
 - **Averaged interval** — When live reporting is turned off, readings are cached and a **time-weighted average** is pushed once per *reporting interval* (5–300 seconds, default 30). Weighting each reading by how long it remained the latest value yields a representative average even when readings arrive at uneven intervals. This reduces event-loop, CPU, and recorder/database load on installations with many panels.
 
 > **Setting the interval:** The reporting interval only applies in averaged mode, so it is hidden while **Live reporting** is enabled. To change it, open **Change reporting settings**, untick **Live reporting**, and click **Submit** — a follow-up **Reporting Interval** screen then lets you enter the value. Leaving **Live reporting** ticked skips that screen entirely.
+
+> **Database size:** in live mode every reading is written to Home Assistant's recorder. On an 18-panel installation this was about 4 million state rows a day, enough to grow the database by several GB within a week and make backups too large to upload. Unless you need sub-second updates, use the averaged interval (on that installation, 30 seconds cut PyTap's rows by about 90%), or exclude the per-optimizer sensors from the [recorder](https://www.home-assistant.io/integrations/recorder/).
 
 Energy totals (daily and lifetime) are always integrated from the raw readings, so the reporting mode only affects the instantaneous values (power, voltage, current, temperature) shown on dashboards — never the accumulated energy figures.
 
@@ -199,16 +256,42 @@ PyTap diagnostics are available from the integration page:
 3. Use the menu (⋮) and select **Download diagnostics**.
 
 The diagnostics JSON includes parser counters, infrastructure and node mappings,
-discovered barcodes, connection state, and per-node summaries. Host/IP is redacted.
+the node mapping status, discovered barcodes, connection state, and per-node summaries. Host/IP is redacted.
+
+### Energy dashboard
+
+Each optimizer, string and gateway total has a **Total energy** sensor (Wh, `total_increasing`). Add the gateway totals under **Settings → Dashboards → Energy → Solar production** to see PyTap's production there. If your inverter also reports production, add only one of them to avoid counting it twice.
+
+### Debug logging
+
+To see what PyTap receives, add this to `configuration.yaml` and restart, or turn on debug logging from the integration's page:
+
+```yaml
+logger:
+  logs:
+    custom_components.pytap: debug
+```
+
+### Removing the integration
+
+1. Go to **Settings → Devices & Services → PyTap**, open each entry's menu (⋮) and select **Delete**.
+2. Remove PyTap in the Marketplace or HACS (or delete `config/custom_components/pytap`), then restart Home Assistant.
+
+## Known limitations
+
+- **No data until the first node table** on a new installation, normally the next morning. See [First start: what to expect](#first-start-what-to-expect).
+- **Listen-only.** PyTap never transmits, so it can't request data, change settings or trigger rapid shutdown. It needs a working Tigo CCA on the bus.
+- **One reading per optimizer.** A dual-module optimizer reports both panels combined. See [Dual-module optimizers](#dual-module-optimizers).
+- **Per-optimizer energy** is integrated from power readings by PyTap, so it can differ slightly from Tigo's cloud figures.
 
 ---
 
 ## How It Works
 
 ```
-Tigo Gateway (RS-485 bus)
+Tigo CCA ⇄ TAP (RS-485 bus)
     │
-    │  TCP stream (port 502)
+    │  RS-485 to TCP converter, TCP stream (port 502)
     ▼
 PyTap Coordinator
     │
@@ -231,7 +314,7 @@ On startup, PyTap restores persisted coordinator state (barcode mappings, energy
 
 ## Development
 
-This repository includes a dev container with Home Assistant pre-installed for local development and testing.
+This repository includes a dev container with Home Assistant pre-installed for local development and testing. Pushes and pull requests run hassfest, HACS validation, Ruff and the test suite in GitHub Actions.
 
 ### Project Structure
 
@@ -242,7 +325,10 @@ pytap/
 │   ├── config_flow.py           # Config & options flows
 │   ├── const.py                 # Constants
 │   ├── coordinator.py           # Push-based data coordinator
-│   ├── sensor.py                # Sensor platform (12 entity types)
+│   ├── diagnostics.py           # Diagnostics download
+│   ├── energy.py                # Energy integration (Wh accumulation)
+│   ├── naming.py                # Device names (inverter / string / module)
+│   ├── sensor.py                # Sensor platform
 │   ├── manifest.json            # Integration metadata
 │   ├── strings.json             # UI strings
 │   ├── translations/en.json     # English translations
@@ -251,11 +337,14 @@ pytap/
 │   ├── deploy.sh                # Deploy script (SSH-based)
 │   └── .deploy.env.example      # Example credentials config
 ├── tests/                       # Integration tests
+├── dashboards/                  # Example dashboards (Lovelace, Grafana)
 ├── docs/
 │   ├── architecture.md          # Architecture & design document
-│   └── implementation.md        # Implementation details & history
+│   ├── implementation.md        # Implementation details & history
+│   └── images/                  # README images
 ├── config/                      # Dev HA config directory
 ├── requirements.txt             # HA + dev dependencies
+├── requirements-test.txt        # Test dependencies
 └── pytest.ini                   # Test configuration
 ```
 
@@ -321,7 +410,7 @@ Run `./deploy/deploy.sh --help` for all options.
 
 ## Acknowledgements
 
-Inspired by the [taptap](https://github.com/litinoveweedle/taptap) and [taptap Home Assistant add-on](https://github.com/litinoveweedle/hassio-addons).
+The Tigo protocol was reverse-engineered by [taptap](https://github.com/willglynn/taptap) (Will Glynn). Inspired by the [taptap fork](https://github.com/litinoveweedle/taptap) and [taptap Home Assistant add-on](https://github.com/litinoveweedle/hassio-addons).
 
 ---
 
