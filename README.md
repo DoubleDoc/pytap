@@ -325,7 +325,7 @@ Connection and reporting changes are saved as soon as you submit them. Inverter 
 
 PyTap can deliver readings to Home Assistant in two ways, selectable under **Configure → Change reporting settings**:
 
-- **Live reporting** — Each reading is pushed to Home Assistant as soon as it arrives from the gateway, giving sub-second latency.
+- **Live reporting** — Each reading is pushed to Home Assistant as soon as it arrives from the gateway, giving sub-second latency. Live reporting will likely swell your HA database and load your system if run constantly.
 - **Averaged interval (default for new entries)** — Readings are cached and a **time-weighted average** is pushed once per *reporting interval* (5–300 seconds, default 60). Weighting each reading by how long it remained the latest value yields a representative average even when readings arrive at uneven intervals. This reduces event-loop, CPU, and recorder/database load on installations with many panels.
 
 > **Setting the interval:** The reporting interval only applies in averaged mode, so it is hidden while **Live reporting** is enabled. To change it, open **Change reporting settings**, untick **Live reporting**, and click **Submit** — a follow-up **Reporting Interval** screen then lets you enter the value. Leaving **Live reporting** ticked skips that screen entirely.
