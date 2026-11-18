@@ -422,7 +422,7 @@ Both point the same way: **much of PyTap would work better on a small device at 
 
 Home Assistant would keep what it's good at: history, dashboards, the Energy dashboard, automations, and string-level views and estimates across many devices.
 
-[Bobsilvio/tigosolar-local](https://github.com/Bobsilvio/tigosolar-local) and its companion firmware [Bobsilvio/tigo_server](https://github.com/Bobsilvio/tigo_server) show this approach working. An ESP32 with a receive-only RS-485 module listens to the same TAP–CCA bus and decodes each panel's power, voltages, current and temperature. It either serves the data over a WebSocket that the tigosolar-local integration reads, or runs as an ESPHome device (through the add-on server) with native Home Assistant entities. A future PyTap could take the same route: move the listener, energy integration and health tracking onto such a device, and keep this integration as the Home Assistant side.
+[Bobsilvio/tigosolar-local](https://github.com/Bobsilvio/tigosolar-local) and its companion firmware [Bobsilvio/tigo_server](https://github.com/Bobsilvio/tigo_server) show this approach working. An ESP32 with a receive-only RS-485 module listens to the same TAP–CCA bus and decodes each panel's power, voltages, current and temperature. It either serves the data over a WebSocket that the tigosolar-local integration reads, or runs as an ESPHome device with native Home Assistant entities, and can even integrate each panel's energy on the device. An optional add-on puts its dashboard in the Home Assistant sidebar. A future PyTap could take the same route: move the listener, energy integration and health tracking onto such a device, and keep this integration as the Home Assistant side.
 
 ---
 
