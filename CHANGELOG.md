@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.9] - 2026-11-18
+
+### Documentation
+
+- README: midday screenshot of the PV Panels dashboard, a link to tigo_server's ESPHome variant, and a revised Future work example.
+- `dashboards/pv_panels.md`: midday screenshots in Power and Energy mode.
+
 ## [1.4.8] - 2026-11-18
 
 ### Fixed
