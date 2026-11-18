@@ -148,30 +148,36 @@ views:
         cards:
 
           # ── Colour tiles by [ Power | Energy ] ─────────────────────────
-          - type: custom:layout-card
-            layout_type: custom:grid-layout
-            layout:
-              grid-template-columns: max-content 90px 90px 1fr
-              grid-gap: 0
-              card_margin: 0
-              align-items: center
-              margin: 4px 0 0
-            cards:
-              - type: custom:button-card
-                name: Colour tiles by
-                show_icon: false
-                tap_action: { action: none }
-                styles:
-                  card: [height: 32px, padding: 0 12px 0 4px, background: none, box-shadow: none, border: none]
-                  name: [font-size: 0.95em, color: var(--primary-text-color)]
-              - type: custom:button-card
-                template: pytap_colour_option
-                variables: { option: Power }
-                styles: { card: [border-radius: 16px 0 0 16px] }
-              - type: custom:button-card
-                template: pytap_colour_option
-                variables: { option: Energy }
-                styles: { card: [border-radius: 0 16px 16px 0, border-left: none] }
+          # One button-card holding the label and both buttons, so no card
+          # margins separate the two halves of the switch.
+          - type: custom:button-card
+            show_name: false
+            show_icon: false
+            show_state: false
+            tap_action: { action: none }
+            custom_fields:
+              label: Colour tiles by
+              power:
+                card:
+                  type: custom:button-card
+                  template: pytap_colour_option
+                  variables: { option: Power }
+                  styles: { card: [border-radius: 16px 0 0 16px] }
+              energy:
+                card:
+                  type: custom:button-card
+                  template: pytap_colour_option
+                  variables: { option: Energy }
+                  styles: { card: [border-radius: 0 16px 16px 0, border-left: none] }
+            styles:
+              card: [background: none, box-shadow: none, border: none, padding: 4px 0 0]
+              grid:
+                - grid-template-areas: '"label power energy"'
+                - grid-template-columns: max-content 90px 90px
+                - justify-content: start
+                - align-items: center
+              custom_fields:
+                label: [padding: 0 12px 0 4px, font-size: 0.95em, color: var(--primary-text-color)]
 
           # ── Master: 3 rows of 2 ────────────────────────────────────────
           # 24 columns = 12 portrait panels × 2 columns each.

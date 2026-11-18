@@ -4,7 +4,7 @@ One view that shows everything PyTap knows about each panel at a glance: live po
 
 ![PV Panels view coloured by energy: 6-panel string still dark at dawn, 12-panel string green](images/panels-view-energy.png)
 
-*About 08:10 on a 6 + 12 panel installation, coloured by energy. The 12-panel string has started producing; the 6-panel string faces differently and hasn't yet, so its tiles are dark. Every panel's connectivity bar (bottom edge) is green.*
+*About 08:25 on a 6 + 12 panel installation, coloured by energy. The 12-panel string has started producing; the 6-panel string faces differently and hasn't yet, so its tiles are dark. Every panel's connectivity bar (bottom edge) is green.*
 
 This dashboard is new in this fork. It replaces the three separate views of the [classic PV Production dashboard](pv_production.md) (energy, connectivity and power), which is still available and kept up to date.
 
