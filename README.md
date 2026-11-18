@@ -11,7 +11,7 @@ A Home Assistant custom integration for monitoring **Tigo TS4 optimizers** local
 
 ## See every panel at once
 
-![PV Panels dashboard: each panel as a tile laid out like the roof, showing power, today's energy and readings, coloured by energy](dashboards/images/panels-view-energy.png)
+![PV Panels dashboard: each panel as a tile laid out like the roof, showing power, today's energy and readings, coloured by energy](dashboards/images/panels-view-energy-midday.png)
 
 This fork comes with the **[PV Panels dashboard](dashboards/pv_panels.md)**: one view with every panel laid out like your roof. Each tile shows:
 

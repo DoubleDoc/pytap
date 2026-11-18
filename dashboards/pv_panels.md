@@ -2,9 +2,13 @@
 
 One view that shows everything PyTap knows about each panel at a glance: live power, today's energy, today's readings and the panel's data validity. Each panel is a tile laid out like the roof, and a **Colour tiles by [Power | Energy]** switch picks what the tile colour shows.
 
-![PV Panels view coloured by energy: 6-panel string still dark at dawn, 12-panel string green](images/panels-view-energy.png)
+![PV Panels view at midday coloured by energy: the 6-panel string dark green, the 12-panel string bright](images/panels-view-energy-midday.png)
 
-*About 08:25 on a 6 + 12 panel installation, coloured by energy. The 12-panel string has started producing; the 6-panel string faces differently and hasn't yet, so its tiles are dark. Every panel's connectivity bar (bottom edge) is green.*
+*About 10:35 on a 6 + 12 panel installation, coloured by **energy**. The 12-panel string has made 235–344 Wh per panel so far today and the 6-panel string, which faces differently and starts later, 55–99 Wh, so its tiles are much darker. Within the 12-panel string, P05 (344 Wh) is the brightest.*
+
+![The same moment coloured by power: every panel bright green](images/panels-view-power-midday.png)
+
+*The same moment coloured by **power**. Both strings are now producing well (159–242 W and 357–380 W), so nearly every tile is bright; P06 on the 6-panel string, at 159 W, is visibly dimmer than its neighbours. Power shows what is happening now; energy shows how the day has gone.*
 
 This dashboard is new in this fork. It replaces the three separate views of the [classic PV Production dashboard](pv_production.md) (energy, connectivity and power), which is still available and kept up to date.
 
@@ -40,6 +44,10 @@ The W and Wh units tell power and energy apart, and the readings count has its o
 | No data (bus status not normal) | Grey | Grey |
 
 Problems show the same way in both modes, so a silent panel is red whichever you're looking at.
+
+![PV Panels view coloured by energy: 6-panel string still dark at dawn, 12-panel string green](images/panels-view-energy.png)
+
+*About 08:25 on a 6 + 12 panel installation, coloured by energy. The 12-panel string has started producing; the 6-panel string faces differently and hasn't yet, so its tiles are dark. Every panel's connectivity bar (bottom edge) is green.*
 
 **Connectivity bar** — the 4 px bar along the bottom edge goes from red to green by today's readings relative to the best panel (`sensor.tigo_max_readings_today`). A panel with half the best count is yellow; one that barely reported is red. Until any panel has reported today (from midnight until the panels wake), the bar is neutral grey.
 
