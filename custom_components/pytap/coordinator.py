@@ -810,13 +810,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self._midnight_reset_unsub is not None:
             self._midnight_reset_unsub.cancel()
             self._midnight_reset_unsub = None
-        # Flush any pending state save
-        if self._save_task is not None:
-            self._save_task.cancel()
-            self._save_task = None
-        if self._unsaved_changes:
-            await self._async_save_coordinator_state()
-        # Close source to unblock the read()/connect() call in the executor
+        # Close source to unblock the read()/connect() call in the executor,
+        # and let the listener finish before the final save, so no reading
+        # arrives after it.
         with self._source_lock:
             if self._source is not None:
                 try:
@@ -831,6 +827,12 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             except (asyncio.CancelledError, TimeoutError, Exception):
                 pass
             self._listener_task = None
+        # Flush any pending state save
+        if self._save_task is not None:
+            self._save_task.cancel()
+            self._save_task = None
+        if self._unsaved_changes:
+            await self._async_save_coordinator_state()
 
     def _schedule_midnight_reset(self) -> None:
         """Schedule a callback at the next local midnight to reset daily accumulators."""

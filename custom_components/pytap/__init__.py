@@ -10,8 +10,8 @@ from __future__ import annotations
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
+from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from .const import (
@@ -75,8 +75,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Start the background streaming listener
     await coordinator.async_start_listener()
 
-    # Ensure listener is stopped on entry unload (covers HA shutdown path)
+    # Stop the listener and save state when the entry unloads, and when Home
+    # Assistant stops: HA doesn't unload config entries at shutdown.
     entry.async_on_unload(coordinator.async_stop_listener)
+
+    async def _async_stop_on_shutdown(_event: Event) -> None:
+        await coordinator.async_stop_listener()
+
+    entry.async_on_unload(
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop_on_shutdown)
+    )
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
