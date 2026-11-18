@@ -153,7 +153,7 @@ def test_silent_optimizer_estimated_from_string(hass: HomeAssistant) -> None:
     # ...while the string includes the estimate and says how much.
     daily = _aggregate(hass, coordinator, "daily_energy")
     measured = sum(coordinator.data["nodes"][b]["daily_energy_wh"] for b in (A, B, C))
-    assert daily.native_value == pytest.approx(measured + est_today)
+    assert daily.native_value == pytest.approx(measured + est_today, abs=0.01)
     assert daily.extra_state_attributes["estimated_energy"] == pytest.approx(
         est_today, abs=0.1
     )

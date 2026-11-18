@@ -251,7 +251,7 @@
           "write_interval": "Reporting interval (seconds)"
         },
         "data_description": {
-          "write_interval": "How often (in seconds) to push time-weighted averaged updates to Home Assistant. Range: 5–300. Default: 30 seconds."
+          "write_interval": "How often (in seconds) to push time-weighted averaged updates to Home Assistant. Range: 5–300. Default: 60 seconds."
         }
       },
       "change_inverter": {

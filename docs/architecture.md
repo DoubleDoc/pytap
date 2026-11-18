@@ -198,7 +198,7 @@ DEFAULT_PEAK_POWER = 455     # Wp (watts peak) — STC rating
 CONF_LIVE_REPORTING = "live_reporting"
 DEFAULT_LIVE_REPORTING = True  # Push every reading as it arrives (default)
 CONF_WRITE_INTERVAL = "write_interval"
-DEFAULT_WRITE_INTERVAL = 30   # Seconds between averaged pushes (interval mode)
+DEFAULT_WRITE_INTERVAL = 60   # Seconds between averaged pushes (interval mode)
 ```
 
 ### 4. `coordinator.py` — Data Update Coordinator
@@ -309,7 +309,7 @@ The coordinator delivers readings to Home Assistant in one of two user-selectabl
 | Mode | `live_reporting` | Behavior |
 | --- | --- | --- |
 | **Live (default)** | `True` | Every event that changes node data triggers an immediate `async_set_updated_data` push — sub-second latency. |
-| **Averaged interval** | `False` | Readings are buffered per barcode with monotonic timestamps. Once per `write_interval` seconds (5–300, default 30) the coordinator pushes a **time-weighted average** of the buffered readings via `_build_averaged_snapshot()`. |
+| **Averaged interval** | `False` | Readings are buffered per barcode with monotonic timestamps. Once per `write_interval` seconds (5–300, default 60; new entries start in this mode) the coordinator pushes a **time-weighted average** of the buffered readings via `_build_averaged_snapshot()`. |
 
 Time-weighted averaging weights each buffered reading by the duration it remained the latest value (the time until the next reading, or until the flush for the final reading). This yields a physically representative average when readings arrive at uneven intervals, unlike a plain arithmetic mean.
 

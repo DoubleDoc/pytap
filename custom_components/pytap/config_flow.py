@@ -241,7 +241,15 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
         """Finish the config flow — create the entry."""
         if not self._modules:
             return await self.async_step_modules_menu()
-        data = {**self._user_data, CONF_MODULES: self._modules}
+        # New entries start in averaged mode at DEFAULT_WRITE_INTERVAL: live
+        # mode writes every reading to the recorder. Entries created before
+        # this keep live mode (DEFAULT_LIVE_REPORTING) until changed.
+        data = {
+            **self._user_data,
+            CONF_MODULES: self._modules,
+            CONF_LIVE_REPORTING: False,
+            CONF_WRITE_INTERVAL: DEFAULT_WRITE_INTERVAL,
+        }
         title = f"PyTap ({self._user_data[CONF_HOST]})"
         return self.async_create_entry(title=title, data=data)
 

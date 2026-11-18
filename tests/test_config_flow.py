@@ -124,6 +124,9 @@ async def test_full_flow_add_one_module(hass: HomeAssistant) -> None:
     assert result["data"]["host"] == MOCK_HOST
     assert result["data"]["port"] == MOCK_PORT
     assert len(result["data"][CONF_MODULES]) == 1
+    # New entries start in averaged mode at 60 s.
+    assert result["data"][CONF_LIVE_REPORTING] is False
+    assert result["data"][CONF_WRITE_INTERVAL] == 60
     assert result["data"][CONF_MODULES][0] == {
         CONF_MODULE_STRING: "A",
         CONF_MODULE_NAME: "Panel_01",

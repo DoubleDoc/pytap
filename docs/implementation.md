@@ -119,7 +119,7 @@ DEFAULT_PEAK_POWER = 455          # Wp (watts peak) — STC rating
 CONF_LIVE_REPORTING = "live_reporting"   # Push every reading vs. averaged interval
 DEFAULT_LIVE_REPORTING = True
 CONF_WRITE_INTERVAL = "write_interval"   # Seconds between averaged pushes
-DEFAULT_WRITE_INTERVAL = 30
+DEFAULT_WRITE_INTERVAL = 60
 
 # Reconnection tuning
 RECONNECT_TIMEOUT = 60            # Seconds of silence → reconnect
@@ -209,7 +209,7 @@ Key choices:
 - **`async_step_init`** — Menu with "Change connection", "Change reporting settings", "Add a module", "Remove a module", "Save and close".
 - **`async_step_change_connection`** — Host/port form to update the gateway connection (advisory connection test, same as setup).
 - **`async_step_change_reporting`** — "Reporting Settings" form with a single **Live reporting** checkbox (default on). When left on, the integration clears any stored `write_interval` and returns to the menu. When turned **off**, the flow advances to `async_step_set_interval`. The interval field is deliberately *not* shown here because Home Assistant's static forms cannot grey out a field reactively.
-- **`async_step_set_interval`** — Reached only when live reporting is off. Shows the **Reporting interval** field (`vol.Range(min=MIN_WRITE_INTERVAL, max=MAX_WRITE_INTERVAL)` = 5–300, default 30 s), stores `live_reporting=False` + `write_interval`, and returns to the menu.
+- **`async_step_set_interval`** — Reached only when live reporting is off. Shows the **Reporting interval** field (`vol.Range(min=MIN_WRITE_INTERVAL, max=MAX_WRITE_INTERVAL)` = 5–300, default 60 s), stores `live_reporting=False` + `write_interval`, and returns to the menu.
 - **`async_step_add_module`** — Same form and validation as the config flow version.
 - **`async_step_remove_module`** — Dropdown (`vol.In`) built dynamically from the current module list showing `"Name (Barcode)"` labels. Selecting one removes it and returns to the menu.
 - **"Save and close"** — Updates `ConfigEntry.data` with the modified module list, triggering an integration reload.
@@ -367,7 +367,7 @@ The data dict stored per node:
 
 #### Reporting Modes
 
-The coordinator reads `live_reporting` (default `True`) and `write_interval` (default 30 s) from `ConfigEntry.data` at init and chooses how processed events reach Home Assistant:
+The coordinator reads `live_reporting` (default `True`) and `write_interval` (default 60 s; new entries are created with `live_reporting=False` and 60 s) from `ConfigEntry.data` at init and chooses how processed events reach Home Assistant:
 
 - **Live mode (`live_reporting = True`)** — Each event that changes node data triggers an immediate `async_set_updated_data` push. Sub-second latency; best for most installations.
 - **Averaged interval mode (`live_reporting = False`)** — `_handle_power_report` records each reading into `_reading_buffers[barcode]` as a `(monotonic_ts, fields)` tuple. Once per `write_interval` seconds the listener calls `_build_averaged_snapshot(flush_ts)`, which computes a **time-weighted average** of each field in `_AVERAGED_FIELDS` (weighting each reading by the time until the next reading, or until the flush for the last one), recomputes `performance` from the averaged power, pushes the snapshot, and clears the buffer.

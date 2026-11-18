@@ -125,6 +125,37 @@ class PyTapAggregateSensorDescription(SensorEntityDescription):
     value_key: str
 
 
+# Precision of the state written to Home Assistant, by sensor key. Live values
+# are averages over the write interval, so their extra decimals are averaging
+# noise; it changes the value on nearly every write and so causes a database
+# row each time. Rounding to about 0.3% (power, voltage) and 1 °C keeps what
+# matters; currents keep 0.01 A so small differences between panels in a
+# string still show. Idea and measurements: seaosair (upstream PR #25).
+STATE_PRECISION: dict[str, int] = {
+    "performance": 1,
+    "power": 0,
+    "voltage_in": 1,
+    "voltage_out": 1,
+    "current_in": 2,
+    "current_out": 2,
+    "temperature": 0,
+    "dc_dc_duty_cycle": 0,
+    "rssi": 0,
+    "daily_energy": 2,
+    "total_energy": 2,
+}
+
+
+def _round_state(key: str, value: Any) -> Any:
+    """Round a sensor value to its state precision."""
+    digits = STATE_PRECISION.get(key)
+    if digits is None or not isinstance(value, (int, float)) or isinstance(
+        value, bool
+    ):
+        return value
+    return round(float(value), digits)
+
+
 SENSOR_DESCRIPTIONS: tuple[PyTapSensorEntityDescription, ...] = (
     PyTapSensorEntityDescription(
         key="performance",
@@ -503,8 +534,8 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
             value = node_data.get(self.entity_description.value_key)
             # Convert duty cycle from 0.0-1.0 to percentage
             if self.entity_description.key == "dc_dc_duty_cycle" and value is not None:
-                value = round(value * 100, 2)
-            self._attr_native_value = value
+                value = value * 100
+            self._attr_native_value = _round_state(self.entity_description.key, value)
             self._restored_native_value = False
         else:
             if not self._restored_native_value:
@@ -711,8 +742,8 @@ class PyTapAggregateSensor(
                 total_peak_power += peak_power_value
 
             if total_peak_power > 0:
-                self._attr_native_value = round(
-                    (total_power / total_peak_power) * 100.0, 2
+                self._attr_native_value = _round_state(
+                    "performance", (total_power / total_peak_power) * 100.0
                 )
             else:
                 self._attr_native_value = None
@@ -741,7 +772,7 @@ class PyTapAggregateSensor(
             if value is not None:
                 total = (total or 0.0) + value
 
-        self._attr_native_value = total
+        self._attr_native_value = _round_state(self.entity_description.key, total)
         self._restored_native_value = False
         self.async_write_ha_state()
 

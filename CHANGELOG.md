@@ -1,11 +1,14 @@
 # Changelog
 
-## [1.4.5] - Unreleased
+## [1.4.5] - 2026-11-17
+
+The two database-write changes below come from [seaosair](https://github.com/seaosair)'s upstream [PR #25](https://github.com/azebro/pytap/pull/25). They found that the `last_update` attribute, not the values, was forcing a write on every reading, showed that excluding it from the recorder doesn't stop the write, and showed that rounding only pays off once that attribute is fixed. They backed each point with measurements from a 23-module installation. We measured the same effects here before adopting them. Thank you, seaosair.
 
 ### Changed
 
-- **Fewer database writes** — Home Assistant writes a new state row whenever any attribute changes, even an attribute excluded from the recorder. So the per-optimizer `last_update` attribute, which changed with every reading, forced a write on every reading even when the value was unchanged (measured: 720 rows in 6 daytime hours for a temperature sensor whose value changed 414 times). It is removed. The Data validity sensor shows `last_report` only once the optimizer has stopped reporting, with its share rounded to 0.05, and the Bus status sensor shows `last_data` only while the status isn't normal.
-
+- **No per-reading timestamp attribute** — Home Assistant writes a new state row whenever any attribute changes, even one excluded from the recorder. So the per-optimizer `last_update` attribute, which changed with every reading, forced a write on every reading even when the value was unchanged (measured here: a temperature sensor wrote 720 rows in 6 daytime hours while its value changed only 414 times). It is removed. The Data validity sensor shows `last_report` only once the optimizer has stopped reporting, with its share rounded to 0.05, and the Bus status sensor shows `last_data` only while the status isn't normal.
+- **States rounded to a sensible precision** — Live values are averages over the reporting interval, so their extra decimals are averaging noise that changes on almost every write. States are now rounded: power 1 W, voltages 0.1 V, currents 0.01 A (kept fine so small differences between panels in a string still show), temperature 1 °C, performance 0.1 %, duty cycle 1 %, RSSI whole numbers, energy 0.01 Wh. Replaying 6 hours of real readings, this cuts an optimizer's rows by about a fifth. Fixed precisions rather than PR #25's per-quantity options.
+- **New entries start in averaged mode at 60 seconds** (was live mode). The default reporting interval is now 60 seconds (was 30). Existing entries keep their settings. Energy is integrated from every raw reading in either mode, so the interval doesn't affect energy accuracy. A 10-day backtest of a PV curtailment detector built on the per-panel voltages and currents found the same events at 60 s as at 30 s, each starting at most a minute later.
 ## [1.4.4] - 2026-11-17
 
 ### Fixed

@@ -614,7 +614,7 @@ async def test_performance_sensor_value(hass: HomeAssistant) -> None:
     )
     performance_sensor.async_write_ha_state = lambda: None
     performance_sensor._handle_coordinator_update()
-    assert performance_sensor.native_value == 65.76
+    assert performance_sensor.native_value == 65.8
 
 
 async def test_string_performance_weighted(hass: HomeAssistant) -> None:
@@ -661,7 +661,7 @@ async def test_string_performance_weighted(hass: HomeAssistant) -> None:
     )
     sensor.async_write_ha_state = lambda: None
     sensor._handle_coordinator_update()
-    assert sensor.native_value == 55.56
+    assert sensor.native_value == 55.6
 
 
 async def test_installation_performance_partial_data(hass: HomeAssistant) -> None:
@@ -694,7 +694,7 @@ async def test_installation_performance_partial_data(hass: HomeAssistant) -> Non
     )
     installation.async_write_ha_state = lambda: None
     installation._handle_coordinator_update()
-    assert installation.native_value == round((300.0 / 455.0) * 100.0, 2)
+    assert installation.native_value == round((300.0 / 455.0) * 100.0, 1)
 
 
 async def test_installation_performance_unavailable_without_data(
@@ -774,7 +774,7 @@ async def test_performance_sensor_above_100(hass: HomeAssistant) -> None:
     )
     sensor.async_write_ha_state = lambda: None
     sensor._handle_coordinator_update()
-    assert sensor.native_value == round((500.0 / 455) * 100.0, 2)
+    assert sensor.native_value == round((500.0 / 455) * 100.0, 1)
     assert sensor.native_value > 100.0
 
 
@@ -989,7 +989,7 @@ async def test_restart_restores_snapshot_before_live_stream(
     power_state = hass.states.get(power_entity_id)
     assert power_state is not None
     assert power_state.state != STATE_UNAVAILABLE
-    assert float(power_state.state) == 299.2
+    assert float(power_state.state) == 299.0  # rounded to 1 W
 
     # Verify energy sensors restore from coordinator snapshot (not zeroed)
     daily_energy_entity_id = ent_reg.async_get_entity_id(
@@ -1017,7 +1017,7 @@ async def test_restart_restores_snapshot_before_live_stream(
     installation_power_state = hass.states.get(installation_power_entity_id)
     assert installation_power_state is not None
     assert installation_power_state.state != STATE_UNAVAILABLE
-    assert float(installation_power_state.state) == 299.2
+    assert float(installation_power_state.state) == 299.0  # rounded to 1 W
 
 
 async def test_restart_uses_restore_entity_fallback_without_snapshot(
@@ -1090,3 +1090,19 @@ async def test_restart_uses_restore_entity_fallback_without_snapshot(
     assert installation_power_state is not None
     assert installation_power_state.state != STATE_UNAVAILABLE
     assert float(installation_power_state.state) == 456.7
+
+
+def test_state_precision_rounding() -> None:
+    """Live values are rounded so averaging noise doesn't force a write."""
+    from custom_components.pytap.sensor import _round_state
+
+    assert _round_state("power", 350.096) == 350.0
+    assert _round_state("voltage_in", 31.413) == 31.4
+    assert _round_state("current_in", 11.146) == 11.15
+    assert _round_state("temperature", 42.37) == 42.0
+    assert _round_state("performance", 76.94) == 76.9
+    assert _round_state("dc_dc_duty_cycle", 98.2) == 98.0
+    assert _round_state("rssi", 125.967) == 126.0
+    assert _round_state("daily_energy", 377.5123) == 377.51
+    assert _round_state("readings_today", 5950) == 5950
+    assert _round_state("power", None) is None
