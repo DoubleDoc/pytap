@@ -4,7 +4,11 @@
 
 ### Fixed
 
-- **Short gaps no longer lose energy** — A 2–3 minute gap in an optimizer's reports that ended before the once-a-minute check started estimating was lost from string and total energy. It is now bridged with the average of the optimizer's readings either side, counted as estimated energy (its own energy sensors still show only measured energy). Off when estimating is off.
+- **Short gaps no longer lose energy** — A 2–3 minute gap in an optimizer's reports that ended before the once-a-minute check started estimating was lost from the String and Total devices' energy. It is now bridged with the average of the optimizer's readings either side, counted as estimated energy (its own energy sensors still show only measured energy). Off when estimating is off.
+
+### Documentation
+
+- The README explains that the String and Total devices' sensors are all named **Power**, **Daily energy**, etc. on their device pages, and that "Total" names both the gateway-wide device and the lifetime **Total energy** sensor; it now says "String and Total devices" instead of "string/total sensors".
 
 ## [1.4.3] - 2026-11-17
 

@@ -472,7 +472,7 @@ Entities are unavailable until the node's barcode has been seen on the bus (or a
 
 The daytime limit is deliberately long: optimizers can drop off the 2.4 GHz link to the TAP for minutes at a time and recover by themselves (upstream issue #17), so holding the last value through short gaps is better than zeroing a producing panel. A health check runs every `HEALTH_CHECK_INTERVAL_SECONDS` (60 s); it refreshes the sun position, logs state changes and pushes an update to the sensors when any state changes. #### Estimating silent optimizers
 
-String and total sensors can estimate an optimizer that has gone quiet (option `estimate_silent`, default on). `coordinator._update_estimates()` runs in the health check:
+The String and Total devices' sensors can estimate an optimizer that has gone quiet (option `estimate_silent`, default on). `coordinator._update_estimates()` runs in the health check:
 
 - **Share.** While an optimizer and at least `ESTIMATE_MIN_PEER_FRACTION` (half) of the rest of its string have reported within `ESTIMATE_AFTER_SECONDS` (120 s), and their average is at least `SHARE_MIN_PEER_POWER_W`, its power ÷ their average is folded into an exponential moving average (`SHARE_SMOOTHING` 0.2 per minute, capped at `SHARE_MAX`).
 - **Estimate.** Quiet for `ESTIMATE_AFTER_SECONDS` with enough reporting neighbours: share (default 1.0) × their average power. Optimizers in a series string carry the same current, so the estimate falls if the string's output collapses.

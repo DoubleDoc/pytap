@@ -70,7 +70,7 @@ When you add PyTap, enter the converter's IP address as the **host** and its Dev
     restored on startup, so sensors stay available with the most recent value
     even before the first live frame arrives (for example after a night restart).
 - **Night and dropout handling** — Live readings go to 0 when the optimizers fall asleep at night, and become unavailable only after a long daytime silence or when the converter stops sending data (see [When readings go to 0 or unavailable](#when-readings-go-to-0-or-unavailable)).
-- **Estimating silent optimizers** — While an optimizer is silent but the rest of its string is producing normally, string and total sensors use an estimate based on its usual share of the string, including the energy it produced while silent. Its own sensors only ever show what it reported (see [Estimating silent optimizers](#estimating-silent-optimizers)).
+- **Estimating silent optimizers** — While an optimizer is silent but the rest of its string is producing normally, the String and Total devices use an estimate based on its usual share of the string, including the energy it produced while silent. Its own sensors only ever show what it reported (see [Estimating silent optimizers](#estimating-silent-optimizers)).
 - **Data validity sensor** — Per optimizer: reporting, holding last value, estimated, asleep or silent.
 - **Bus status sensor** — Per gateway: normal, RS-485 converter unreachable, or bus quiet (CCA off or wiring), so an outage points at the right box.
 - **Energy accumulation** — Trapezoidal Wh integration with proactive midnight reset and monotonic lifetime totals. Daily sensors zero at exactly midnight local time.
@@ -104,6 +104,8 @@ PyTap also creates aggregate virtual devices:
 - **Tigo [inverter] String <name>** — `performance`, `power`, `daily_energy`, `total_energy`. Created for every string, even when there is only one, so a string keeps its history when more strings are added later.
 - **Tigo [inverter] Total** — `performance`, `power`, `daily_energy`, `total_energy`, plus two diagnostic sensors: **Node mapping** (whose `silent_modules` attribute lists silent modules) and **Bus status** (see below).
 
+On each device page these sensors are simply called **Power**, **Performance**, **Daily energy** and **Total energy**; the device name tells them apart (full names such as *Tigo Master String 2 Power* and *Tigo Master Total Power*). "Total" therefore means two things: the **Total device** (the whole gateway) and the **Total energy** sensor (lifetime energy), which on the Total device is named *Tigo … Total Total energy*. This README says "the String and Total devices" for the sums, and "Total energy" only for lifetime energy.
+
 ### Bus status
 
 Each gateway (each PyTap entry, i.e. each CCA) has a **Bus status** sensor on its Total device. The Tigo CCA polls its optimizers around the clock, so the bus is never quiet in normal operation, even at night. If no data arrives for 5 minutes, PyTap can't tell anything about any optimizer on that gateway, so **every optimizer's live readings and Data validity become unavailable** until data returns. Energy totals are kept.
@@ -130,28 +132,28 @@ Optimizers stop reporting when it gets dark, and by day one can drop off the rad
 
 Short daytime gaps keep the last value, so a brief radio dropout doesn't zero a panel or break its history. If Home Assistant has no location set, PyTap never assumes it is night.
 
-These rules apply to each optimizer's own sensors. For string and total sensors, see the next section.
+These rules apply to each optimizer's own sensors. For the String and Total devices, see the next section.
 
 ### Estimating silent optimizers
 
 An optimizer that stops reporting hasn't necessarily stopped producing. The optimizers in a string are wired in series and carry the same current, so if the rest of the string is producing normally, the silent one almost certainly is too; it just isn't being heard. If it really had failed in a way that broke the string, the others would show it, because the string's current would drop.
 
-PyTap uses this for string and total sensors:
+PyTap uses this on the String and Total devices:
 
 1. **Learning each optimizer's share.** While an optimizer and the rest of its string are reporting, PyTap keeps a rolling average (over roughly the last 10 minutes) of its power divided by the average power of the others in its string. This captures shading: a panel that is shaded in the afternoon has a share below 1 at that time.
 2. **Estimating.** Once an optimizer has been quiet for 2 minutes, and at least half of the other optimizers in its string are reporting, its estimated power is its share × their current average. If no share has been learned yet, it is assumed to produce the average.
 3. **Estimated energy.** The estimated power is added up as *estimated energy* from its last report until it reports again, and checked every minute. A gap of 2–3 minutes that ends before the next check is bridged with the average of the optimizer's own readings either side of it, also counted as estimated energy. (Optimizers report power, not energy: PyTap adds up energy from readings no more than 120 s apart, so without this such a gap would be lost.)
 
-| | Optimizer's own sensors | String and total sensors |
+| | Optimizer's own sensors | String and Total devices |
 | --- | --- | --- |
 | Power | What it reported (held, then 0 or unavailable as above) | The estimate while one is available |
 | Daily and total energy | **Only what it reported** | What all optimizers reported **plus** estimated energy |
 
-So a string's energy can be slightly more than the sum of its optimizers' energy sensors, by exactly the string's `estimated_energy` attribute. The string and total power sensors have an `estimated_count` attribute showing how many optimizers are being estimated right now, and `reporting_count` showing how many are reporting.
+So a string's energy can be slightly more than the sum of its optimizers' energy sensors, by exactly the string's `estimated_energy` attribute. The **Power** sensors on the String and Total devices have an `estimated_count` attribute showing how many optimizers are being estimated right now, and `reporting_count` showing how many are reporting.
 
-Estimating needs neighbours: an optimizer that is alone in its string, or without a string, is never estimated, and nothing is estimated when fewer than half of the others in its string are reporting (for example at night). A silent optimizer without an estimate is left out of the string and total power until it reports again.
+Estimating needs neighbours: an optimizer that is alone in its string, or without a string, is never estimated, and nothing is estimated when fewer than half of the others in its string are reporting (for example at night). A silent optimizer without an estimate is left out of the String and Total devices' **Power** until it reports again.
 
-**Turning it off.** Untick **Estimate silent optimizers** under **Configure → Change reporting settings**. String and total sensors then hold a silent optimizer's last reported power instead, and no energy is added for the time it was silent. Energy already estimated stays in the lifetime totals, since those can't go down.
+**Turning it off.** Untick **Estimate silent optimizers** under **Configure → Change reporting settings**. The String and Total devices then hold a silent optimizer's last reported power instead, and no energy is added for the time it was silent. Energy already estimated stays in the lifetime totals, since those can't go down.
 
 #### Data validity sensor
 
@@ -161,8 +163,8 @@ Each optimizer has a diagnostic **Data validity** sensor that shows how much its
 | --- | --- |
 | Reporting | Readings received within the last 2 minutes. |
 | Holding last value | Quiet for more than 2 minutes; its sensors hold the last values, and no estimate is possible (or estimating is off). |
-| Estimated from string | Quiet for less than 30 minutes; string and total sensors are using an estimate from the rest of its string. Its own sensors hold the last values. |
-| Silent, estimated in string | Quiet for 30 minutes or more in daylight. Its own live readings are unavailable, but the rest of its string is producing, so string and total sensors still use an estimate. A long dropout like this usually means a weak radio link to the TAP. |
+| Estimated from string | Quiet for less than 30 minutes; the String and Total devices are using an estimate from the rest of its string. Its own sensors hold the last values. |
+| Silent, estimated in string | Quiet for 30 minutes or more in daylight. Its own live readings are unavailable, but the rest of its string is producing, so the String and Total devices still use an estimate. A long dropout like this usually means a weak radio link to the TAP. |
 | Asleep | Night: live readings read 0. |
 | Silent | Quiet for 30 minutes in daylight with no estimate; live readings are unavailable. |
 
@@ -299,7 +301,7 @@ Go to **Settings → Devices & Services → PyTap → Configure** to:
 - **Change inverter name** — Set or clear the inverter name used in device names.
 - **Add** new optimizer modules (if the barcode was previously seen on the bus, it resolves instantly).
 - **Edit** a module's string, name or peak power. The barcode can't be edited; remove and re-add the module to replace an optimizer.
-- **Rename a string** for all of its modules. The string's total sensors keep their history.
+- **Rename a string** for all of its modules. The String device's sensors keep their history.
 - **Remove** modules you no longer want to track.
 - **Save and close** to apply changes.
 

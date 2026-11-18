@@ -241,7 +241,7 @@
         },
         "data_description": {
           "live_reporting": "Deliver each reading as it arrives from the gateway (recommended for most setups). Turn this off to set an averaging interval.",
-          "estimate_silent": "When an optimizer stops reporting but the rest of its string is producing normally, estimate its power from its usual share of the string, and add the estimated energy to the string and total sensors. Its own sensors always show only what it reported. Turn off to hold its last reported value in the string and total instead."
+          "estimate_silent": "When an optimizer stops reporting but the rest of its string is producing normally, estimate its power from its usual share of the string, and add the estimated energy to the String and Total devices. Its own sensors always show only what it reported. Turn off to hold its last reported value on the String and Total devices instead."
         }
       },
       "set_interval": {
