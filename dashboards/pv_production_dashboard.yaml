@@ -50,6 +50,12 @@ views:
                           const pct = Math.min(Math.max(val, 0) / max, 1);
                           return `0 4px 8px rgba(0,0,0,0.5), inset 0 0 ${15 * pct}px rgba(0, 255, 50, ${0.8 * pct})`;
                         ]]]
+                  # No icon: drop button-card's stretchy icon row so the text centres in the tile.
+                  grid:
+                    - grid-template-areas: '"n" "s"'
+                    - grid-template-rows: min-content min-content
+                    - align-content: center
+                    - height: 100%
                   name:
                     - font-size: 1.0em
                     - font-weight: 800
@@ -98,6 +104,12 @@ views:
                           const pct = Math.min(Math.max(val, 0) / max, 1);
                           return `0 4px 8px rgba(0,0,0,0.5), inset 0 0 ${15 * pct}px rgba(0, 255, 50, ${0.8 * pct})`;
                         ]]]
+                  # No icon: drop button-card's stretchy icon row so the text centres in the tile.
+                  grid:
+                    - grid-template-areas: '"n" "s"'
+                    - grid-template-rows: min-content min-content
+                    - align-content: center
+                    - height: 100%
                   name:
                     - font-size: 1.0em
                     - font-weight: 800
@@ -391,6 +403,12 @@ views:
                           const hue = Math.round(pct * 120);
                           return `0 4px 8px rgba(0,0,0,0.5), inset 0 0 12px hsla(${hue}, 80%, 50%, 0.7)`;
                         ]]]
+                  # No icon: drop button-card's stretchy icon row so the text centres in the tile.
+                  grid:
+                    - grid-template-areas: '"n" "s"'
+                    - grid-template-rows: min-content min-content
+                    - align-content: center
+                    - height: 100%
                   name:
                     - font-size: 1.0em
                     - font-weight: 800
@@ -445,6 +463,12 @@ views:
                           const hue = Math.round(pct * 120);
                           return `0 4px 8px rgba(0,0,0,0.5), inset 0 0 12px hsla(${hue}, 80%, 50%, 0.7)`;
                         ]]]
+                  # No icon: drop button-card's stretchy icon row so the text centres in the tile.
+                  grid:
+                    - grid-template-areas: '"n" "s"'
+                    - grid-template-rows: min-content min-content
+                    - align-content: center
+                    - height: 100%
                   name:
                     - font-size: 1.0em
                     - font-weight: 800
@@ -744,6 +768,12 @@ views:
                           if (v === 'silent') return '0 4px 8px rgba(0,0,0,0.5), inset 0 0 10px rgba(255, 40, 40, 0.8)';
                           return `0 4px 8px rgba(0,0,0,0.5), inset 0 0 ${15 * pct}px rgba(0, 255, 50, ${0.8 * pct})`;
                         ]]]
+                  # No icon: drop button-card's stretchy icon row so the text centres in the tile.
+                  grid:
+                    - grid-template-areas: '"n" "s"'
+                    - grid-template-rows: min-content min-content
+                    - align-content: center
+                    - height: 100%
                   name:
                     - font-size: 1.0em
                     - font-weight: 800
@@ -804,6 +834,12 @@ views:
                           if (v === 'silent') return '0 4px 8px rgba(0,0,0,0.5), inset 0 0 10px rgba(255, 40, 40, 0.8)';
                           return `0 4px 8px rgba(0,0,0,0.5), inset 0 0 ${15 * pct}px rgba(0, 255, 50, ${0.8 * pct})`;
                         ]]]
+                  # No icon: drop button-card's stretchy icon row so the text centres in the tile.
+                  grid:
+                    - grid-template-areas: '"n" "s"'
+                    - grid-template-rows: min-content min-content
+                    - align-content: center
+                    - height: 100%
                   name:
                     - font-size: 1.0em
                     - font-weight: 800
