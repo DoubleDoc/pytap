@@ -38,6 +38,10 @@ Shows daily energy production per panel. Each tile displays the panel name and `
 
 **Color scale:** Transparent → Green. Green overlay alpha scales from 0 to 0.7 relative to `sensor.tigo_max_daily_energy`. An inner green glow intensifies with production.
 
+![PV Panel Layout view: daily energy per panel, 6-panel string dimmer than the 12-panel string](images/energy-view.png)
+
+*End of a day on the same 6 + 12 panel installation. Brightness is relative to the best panel (1.83 kWh), so the 6-panel string, which produced about half as much per panel that day, shows as darker green. Differences within a string are visible too: P01 on the 12-panel string is the dimmest of its row.*
+
 ### 2. Panel Connectivity (`/panel-connectivity`)
 
 Shows the number of readings received today per panel using `sensor.tigo_ts4_<panel>_readings_today`.
