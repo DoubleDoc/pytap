@@ -7,9 +7,17 @@
 # config/packages/tigo.yaml, with this in configuration.yaml:
 #   homeassistant:
 #     packages: !include_dir_named packages
-# Or paste the "- sensor:" block under your existing "template:" key.
+# Or paste the "- triggers:" block under your existing "template:" key.
 template:
-  - sensor:
+  # Trigger-based: recalculated once a minute. As plain template sensors they
+  # recalculated after each panel sensor updated, so one PyTap update could
+  # write several in-between values to the database.
+  - triggers:
+      - trigger: time_pattern
+        minutes: "/1"
+      - trigger: homeassistant
+        event: start
+    sensor:
       # Highest daily energy of any panel (for the energy view)
       - name: "Tigo Max Daily Energy"
         unique_id: tigo_max_daily_energy

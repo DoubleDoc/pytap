@@ -46,25 +46,34 @@ Shows the number of readings received today per panel using `sensor.tigo_ts4_<pa
 
 ### 3. Panel Power (`/panel-power`)
 
-Shows the live power output per panel using `sensor.tigo_ts4_<panel>_power`.
+Shows the live power output per panel using `sensor.tigo_ts4_<panel>_power`, coloured by the panel's **Data validity** sensor (PyTap 1.4.2+), found by replacing `_power` with `_data_validity` in the entity ID:
 
-**Color scale:** Transparent → Green. Green overlay alpha scales from 0 to 0.7 relative to `sensor.tigo_max_power`. An inner green glow intensifies with output.
+| Data validity | Tile | Text |
+|---|---|---|
+| Reporting | Green, alpha 0–0.7 relative to `sensor.tigo_max_power`, with an inner glow | Power, e.g. `312 W` |
+| Holding last value | Same green, from the held value | `312 W (held)` |
+| Estimated / Silent, estimated in string | Amber | `Estimated` |
+| Silent | Red | `Silent` |
+| Asleep | Dark (no overlay) | `Asleep` |
+| Unavailable (bus status not normal) | Grey | `No data` |
+
+Without a Data validity sensor (PyTap before 1.4.2) every tile is green by power, as before. A silent panel's power sensor is unavailable, so without this colouring it looked the same as a sleeping one.
 
 ## Physical Layout
 
 All three views mirror the actual roof panel arrangement using a 26-column CSS grid. Panels have two orientations matching real hardware:
 
-- **Landscape (3:2)** — C2, C3 (top row)
+- **Landscape (3:2)** — C2, C3 (top row) and D12, D13 (south-facing)
 - **Portrait (2:3)** — all other panels
 
 ```
                col 11        col 14                           col 21
                  ┌──────────┐ ┌──────────┐                     ┌──┐
-     Row 1       │  C2 (L)  │ │  C3 (L)  │                     │D12│
+     Row 1       │  C2 (L)  │ │  C3 (L)  │                     │D12 (L)│
                  └──────────┘ └──────────┘                     └──┘
         col 9   col 11  col 13  col 15  col 17                col 21
          ┌──┐    ┌──┐    ┌──┐    ┌──┐    ┌──┐                  ┌──┐
-  Row 2  │C4│    │C10│   │C9 │   │C8 │   │C7 │                 │D13│
+  Row 2  │C4│    │C10│   │C9 │   │C8 │   │C7 │                 │D13 (L)│
          └──┘    └──┘    └──┘    └──┘    └──┘                  └──┘
 
     col 4  col 6  col 8  col 10 col 12 col 14 col 16 col 18 col 20 col 22
@@ -77,7 +86,7 @@ All three views mirror the actual roof panel arrangement using a 26-column CSS g
      Row 4
 ```
 
-- **Top section** (`grid-layout`): Row 1 has C2/C3 centered (landscape) + D12 (portrait, south-facing, separated by spacer); Row 2 has C4, C10, C9, C8, C7 (portrait) + D13 (portrait, south-facing)
+- **Top section** (`grid-layout`): Row 1 has C2/C3 centered (landscape) + D12 (landscape, south-facing, separated by spacer); Row 2 has C4, C10, C9, C8, C7 (portrait) + D13 (landscape, south-facing)
 - **Bottom section** (`grid-layout`): Row 3 has C1–C11 main array; Row 4 extends left with D11/D5 and continues through D10
 
 ## Panels (26 total)
@@ -124,12 +133,15 @@ const hue = Math.round(pct * 120);  // 0°=red → 120°=green
 ### Page 3 color formula (Power)
 
 ```javascript
+const v = states[entity.entity_id.replace(/_power$/, '_data_validity')]?.state;
 const max = parseFloat(states['sensor.tigo_max_power']?.state) || 1;
 const pct = Math.min(Math.max(val, 0) / max, 1);
-const alpha = pct * 0.7;
-// Green overlay: rgba(0, 220, 50, alpha)
-// Inner glow:    rgba(0, 255, 50, 0.8 * pct)
+// Reporting/holding: rgba(0, 220, 50, pct * 0.7), inner glow rgba(0, 255, 50, 0.8 * pct)
+// Estimated: rgba(255, 170, 0, 0.5)   Silent: rgba(220, 40, 40, 0.55)
+// Asleep: no overlay                  Unavailable: rgba(120, 120, 120, 0.5)
 ```
+
+The tile text comes from a shared `state_display` template (anchor `&pwr_state_display`).
 
 ## YAML Structure
 
@@ -137,12 +149,12 @@ YAML anchors keep the file DRY:
 
 | Anchor | View | Orientation | Purpose |
 |--------|------|-------------|---------|
-| `&tile_landscape` | Energy | Landscape (3:2) | C2, C3 tiles |
+| `&tile_landscape` | Energy | Landscape (3:2) | C2, C3, D12, D13 tiles |
 | `&tile_portrait` | Energy | Portrait (2:3) | All other tiles |
-| `&conn_tile_landscape` | Connectivity | Landscape (3:2) | C2, C3 tiles (red→green) |
+| `&conn_tile_landscape` | Connectivity | Landscape (3:2) | C2, C3, D12, D13 tiles (red→green) |
 | `&conn_tile_portrait` | Connectivity | Portrait (2:3) | All other tiles (red→green) |
-| `&pwr_tile_landscape` | Power | Landscape (3:2) | C2, C3 tiles (green by power) |
-| `&pwr_tile_portrait` | Power | Portrait (2:3) | All other tiles (green by power) |
+| `&pwr_tile_landscape` | Power | Landscape (3:2) | C2, C3, D12, D13 tiles (by power and data validity) |
+| `&pwr_tile_portrait` | Power | Portrait (2:3) | All other tiles (by power and data validity) |
 
 All three views use the same structural approach:
 
@@ -158,7 +170,12 @@ Server-side Jinja2 template sensors that take the highest value across all panel
 
 ```yaml
 template:
-  - sensor:
+  - triggers:
+      - trigger: time_pattern
+        minutes: "/1"
+      - trigger: homeassistant
+        event: start
+    sensor:
       - name: "Tigo Max Daily Energy"   # sensor.tigo_max_daily_energy, Wh
         state: >
           {% set values = integration_entities('pytap')
@@ -169,5 +186,7 @@ template:
       # Tigo Max Readings Today and Tigo Max Power follow the same pattern
       # with the _readings_today and _power suffixes.
 ```
+
+They are trigger-based and recalculate once a minute: as plain template sensors they recalculated after each panel sensor updated, so one PyTap update could write several in-between values to the database. A minute is plenty for scaling tile colours.
 
 This offloads the max-value computation from the frontend (previously each of the 78 button-cards scanned all 26 sensors in JS) to a single HA template sensor that updates automatically. Unavailable or unknown panels are skipped.
