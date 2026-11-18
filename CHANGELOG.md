@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Example dashboards
+
+- **New PV Panels dashboard** (`dashboards/pv_panels_dashboard.yaml`, documented in `dashboards/pv_panels.md`): one view in which every panel tile shows live power (or *Asleep*, *Est.*, *Silent*, *No data*), today's energy and today's readings, with a red-to-green connectivity bar along its bottom edge. A **Colour tiles by [Power | Energy]** switch (helper `input_select.tigo_tile_colour`) picks what the tile colour shows; estimated, silent and no-data panels keep their amber, red and grey colours in both modes. Styling lives in two `button_card_templates`, so each panel is one line. The README now leads with it.
+- Classic PV Production dashboard: tile text is centred vertically. button-card kept an empty icon row that pushed the name and value to the bottom of each tile.
+- `pv_production.md`: dawn screenshots of all three views; the doc now points to the PV Panels dashboard first.
+
 ## [1.4.6] - 2026-11-18
 
 ### Fixed

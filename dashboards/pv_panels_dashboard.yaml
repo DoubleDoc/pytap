@@ -1,0 +1,212 @@
+# PyTap Panels dashboard: one view, every panel as a tile showing power,
+# today's energy and today's readings, coloured by power or energy.
+# Documentation and screenshots: pv_panels.md
+#
+# Worked example for a roof with two strings: "Master" (6 panels, 3 rows of 2)
+# and "Slave" (12 panels in one row). Replace the entity IDs, names and grid
+# positions with your own; everything else works as it is.
+#
+# Needs:
+#   - custom:button-card 7+ and custom:layout-card (HACS or the Marketplace)
+#   - the max sensors from tigo.yaml
+#   - the helper input_select.tigo_tile_colour (options Power, Energy); see pv_panels.md
+#
+# Paste into a new dashboard: Settings > Dashboards > Add dashboard > New
+# dashboard from scratch, then open it, choose ⋮ > Edit dashboard > ⋮ > Raw
+# configuration editor, and replace everything with this file.
+
+title: PV Panels
+
+button_card_templates:
+
+  # One panel. The tile's entity is the panel's _power sensor; its energy,
+  # readings and data validity sensors are found by replacing the _power suffix.
+  pytap_panel:
+    show_icon: false
+    show_state: true
+    state_display: |
+      [[[
+        const base = entity.entity_id.replace(/_power$/, '');
+        const v = states[base + '_data_validity']?.state;
+        const w = `${Math.round(parseFloat(entity.state) || 0)} W`;
+        let p = w;
+        if (v === 'asleep') p = 'Asleep';
+        else if (v === 'estimated' || v === 'silent_estimated') p = 'Est.';
+        else if (v === 'silent') p = 'Silent';
+        else if (v === 'unavailable' || v === 'unknown') p = 'No data';
+        else if (v === 'holding') p = `${w}*`;
+        const e = parseFloat(states[base + '_daily_energy']?.state);
+        const en = isNaN(e) ? '–' : (e >= 1000 ? `${(e / 1000).toFixed(2)} kWh` : `${Math.round(e)} Wh`);
+        const r = parseInt(states[base + '_readings_today']?.state);
+        const rd = isNaN(r) || r <= 0 ? '–' : r.toLocaleString();
+        return `<div style="line-height:1.15">${p}<br>${en}<br><span style="font-size:0.85em;opacity:0.8"><ha-icon icon="mdi:access-point" style="--mdc-icon-size:0.95em;vertical-align:-1px"></ha-icon> ${rd}</span></div>`;
+      ]]]
+    variables:
+      # Shared by the background and the glow: how the tile is coloured.
+      colour: |
+        [[[
+          const base = entity.entity_id.replace(/_power$/, '');
+          const v = states[base + '_data_validity']?.state;
+          const byEnergy = states['input_select.tigo_tile_colour']?.state === 'Energy';
+          const max = parseFloat(states[byEnergy ? 'sensor.tigo_max_daily_energy' : 'sensor.tigo_max_power']?.state) || 1;
+          const val = parseFloat(byEnergy ? states[base + '_daily_energy']?.state : entity.state) || 0;
+          const pct = Math.min(Math.max(val, 0) / max, 1);
+          // Problems show in both modes: amber estimated, red silent, grey no data.
+          // Asleep is dark when colouring by power, but keeps the day's green by energy.
+          let mode = 'green';
+          if (v === 'estimated' || v === 'silent_estimated') mode = 'amber';
+          else if (v === 'silent') mode = 'red';
+          else if (v === 'unavailable' || v === 'unknown') mode = 'grey';
+          else if (v === 'asleep' && !byEnergy) mode = 'dark';
+          return { mode, pct };
+        ]]]
+    styles:
+      grid:
+        # No icon: drop button-card's stretchy icon row so the text centres.
+        - grid-template-areas: '"n" "s"'
+        - grid-template-rows: min-content min-content
+        - align-content: center
+        - height: 100%
+      card:
+        - aspect-ratio: 2/3
+        - border-radius: 4px
+        - border: "1px solid #3b4252"
+        - padding: 2px 0 6px
+        - background: |
+            [[[
+              const { mode, pct } = variables.colour;
+              const overlay = {
+                green: `rgba(0, 220, 50, ${pct * 0.7})`,
+                amber: 'rgba(255, 170, 0, 0.5)',
+                red: 'rgba(220, 40, 40, 0.55)',
+                grey: 'rgba(120, 120, 120, 0.5)',
+                dark: 'rgba(0, 0, 0, 0)',
+              }[mode];
+              return `linear-gradient(${overlay}, ${overlay}), linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 40%, rgba(0,0,0,0.6) 100%), repeating-linear-gradient(0deg, transparent, transparent 18%, rgba(255,255,255,0.1) 18%, rgba(255,255,255,0.1) 20%), repeating-linear-gradient(90deg, transparent, transparent 18%, rgba(255,255,255,0.1) 18%, rgba(255,255,255,0.1) 20%), #0a111a`;
+            ]]]
+        - box-shadow: |
+            [[[
+              const { mode, pct } = variables.colour;
+              if (mode === 'amber') return '0 4px 8px rgba(0,0,0,0.5), inset 0 0 10px rgba(255, 170, 0, 0.8)';
+              if (mode === 'red') return '0 4px 8px rgba(0,0,0,0.5), inset 0 0 10px rgba(255, 40, 40, 0.8)';
+              if (mode !== 'green') return '0 4px 8px rgba(0,0,0,0.5)';
+              return `0 4px 8px rgba(0,0,0,0.5), inset 0 0 ${15 * pct}px rgba(0, 255, 50, ${0.8 * pct})`;
+            ]]]
+        # Connectivity bar: red to green by today's readings, relative to the best panel.
+        - border-bottom: |
+            [[[
+              const base = entity.entity_id.replace(/_power$/, '');
+              const max = parseFloat(states['sensor.tigo_max_readings_today']?.state) || 0;
+              const r = parseFloat(states[base + '_readings_today']?.state) || 0;
+              if (max <= 0) return '4px solid #3b4252';
+              const pct = Math.min(Math.max(r, 0) / max, 1);
+              return `4px solid hsl(${Math.round(pct * 120)}, 85%, 45%)`;
+            ]]]
+      name:
+        - font-size: 0.9em
+        - font-weight: 800
+        - line-height: 1.1
+        - color: white
+        - text-shadow: "1px 1px 2px rgba(0,0,0,0.8)"
+      state:
+        - font-size: 0.72em
+        - font-weight: 600
+        - color: "#e5e9f0"
+        - text-shadow: "1px 1px 2px rgba(0,0,0,0.8)"
+
+  # One half of the [ Power | Energy ] switch. Set variables.option.
+  pytap_colour_option:
+    entity: input_select.tigo_tile_colour
+    name: "[[[ return variables.option ]]]"
+    show_icon: false
+    show_state: false
+    tap_action:
+      action: perform-action
+      perform_action: input_select.select_option
+      target:
+        entity_id: input_select.tigo_tile_colour
+      data:
+        option: "[[[ return variables.option ]]]"
+    styles:
+      card:
+        - height: 32px
+        - padding: 0 14px
+        - border: "1px solid #3b4252"
+        - box-shadow: none
+        - background: "[[[ return entity?.state === variables.option ? 'rgba(0, 200, 60, 0.55)' : 'transparent' ]]]"
+      name:
+        - font-size: 0.9em
+        - font-weight: 600
+        - color: "[[[ return entity?.state === variables.option ? 'white' : 'var(--secondary-text-color)' ]]]"
+
+views:
+  - title: Panels
+    path: panels
+    panel: true
+    cards:
+      - type: vertical-stack
+        cards:
+
+          # ── Colour tiles by [ Power | Energy ] ─────────────────────────
+          - type: custom:layout-card
+            layout_type: custom:grid-layout
+            layout:
+              grid-template-columns: max-content 90px 90px 1fr
+              grid-gap: 0
+              card_margin: 0
+              align-items: center
+              margin: 4px 0 0
+            cards:
+              - type: custom:button-card
+                name: Colour tiles by
+                show_icon: false
+                tap_action: { action: none }
+                styles:
+                  card: [height: 32px, padding: 0 12px 0 4px, background: none, box-shadow: none, border: none]
+                  name: [font-size: 0.95em, color: var(--primary-text-color)]
+              - type: custom:button-card
+                template: pytap_colour_option
+                variables: { option: Power }
+                styles: { card: [border-radius: 16px 0 0 16px] }
+              - type: custom:button-card
+                template: pytap_colour_option
+                variables: { option: Energy }
+                styles: { card: [border-radius: 0 16px 16px 0, border-left: none] }
+
+          # ── Master: 3 rows of 2 ────────────────────────────────────────
+          # 24 columns = 12 portrait panels × 2 columns each.
+          - type: heading
+            heading: Master — string 2 (6 panels)
+          - type: custom:layout-card
+            layout_type: custom:grid-layout
+            layout: &panel_grid
+              grid-template-columns: repeat(24, 1fr)
+              grid-gap: 6px
+              margin: 0
+            cards:
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_s2_p01_power, name: P01, view_layout: { grid-row: 1, grid-column: 1 / 3 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_s2_p02_power, name: P02, view_layout: { grid-row: 1, grid-column: 3 / 5 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_s2_p03_power, name: P03, view_layout: { grid-row: 2, grid-column: 1 / 3 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_s2_p04_power, name: P04, view_layout: { grid-row: 2, grid-column: 3 / 5 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_s2_p05_power, name: P05, view_layout: { grid-row: 3, grid-column: 1 / 3 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_s2_p06_power, name: P06, view_layout: { grid-row: 3, grid-column: 3 / 5 } }
+
+          # ── Slave: 12 in one row ───────────────────────────────────────
+          - type: heading
+            heading: Slave — string 2 (12 panels)
+          - type: custom:layout-card
+            layout_type: custom:grid-layout
+            layout: *panel_grid
+            cards:
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p01_power, name: P01, view_layout: { grid-row: 1, grid-column: 1 / 3 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p02_power, name: P02, view_layout: { grid-row: 1, grid-column: 3 / 5 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p03_power, name: P03, view_layout: { grid-row: 1, grid-column: 5 / 7 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p04_power, name: P04, view_layout: { grid-row: 1, grid-column: 7 / 9 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p05_power, name: P05, view_layout: { grid-row: 1, grid-column: 9 / 11 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p06_power, name: P06, view_layout: { grid-row: 1, grid-column: 11 / 13 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p07_power, name: P07, view_layout: { grid-row: 1, grid-column: 13 / 15 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p08_power, name: P08, view_layout: { grid-row: 1, grid-column: 15 / 17 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p09_power, name: P09, view_layout: { grid-row: 1, grid-column: 17 / 19 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p10_power, name: P10, view_layout: { grid-row: 1, grid-column: 19 / 21 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p11_power, name: P11, view_layout: { grid-row: 1, grid-column: 21 / 23 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p12_power, name: P12, view_layout: { grid-row: 1, grid-column: 23 / 25 } }

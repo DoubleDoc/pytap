@@ -1,6 +1,8 @@
-# PV Production Dashboard
+# PV Production Dashboard (classic)
 
-Home Assistant Lovelace dashboard displaying the physical solar panel layout with dynamic status coloring.
+Home Assistant Lovelace dashboard displaying the physical solar panel layout with dynamic status coloring, in three views: daily energy, connectivity and power.
+
+> **New in this fork: the [PV Panels dashboard](pv_panels.md)** puts power, energy, readings and data validity on every tile in a single view, with a switch to colour the tiles by power or energy. Start there; this classic dashboard is kept and maintained for one-measure-per-view use and its Grafana version.
 
 > **This is a worked example for one roof**, not a drop-in dashboard. It lays out 26 panels named C1–D13 and uses entity IDs such as `sensor.tigo_ts4_c1_power`, which PyTap created for modules named `C1` before version 1.4.0. On your installation the IDs depend on your module, string and inverter names (for example `sensor.tigo_s2_p01_power`; see [Device naming](../README.md#device-naming)). To use it, replace the panel entity IDs and grid positions with your own. The max sensors in `tigo.yaml` work on any installation as they are.
 
@@ -8,7 +10,8 @@ Home Assistant Lovelace dashboard displaying the physical solar panel layout wit
 
 | File | Purpose |
 |------|---------|
-| [`pv_production_dashboard.yaml`](pv_production_dashboard.yaml) | Lovelace dashboard (3 views, ~901 lines) |
+| [`pv_production_dashboard.yaml`](pv_production_dashboard.yaml) | Lovelace dashboard (3 views, ~1,070 lines) |
+| [`pv_panels_dashboard.yaml`](pv_panels_dashboard.yaml) | The newer single-view dashboard; see [pv_panels.md](pv_panels.md) |
 | [`tigo.yaml`](tigo.yaml) | HA template sensors for max-value aggregation |
 | [`grafana/pv_production_grafana.json`](grafana/pv_production_grafana.json) | The same layout as a Grafana dashboard (InfluxDB v3) |
 | [`grafana/generate_grafana_dashboard.py`](grafana/generate_grafana_dashboard.py) | Script that generated the first version of the Grafana dashboard |

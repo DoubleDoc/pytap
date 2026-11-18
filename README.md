@@ -7,6 +7,20 @@
 
 A Home Assistant custom integration for monitoring **Tigo TS4 optimizers** locally, without Tigo's cloud. PyTap listens to the RS-485 bus between a Tigo CCA and its TAP through an RS-485 to TCP converter, and exposes real-time per-optimizer sensors: power, voltage, current, temperature, energy and more.
 
+## See every panel at once
+
+![PV Panels dashboard: each panel as a tile laid out like the roof, showing power, today's energy and readings, coloured by energy](dashboards/images/panels-view-energy.png)
+
+This fork comes with the **[PV Panels dashboard](dashboards/pv_panels.md)**: one view with every panel laid out like your roof. Each tile shows:
+
+- **live power**, or the panel's state when it isn't reporting normally (`Asleep`, `Est.`, `Silent`, `No data`);
+- **today's energy**;
+- **today's readings count**, plus a red-to-green connectivity bar along its bottom edge.
+
+A **Colour tiles by [Power | Energy]** switch picks what the tile colour shows. Problem panels stand out in either mode: estimated panels are amber, silent ones red, and panels with no data grey. These states come from this fork's per-panel [Data validity](#sensors) sensor.
+
+The tiles are driven by two shared templates, so adapting the dashboard to your roof means editing one line per panel. See [`dashboards/pv_panels.md`](dashboards/pv_panels.md) to set it up. The original three-view [PV Production dashboard](dashboards/pv_production.md) is still included and maintained.
+
 ---
 
 ## Hardware requirements
@@ -53,7 +67,7 @@ When you add PyTap, enter the converter's IP address as the **host** and its Dev
 ## Features
 
 - **Real-time streaming** — Push-based data delivery with sub-second latency (no polling).
-- **Configurable reporting** — Choose **live reporting** (default; every reading delivered as it arrives) or a **time-weighted averaged interval** that caches readings and pushes a single representative value every few seconds to reduce CPU and recorder load on large installations.
+- **Configurable reporting** — Choose a **time-weighted averaged interval** (default for new entries, every 60 seconds) that caches readings and pushes a single representative value to reduce CPU and recorder load, or **live reporting** (every reading delivered as it arrives).
 - **Per-optimizer sensors** — 13 sensor entities per Tigo TS4 module: performance,
   power, voltage in/out, current in/out, temperature, DC-DC duty cycle, RSSI,
   daily energy, total energy, readings today and data validity.
@@ -341,7 +355,10 @@ Each optimizer, string and gateway total has a **Total energy** sensor (Wh, `tot
 
 ### Example dashboards
 
-[`dashboards/`](dashboards/pv_production.md) has a roof-layout dashboard that colours each panel by daily energy, connectivity or power, for Home Assistant (Lovelace) and Grafana. It's laid out for one specific roof, so you'll need to replace its panel entity IDs and positions; its helper sensors in `tigo.yaml` work on any installation.
+- **[PV Panels](dashboards/pv_panels.md)** (recommended): one view with power, today's energy, readings and data validity on every panel tile, and a switch to colour the tiles by power or energy. See [See every panel at once](#see-every-panel-at-once).
+- **[PV Production](dashboards/pv_production.md)** (classic): three views, each colouring the panels by one measure (daily energy, connectivity or power), for Home Assistant (Lovelace) and Grafana.
+
+Both are laid out for a specific roof, so you'll need to replace their panel entity IDs and positions. Their helper sensors in `tigo.yaml` work on any installation.
 
 ### Log messages
 
@@ -432,7 +449,7 @@ pytap/
 │   ├── deploy.sh                # Deploy script (SSH-based)
 │   └── .deploy.env.example      # Example credentials config
 ├── tests/                       # Integration tests
-├── dashboards/                  # Example dashboards (Lovelace, Grafana)
+├── dashboards/                  # Example dashboards: PV Panels (pv_panels.md), classic PV Production, Grafana
 ├── docs/
 │   ├── architecture.md          # Architecture & design document
 │   ├── implementation.md        # Implementation details & history
