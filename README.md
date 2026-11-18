@@ -396,8 +396,28 @@ In normal running, debug adds one line per write interval and gateway listing ho
 - **Listen-only.** PyTap never transmits, so it can't request data, change settings or trigger rapid shutdown. It needs a working Tigo CCA on the bus.
 - **One reading per optimizer.** A dual-module optimizer reports both panels combined. See [Dual-module optimizers](#dual-module-optimizers).
 - **Per-optimizer energy** is integrated from power readings by PyTap, so it can differ slightly from Tigo's cloud figures.
-- **Nothing is recorded while Home Assistant is down.** PyTap only listens, and the bus doesn't replay missed readings (the CCA still uploads to Tigo's cloud as usual). PyTap saves its state when Home Assistant stops and resumes at once on start, without waiting for a node table. For each optimizer that was reporting when Home Assistant stopped, the first reading after the restart is compared with the last one before it: a gap of up to 10 minutes is bridged with the average of the two and counted as estimated energy (when **Estimate silent optimizers** is on). Energy produced during a longer daytime outage, such as a host reboot or OS update, is lost: daily and lifetime totals carry on from where they were. At night nothing is lost.
+- **Nothing is recorded while Home Assistant is down.** PyTap only listens, and the bus doesn't replay missed readings (the CCA still uploads to Tigo's cloud as usual). PyTap saves its state when Home Assistant stops and resumes at once on start, without waiting for a node table. For each optimizer that was reporting when Home Assistant stopped, the first reading after the restart is compared with the last one before it: a gap of up to 10 minutes is bridged with the average of the two and counted as estimated energy (when **Estimate silent optimizers** is on). Energy produced during a longer daytime outage, such as a host reboot or OS update, is lost: daily and lifetime totals carry on from where they were. At night nothing is lost. See [Future work](#future-work).
 - **Estimates can't see a shorted panel.** If a panel's bypass diode shorts, the string keeps running at full current but that panel contributes nothing. Its neighbours look normal, so while it is silent its estimate over-counts. Only the inverter's string voltage would reveal this.
+
+---
+
+## Future work
+
+PyTap's two biggest limitations come from where it runs: inside Home Assistant.
+
+- **Database load.** Each optimizer has 13 sensors, and every update is a state row in Home Assistant's recorder. The averaged interval, rounding and the removal of per-reading timestamp attributes have cut PyTap's writes by well over 90% compared with live reporting (see [Database size](#configuration)), but a large installation still writes many rows a day for values that change slowly, and Home Assistant has to receive and process the full stream of readings first.
+- **Losses while Home Assistant is offline.** PyTap can only hear the bus while Home Assistant is running. Restarts of up to 10 minutes are bridged, but anything longer, such as a host reboot, an OS update or a crash, loses that time's energy for good (see [Known limitations](#known-limitations)).
+
+Both point the same way: **much of PyTap would work better on a small device at the RS-485 bus itself**, such as an ESP32 next to the CCA, or the RS-485 converter if it can run its own code. Such a device would:
+
+- listen around the clock, independently of Home Assistant, so restarts and updates lose nothing;
+- integrate energy where the readings arrive, keeping per-panel daily and lifetime counters that Home Assistant reads, rather than reconstructs;
+- send Home Assistant only what it needs (averaged values, energy counters, data validity and bus status) at a rate it chooses, instead of every raw reading;
+- keep the node table and barcode mapping on the device, so they never have to be relearned.
+
+Home Assistant would keep what it's good at: history, dashboards, the Energy dashboard, automations, and string-level views and estimates across many devices.
+
+[Bobsilvio/tigosolar-local](https://github.com/Bobsilvio/tigosolar-local) and its companion firmware [Bobsilvio/tigo_server](https://github.com/Bobsilvio/tigo_server) show this approach working. An ESP32 with a receive-only RS-485 module listens to the same TAP–CCA bus and decodes each panel's power, voltages, current and temperature. It either serves the data over a WebSocket that the tigosolar-local integration reads, or runs as an ESPHome device with native Home Assistant entities. Its [protocol notes](https://github.com/Bobsilvio/tigo_server/blob/main/docs/PROTOCOL-NOTES.md), checked against the CCA firmware, are also worth comparing with PyTap's parser. A future PyTap could take the same route: move the listener, energy integration and health tracking onto such a device, and keep this integration as the Home Assistant side.
 
 ---
 
