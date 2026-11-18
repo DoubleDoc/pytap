@@ -261,29 +261,63 @@ class U12Pair:
         return cls(first, second)
 
 
+# Input current per unit by optimizer hardware ID, as the Tigo CCA firmware
+# decodes it (CNodeVersion::DetermineHwScaling). The hardware ID is the hex
+# number in an optimizer's Version string, e.g. "Mnode Version K8.0120 (2D)".
+# Source: Bobsilvio/tigo_server docs/PROTOCOL-NOTES.md.
+DEFAULT_CURRENT_SCALE = 0.005
+
+
+def current_scale_for_hw_id(hw_id: int | None) -> float:
+    """Amps per unit of the 12-bit input current for a hardware ID."""
+    if hw_id is None:
+        return DEFAULT_CURRENT_SCALE  # unknown until a Version answer is seen
+    if hw_id <= 0x23:
+        return 0.0025
+    if hw_id <= 0x5F:
+        return 0.005
+    return 0.025  # "higher rated" units: raw x 5 x 0.005
+
+
+# Status bit that marks bytes 5.5-6 of a power report as a temperature
+# (otherwise they hold a "Details" value).
+STATUS_TEMPERATURE = 0x20
+
+
 @dataclass(frozen=True)
 class PowerReport:
-    """13-byte solar optimizer power measurement (raw values)."""
+    """Solar optimizer power measurement (raw values), 12 to 15 bytes.
+
+    Field names follow the CCA firmware (see Bobsilvio/tigo_server
+    docs/PROTOCOL-NOTES.md). A 12-byte report has no RSSI.
+    """
 
     voltage_in_out: U12Pair  # bytes 0-2
     dc_dc_duty_cycle_raw: int  # byte 3 (u8)
     current_temp: U12Pair  # bytes 4-6
-    unknown: bytes  # bytes 7-9
+    jstatus: int  # byte 7 (u8)
+    status: int  # bytes 8-9 (u16); bit 0x20 = bytes 5.5-6 hold a temperature
     slot_counter: SlotCounter  # bytes 10-11
-    rssi: int  # byte 12 (u8)
+    rssi_raw: int | None  # byte 12 (u8), absent in 12-byte reports
 
     @classmethod
     def from_bytes(cls, data: bytes) -> "PowerReport":
-        if len(data) < 13:
-            raise ValueError(f"PowerReport needs 13 bytes, got {len(data)}")
+        if len(data) < 12:
+            raise ValueError(f"PowerReport needs at least 12 bytes, got {len(data)}")
         return cls(
             voltage_in_out=U12Pair.from_bytes(data[0:3]),
             dc_dc_duty_cycle_raw=data[3],
             current_temp=U12Pair.from_bytes(data[4:7]),
-            unknown=data[7:10],
+            jstatus=data[7],
+            status=(data[8] << 8) | data[9],
             slot_counter=SlotCounter.from_bytes(data[10:12]),
-            rssi=data[12],
+            rssi_raw=data[12] if len(data) >= 13 else None,
         )
+
+    @property
+    def rssi(self) -> int | None:
+        """RSSI, or None when absent or 0 (the CCA treats 0 as no usable value)."""
+        return self.rssi_raw or None
 
     @property
     def voltage_in(self) -> float:
@@ -297,12 +331,19 @@ class PowerReport:
 
     @property
     def current_in(self) -> float:
-        """Input current in Amps."""
-        return self.current_temp.first / 200.0
+        """Input current in Amps at the default scale (0.005 A per unit)."""
+        return self.current_in_scaled(DEFAULT_CURRENT_SCALE)
+
+    def current_in_scaled(self, amps_per_unit: float) -> float:
+        """Input current in Amps for the optimizer's hardware scale."""
+        return self.current_temp.first * amps_per_unit
 
     @property
-    def temperature(self) -> float:
-        """Temperature in °C (sign-extended)."""
+    def temperature(self) -> float | None:
+        """Temperature in °C (sign-extended), or None when the status word
+        says bytes 5.5-6 hold something else."""
+        if not self.status & STATUS_TEMPERATURE:
+            return None
         raw = self.current_temp.second
         if raw & 0x800:
             # Sign-extend 12-bit to 16-bit signed

@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum, auto
 import logging
+import re
 import struct
 
 from .barcode import barcode_from_address
@@ -31,10 +32,14 @@ from .types import (
     PowerReport,
     ReceivedPacketHeader,
     SlotCounter,
+    current_scale_for_hw_id,
     iter_received_packets,
 )
 
 logger = logging.getLogger(__name__)
+
+# Hardware ID in an optimizer's Version answer, e.g. "Mnode Version K8.0120 (2D)".
+_VERSION_HW_ID = re.compile(r"Version\b.*\(([0-9A-Fa-f]{1,2})\)")
 
 
 # ---------------------------------------------------------------------------
@@ -686,14 +691,10 @@ class Parser:
         data: bytes,
     ) -> list[Event]:
         """Parse a power report and generate PowerReportEvent."""
+        # 12 to 15 bytes: a 12-byte report has no RSSI; bytes 13-14 (slot
+        # counter bits 16-17, PLC RSSI) aren't used.
         try:
-            if len(data) == 15:
-                # Extended 15-byte format: first 13 bytes are standard
-                report = PowerReport.from_bytes(data[:13])
-            elif len(data) >= 13:
-                report = PowerReport.from_bytes(data[:13])
-            else:
-                return []
+            report = PowerReport.from_bytes(data[:13])
         except (ValueError, IndexError):
             return []
 
@@ -708,11 +709,13 @@ class Parser:
 
         # Look up barcode from persistent state
         barcode = None
+        hw_id = None
         gw_table = self._persistent_state.gateway_node_tables.get(gw_id)
         if gw_table is not None:
             long_addr = gw_table.get(node_id)
             if long_addr is not None:
                 barcode = barcode_from_address(long_addr.data)
+                hw_id = self._persistent_state.node_hw_ids.get(str(long_addr))
 
         event = PowerReportEvent(
             gateway_id=gw_id,
@@ -720,7 +723,7 @@ class Parser:
             barcode=barcode,
             voltage_in=report.voltage_in,
             voltage_out=report.voltage_out,
-            current_in=report.current_in,
+            current_in=report.current_in_scaled(current_scale_for_hw_id(hw_id)),
             temperature=report.temperature,
             dc_dc_duty_cycle=report.duty_cycle,
             rssi=report.rssi,
@@ -734,8 +737,26 @@ class Parser:
         node_id: int,
         data: bytes,
     ) -> list[Event]:
-        """Parse string response from a PV node."""
+        """Parse string response from a PV node.
+
+        A Version answer (e.g. "Mnode Version K8.0120 (2D)") carries the
+        optimizer's hardware ID, which sets its input current scale.
+        """
         content = data.decode("utf-8", errors="replace")
+        if match := _VERSION_HW_ID.search(content):
+            gw_table = self._persistent_state.gateway_node_tables.get(gw_id) or {}
+            long_addr = gw_table.get(node_id)
+            if long_addr is not None:
+                hw_id = int(match.group(1), 16)
+                key = str(long_addr)
+                if self._persistent_state.node_hw_ids.get(key) != hw_id:
+                    self._persistent_state.node_hw_ids[key] = hw_id
+                    self._log.info(
+                        "Optimizer %s hardware ID 0x%02X: input current scale %g A",
+                        barcode_from_address(long_addr.data),
+                        hw_id,
+                        current_scale_for_hw_id(hw_id),
+                    )
         return [
             StringEvent(
                 gateway_id=gw_id,

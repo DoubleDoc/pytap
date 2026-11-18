@@ -169,9 +169,9 @@ def test_power_report_negative_temp():
             0x00,
             0x0F,
             0xFF,  # current_temp: first=0, second=0xFFF
+            0x00,  # jstatus
             0x00,
-            0x00,
-            0x00,  # unknown
+            0x20,  # status: bit 0x20 = temperature present
             0x00,
             0x00,  # slot_counter
             0x00,  # rssi

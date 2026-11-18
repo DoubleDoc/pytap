@@ -128,11 +128,15 @@ class PersistentState:
     gateway_identities: dict[int, LongAddress]
     gateway_versions: dict[int, str]
     gateway_node_tables: dict[int, dict[int, LongAddress]]
+    # Optimizer hardware IDs from their Version strings, keyed by long
+    # address; they set the input current scale.
+    node_hw_ids: dict[str, int]
 
     def __init__(self):
         self.gateway_identities = {}
         self.gateway_versions = {}
         self.gateway_node_tables = {}
+        self.node_hw_ids = {}
 
     def to_dict(self) -> dict:
         """Serialise to a JSON-compatible dict for HA Store."""
@@ -145,6 +149,7 @@ class PersistentState:
                 str(gw): {str(nid): str(addr) for nid, addr in nodes.items()}
                 for gw, nodes in self.gateway_node_tables.items()
             },
+            "node_hw_ids": dict(self.node_hw_ids),
         }
 
     @classmethod
@@ -159,4 +164,6 @@ class PersistentState:
             state.gateway_node_tables[int(gw)] = {
                 int(nid): LongAddress.from_str(addr) for nid, addr in nodes.items()
             }
+        for addr, hw_id in data.get("node_hw_ids", {}).items():
+            state.node_hw_ids[str(addr)] = int(hw_id)
         return state

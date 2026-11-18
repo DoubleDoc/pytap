@@ -33,9 +33,9 @@ class PowerReportEvent(Event):
     current_in: float
     power: float  # = current_out * voltage_out
     current_out: float  # = (voltage_in * current_in) / voltage_out
-    temperature: float
+    temperature: float | None
     dc_dc_duty_cycle: float
-    rssi: int
+    rssi: int | None
 
     def __init__(
         self,
@@ -46,9 +46,9 @@ class PowerReportEvent(Event):
         voltage_in: float,
         voltage_out: float,
         current_in: float,
-        temperature: float,
+        temperature: float | None,
         dc_dc_duty_cycle: float,
-        rssi: int,
+        rssi: int | None,
         timestamp: datetime
     ):
         super().__init__(event_type="power_report", timestamp=timestamp)

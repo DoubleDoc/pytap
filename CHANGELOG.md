@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+Decoding now follows how the Tigo CCA firmware decodes power reports, as documented in Bobsilvio's [tigo_server protocol notes](https://github.com/Bobsilvio/tigo_server/blob/main/docs/PROTOCOL-NOTES.md). Readings on installations like the one this fork is tested on (all reports carry a temperature, hardware in the 0.005 A range) don't change.
+
+- **Input current scale by hardware** — Current was always decoded at 0.005 A per unit, so older optimizers read 2× too high and "higher rated" ones 5× too low (and their power with it). PyTap now learns each optimizer's hardware ID from its Version answer, keeps it across restarts, and uses the matching scale (0.0025, 0.005 or 0.025 A), assuming 0.005 A until it is known.
+- **Temperature** is taken only from reports whose status word marks the field as a temperature (bit 0x20); other reports keep the last valid temperature.
+- **RSSI** of 0 means "no usable value" and no longer replaces the last valid RSSI.
+- **12-byte power reports** (no RSSI byte) are decoded instead of dropped.
+
+### Documentation
+
+- README: the fork note and credits for upstream, a Future work section, and softer wording about silent optimizers and live reporting.
+
 ## [1.4.7] - 2026-11-18
 
 ### Changed

@@ -1336,6 +1336,17 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     barcode,
                 )
 
+        # A report without a valid temperature (status bit 0x20 clear) or
+        # RSSI (12-byte report, or 0) keeps the last valid value, as the CCA
+        # does.
+        previous = self.data["nodes"].get(barcode) or {}
+        temperature = (
+            event.temperature
+            if event.temperature is not None
+            else previous.get("temperature")
+        )
+        rssi = event.rssi if event.rssi is not None else previous.get("rssi")
+
         self.data["nodes"][barcode] = {
             "gateway_id": event.gateway_id,
             "node_id": event.node_id,
@@ -1349,9 +1360,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "current_out": event.current_out,
             "power": event.power,
             "performance": round(performance, 2) if performance is not None else None,
-            "temperature": event.temperature,
+            "temperature": temperature,
             "dc_dc_duty_cycle": event.dc_dc_duty_cycle,
-            "rssi": event.rssi,
+            "rssi": rssi,
             "daily_energy_wh": round(acc.daily_energy_wh, 2),
             "total_energy_wh": round(acc.total_energy_wh, 2),
             "readings_today": acc.readings_today,

@@ -115,6 +115,11 @@ Each configured Tigo TS4 optimizer exposes the following sensors:
 | Readings Today | — | — (diagnostic) |
 | Data validity | — | `enum` (diagnostic): see below |
 
+Readings are decoded the way the Tigo CCA's own firmware does it:
+
+- **Current In** uses each optimizer's input current scale, which depends on its hardware: 0.0025 A per unit for older units, 0.005 A for most, 0.025 A for "higher rated" units. PyTap learns each optimizer's hardware ID from its Version answer when the CCA asks for it, keeps it across restarts, and assumes 0.005 A until then. **Power** is Voltage In × Current In.
+- **Temperature** is updated only from reports that mark the field as a temperature, and **RSSI** only from reports with a usable value (not 0, and not the short 12-byte report, which has none); otherwise the last valid value is kept.
+
 PyTap also creates aggregate virtual devices:
 
 - **Tigo [inverter] String <name>** — `performance`, `power`, `daily_energy`, `total_energy`. Created for every string, even when there is only one, so a string keeps its history when more strings are added later.
@@ -417,7 +422,7 @@ Both point the same way: **much of PyTap would work better on a small device at 
 
 Home Assistant would keep what it's good at: history, dashboards, the Energy dashboard, automations, and string-level views and estimates across many devices.
 
-[Bobsilvio/tigosolar-local](https://github.com/Bobsilvio/tigosolar-local) and its companion firmware [Bobsilvio/tigo_server](https://github.com/Bobsilvio/tigo_server) show this approach working. An ESP32 with a receive-only RS-485 module listens to the same TAP–CCA bus and decodes each panel's power, voltages, current and temperature. It either serves the data over a WebSocket that the tigosolar-local integration reads, or runs as an ESPHome device with native Home Assistant entities. Its [protocol notes](https://github.com/Bobsilvio/tigo_server/blob/main/docs/PROTOCOL-NOTES.md), checked against the CCA firmware, are also worth comparing with PyTap's parser. A future PyTap could take the same route: move the listener, energy integration and health tracking onto such a device, and keep this integration as the Home Assistant side.
+[Bobsilvio/tigosolar-local](https://github.com/Bobsilvio/tigosolar-local) and its companion firmware [Bobsilvio/tigo_server](https://github.com/Bobsilvio/tigo_server) show this approach working. An ESP32 with a receive-only RS-485 module listens to the same TAP–CCA bus and decodes each panel's power, voltages, current and temperature. It either serves the data over a WebSocket that the tigosolar-local integration reads, or runs as an ESPHome device with native Home Assistant entities. A future PyTap could take the same route: move the listener, energy integration and health tracking onto such a device, and keep this integration as the Home Assistant side.
 
 ---
 
@@ -550,6 +555,8 @@ Run `./deploy/deploy.sh --help` for all options.
 [Kyrill](https://github.com/poolski) contributed the averaged reporting interval upstream: the configurable write interval and the time-weighted averaging of readings across it, which this fork now uses by default.
 
 The Tigo protocol was reverse-engineered by [taptap](https://github.com/willglynn/taptap) (Will Glynn). Inspired by the [taptap fork](https://github.com/litinoveweedle/taptap) and [taptap Home Assistant add-on](https://github.com/litinoveweedle/hassio-addons).
+
+The decoding details above (input current scale by hardware ID, the temperature status bit, RSSI 0, 12-byte reports) come from [Bobsilvio](https://github.com/Bobsilvio)'s [protocol notes](https://github.com/Bobsilvio/tigo_server/blob/main/docs/PROTOCOL-NOTES.md) for [tigo_server](https://github.com/Bobsilvio/tigo_server), which work out how the CCA firmware itself decodes the bus and where taptap is incomplete. Their ESP32 project, which grew from [tictactom/tigo_server](https://github.com/tictactom/tigo_server), is also the example in [Future work](#future-work).
 
 [seaosair](https://github.com/seaosair) worked out why PyTap wrote so much to the recorder, and proposed rounding states and fixing the per-reading `last_update` attribute in [PR #25](https://github.com/azebro/pytap/pull/25). They backed the proposal with careful measurements from a 23-module installation, including the less obvious points: excluding an attribute from the recorder doesn't stop the write, and rounding only helps once that attribute is fixed. PyTap's rounding and its removal of per-reading timestamp attributes follow their work.
 
