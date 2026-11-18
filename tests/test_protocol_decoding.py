@@ -38,7 +38,15 @@ def _report(status: int = 0x20, rssi: int | None = 0x80, current_raw: int = 500)
 
 @pytest.mark.parametrize(
     ("hw_id", "scale"),
-    [(None, 0.005), (0x10, 0.0025), (0x23, 0.0025), (0x24, 0.005), (0x2D, 0.005), (0x5F, 0.005), (0x60, 0.025)],
+    [
+        (None, 0.005),
+        (0x10, 0.0025),
+        (0x23, 0.0025),
+        (0x24, 0.005),
+        (0x2D, 0.005),
+        (0x5F, 0.005),
+        (0x60, 0.025),
+    ],
 )
 def test_current_scale_for_hw_id(hw_id, scale) -> None:
     assert current_scale_for_hw_id(hw_id) == scale
@@ -96,7 +104,6 @@ def test_hw_ids_persist() -> None:
 def test_coordinator_keeps_last_valid_temperature_and_rssi(hass) -> None:
     """A report without a valid temperature or RSSI keeps the last valid one."""
     from custom_components.pytap.pytap.core.events import PowerReportEvent
-
     from tests.test_estimation import A, _coordinator
 
     coordinator = _coordinator(hass)
