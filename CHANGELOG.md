@@ -1,10 +1,18 @@
 # Changelog
 
-## [1.4.6] - Unreleased
+## [1.4.6] - 2026-11-18
 
 ### Fixed
 
 - `reporting_count` on the String and Total devices counted asleep and briefly quiet optimizers as reporting (at night it showed 12 of 12). It now counts only optimizers whose Data validity is *Reporting*: those that reported within the last 2 minutes.
+
+### Example dashboards
+
+- The max sensors in `dashboards/tigo.yaml` are trigger-based and recalculate once a minute. As plain template sensors they recalculated after each panel sensor updated, writing several in-between values to the database per PyTap update.
+- **Panel Power** view: tiles are coloured and labelled by each panel's Data validity: green by power while reporting (`312 W`, or `312 W (held)`), amber *Estimated*, red *Silent*, dark *Asleep*, grey *No data*. A silent panel used to look the same as a sleeping one.
+- **Panel Connectivity** view: tiles stay dark and show `–` until any panel has reported today, instead of turning red after midnight.
+- **PV Panel Layout** view: energy is shown compactly (`838 Wh`, `1.61 kWh`) so it fits portrait tiles.
+- `pv_production.md`: screenshots of each view, and D12/D13 corrected to landscape.
 
 ## [1.4.5] - 2026-11-17
 
