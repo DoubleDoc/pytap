@@ -1,6 +1,6 @@
 """Tests for the CRC-16-CCITT module."""
 
-from pytap.core.crc import crc
+from ..core.crc import crc
 
 
 def test_crc_empty():

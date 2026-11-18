@@ -1,9 +1,13 @@
 """Tests for the public API module."""
 
+import importlib
+
 import pytest
 
-import pytap
-from pytap.core.parser import Parser
+from ..core.parser import Parser
+
+# The embedded pytap library (this package's parent), however it is imported.
+pytap = importlib.import_module("..", __package__)
 
 
 def test_create_parser():
@@ -20,7 +24,7 @@ def test_parse_bytes_empty():
 
 def test_parse_bytes_with_data():
     """parse_bytes with enumeration sequence data returns events."""
-    from pytap.tests.test_parser import ENUMERATION_SEQUENCE
+    from .test_parser import ENUMERATION_SEQUENCE
     events = pytap.parse_bytes(ENUMERATION_SEQUENCE)
     # Should return at least some events
     assert isinstance(events, list)

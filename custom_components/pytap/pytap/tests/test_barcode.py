@@ -2,7 +2,7 @@
 
 import pytest
 
-from pytap.core.barcode import barcode_from_address, decode_barcode, encode_barcode
+from ..core.barcode import barcode_from_address, decode_barcode, encode_barcode
 
 # Known address from ENUMERATION_SEQUENCE
 KNOWN_ADDRESS = bytes([0x04, 0xC0, 0x5B, 0x30, 0x00, 0x02, 0xBE, 0x16])

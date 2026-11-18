@@ -48,4 +48,4 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install -r requirements-test.txt
-      - run: python -m pytest tests/ -vv --tb=short
+      - run: python -m pytest -vv --tb=short  # pytest.ini testpaths: tests/ and the parser's tests

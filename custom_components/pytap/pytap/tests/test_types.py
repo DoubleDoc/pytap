@@ -4,7 +4,7 @@ import struct
 
 import pytest
 
-from pytap.core.types import (
+from ..core.types import (
     Address,
     FrameType,
     GatewayID,
