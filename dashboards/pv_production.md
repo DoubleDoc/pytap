@@ -44,6 +44,10 @@ Shows the number of readings received today per panel using `sensor.tigo_ts4_<pa
 
 **Color scale:** Red → Green. HSL hue scales 0° (red) → 120° (green) relative to `sensor.tigo_max_readings_today`. Low-connectivity panels are immediately visible in red.
 
+![Panel Connectivity view: every panel green, 17,386 to 18,515 readings](images/connectivity-view.png)
+
+*End of a day on the same 6 + 12 panel installation: every panel received 94–100% as many readings as the best one, so all are green. A panel at half the best count would show yellow, and one that barely reported would show red.*
+
 ### 3. Panel Power (`/panel-power`)
 
 Shows the live power output per panel using `sensor.tigo_ts4_<panel>_power`, coloured by the panel's **Data validity** sensor (PyTap 1.4.2+), found by replacing `_power` with `_data_validity` in the entity ID:
