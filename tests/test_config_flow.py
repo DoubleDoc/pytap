@@ -24,6 +24,12 @@ MOCK_HOST = "192.168.1.100"
 MOCK_PORT = 502
 
 
+def _no_setup():
+    """Skip setting up the created entry, which would start the listener and
+    open a socket to the test address."""
+    return patch("custom_components.pytap.async_setup_entry", return_value=True)
+
+
 async def test_step_user_shows_form(hass: HomeAssistant) -> None:
     """Test the initial user step shows the connection form."""
     result = await hass.config_entries.flow.async_init(
@@ -114,10 +120,11 @@ async def test_full_flow_add_one_module(hass: HomeAssistant) -> None:
     assert result["step_id"] == "modules_menu"
 
     # Choose "Finish"
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {"next_step_id": "finish"},
-    )
+    with _no_setup():
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"next_step_id": "finish"},
+        )
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == f"PyTap ({MOCK_HOST})"
@@ -178,9 +185,10 @@ async def test_full_flow_add_two_modules(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.MENU
 
     # Finish
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "finish"}
-    )
+    with _no_setup():
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "finish"}
+        )
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert len(result["data"][CONF_MODULES]) == 2
@@ -511,9 +519,10 @@ async def test_add_module_with_custom_peak_power(hass: HomeAssistant) -> None:
     )
     assert result["type"] is FlowResultType.MENU
 
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {"next_step_id": "finish"}
-    )
+    with _no_setup():
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"next_step_id": "finish"}
+        )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_MODULES][0][CONF_MODULE_PEAK_POWER] == 400
 
