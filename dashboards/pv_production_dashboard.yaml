@@ -745,7 +745,7 @@ views:
                         [[[
                           const vid = entity.entity_id.replace(/_power$/, '_data_validity');
                           const v = states[vid]?.state;
-                          const max = parseFloat(states['sensor.tigo_max_power']?.state) || 1;
+                          const max = Math.max(parseFloat(states['sensor.tigo_max_power']?.state) || 0, 20);
                           const val = parseFloat(entity.state) || 0;
                           const pct = Math.min(Math.max(val, 0) / max, 1);
                           // Data validity (PyTap 1.4.2+): green by power while reporting or
@@ -762,7 +762,7 @@ views:
                         [[[
                           const vid = entity.entity_id.replace(/_power$/, '_data_validity');
                           const v = states[vid]?.state;
-                          const max = parseFloat(states['sensor.tigo_max_power']?.state) || 1;
+                          const max = Math.max(parseFloat(states['sensor.tigo_max_power']?.state) || 0, 20);
                           const val = parseFloat(entity.state) || 0;
                           const pct = Math.min(Math.max(val, 0) / max, 1);
                           if (v === 'estimated' || v === 'silent_estimated') return '0 4px 8px rgba(0,0,0,0.5), inset 0 0 10px rgba(255, 170, 0, 0.8)';
@@ -813,7 +813,7 @@ views:
                         [[[
                           const vid = entity.entity_id.replace(/_power$/, '_data_validity');
                           const v = states[vid]?.state;
-                          const max = parseFloat(states['sensor.tigo_max_power']?.state) || 1;
+                          const max = Math.max(parseFloat(states['sensor.tigo_max_power']?.state) || 0, 20);
                           const val = parseFloat(entity.state) || 0;
                           const pct = Math.min(Math.max(val, 0) / max, 1);
                           // Data validity (PyTap 1.4.2+): green by power while reporting or
@@ -830,7 +830,7 @@ views:
                         [[[
                           const vid = entity.entity_id.replace(/_power$/, '_data_validity');
                           const v = states[vid]?.state;
-                          const max = parseFloat(states['sensor.tigo_max_power']?.state) || 1;
+                          const max = Math.max(parseFloat(states['sensor.tigo_max_power']?.state) || 0, 20);
                           const val = parseFloat(entity.state) || 0;
                           const pct = Math.min(Math.max(val, 0) / max, 1);
                           if (v === 'estimated' || v === 'silent_estimated') return '0 4px 8px rgba(0,0,0,0.5), inset 0 0 10px rgba(255, 170, 0, 0.8)';

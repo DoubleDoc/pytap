@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Dashboards
+
+- Colouring by power compares each panel with the best panel's live power or 20 W, whichever is higher, so a panel making 1 W at dusk no longer shows full brightness when the best panel also makes 1 W (PV Panels dashboard and the classic Panel Power view).
+
 ## [1.4.10] - 2026-11-18
 
 ### Changed

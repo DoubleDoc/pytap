@@ -37,7 +37,7 @@ The W and Wh units tell power and energy apart, and the readings count has its o
 
 | Data validity | Colour by **Power** | Colour by **Energy** |
 |---|---|---|
-| Reporting or holding | Green, brighter with live power relative to the best panel now (`sensor.tigo_max_power`) | Green, brighter with today's energy relative to the best panel today (`sensor.tigo_max_daily_energy`) |
+| Reporting or holding | Green, brighter with live power relative to the best panel now (`sensor.tigo_max_power`), or to 20 W if the best panel makes less, so a panel making 1 W at dusk stays dark | Green, brighter with today's energy relative to the best panel today (`sensor.tigo_max_daily_energy`) |
 | Asleep | Dark | Green by today's energy, so the evening still shows how each panel did |
 | Estimated / silent, estimated in string | Amber | Amber |
 | Silent | Red | Red |

@@ -52,7 +52,10 @@ button_card_templates:
           const base = entity.entity_id.replace(/_power$/, '');
           const v = states[base + '_data_validity']?.state;
           const byEnergy = states['input_select.tigo_tile_colour']?.state === 'Energy';
-          const max = parseFloat(states[byEnergy ? 'sensor.tigo_max_daily_energy' : 'sensor.tigo_max_power']?.state) || 1;
+          // By power, compare with at least 20 W, so ~1 W at dusk doesn't show as full brightness.
+          const max = byEnergy
+            ? parseFloat(states['sensor.tigo_max_daily_energy']?.state) || 1
+            : Math.max(parseFloat(states['sensor.tigo_max_power']?.state) || 0, 20);
           const val = parseFloat(byEnergy ? states[base + '_daily_energy']?.state : entity.state) || 0;
           const pct = Math.min(Math.max(val, 0) / max, 1);
           // Problems show in both modes: amber estimated, red silent, grey no data.

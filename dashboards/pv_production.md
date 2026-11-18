@@ -77,7 +77,7 @@ Shows the live power output per panel using `sensor.tigo_ts4_<panel>_power`, col
 
 | Data validity | Tile | Text |
 |---|---|---|
-| Reporting | Green, alpha 0–0.7 relative to `sensor.tigo_max_power`, with an inner glow | Power, e.g. `312 W` |
+| Reporting | Green, alpha 0–0.7 relative to `sensor.tigo_max_power` (at least 20 W, so ~1 W at dusk stays dark), with an inner glow | Power, e.g. `312 W` |
 | Holding last value | Same green, from the held value | `312 W (held)` |
 | Estimated / Silent, estimated in string | Amber | `Estimated` |
 | Silent | Red | `Silent` |
@@ -170,7 +170,7 @@ const hue = Math.round(pct * 120);  // 0°=red → 120°=green
 
 ```javascript
 const v = states[entity.entity_id.replace(/_power$/, '_data_validity')]?.state;
-const max = parseFloat(states['sensor.tigo_max_power']?.state) || 1;
+const max = Math.max(parseFloat(states['sensor.tigo_max_power']?.state) || 0, 20);
 const pct = Math.min(Math.max(val, 0) / max, 1);
 // Reporting/holding: rgba(0, 220, 50, pct * 0.7), inner glow rgba(0, 255, 50, 0.8 * pct)
 // Estimated: rgba(255, 170, 0, 0.5)   Silent: rgba(220, 40, 40, 0.55)
