@@ -56,6 +56,10 @@ Shows the number of readings received today per panel using `sensor.tigo_ts4_<pa
 
 *End of a day on the same 6 + 12 panel installation: every panel received 94–100% as many readings as the best one, so all are green. A panel at half the best count would show yellow, and one that barely reported would show red.*
 
+![Panel Connectivity view just after midnight: every tile dark, showing a dash](images/connectivity-view-midnight.png)
+
+*Just after midnight: the readings counts have reset and no panel has reported yet, so the tiles stay dark and show `–` until the panels wake.*
+
 ### 3. Panel Power (`/panel-power`)
 
 Shows the live power output per panel using `sensor.tigo_ts4_<panel>_power`, coloured by the panel's **Data validity** sensor (PyTap 1.4.2+), found by replacing `_power` with `_data_validity` in the entity ID:
