@@ -4,7 +4,7 @@ the estimate option."""
 
 from datetime import datetime, timedelta
 import time
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
@@ -336,3 +336,66 @@ def test_short_gap_not_counted_twice_when_estimating(hass: HomeAssistant) -> Non
     _gap(coordinator, A, 150)
     _report(coordinator, A, 100.0)
     assert coordinator.estimated_energy(A)[0] == pytest.approx(first)
+
+
+def _restart(coordinator, barcode: str, gap: float, quiet_before_stop: float) -> None:
+    """Pretend Home Assistant restarted: the optimizer's last reading was `gap`
+    seconds ago, `quiet_before_stop` seconds before PyTap last saved."""
+    _gap(coordinator, barcode, gap)
+    acc = coordinator._energy_state[barcode]
+    coordinator._stopped_at = acc.last_reading_ts + timedelta(seconds=quiet_before_stop)
+    coordinator._seen_since_start.clear()
+
+
+@pytest.mark.parametrize(
+    ("gap", "quiet_before_stop", "estimate", "expected_wh"),
+    [
+        (500, 30, True, 100 * 500 / 3600),  # restart gap bridged
+        (590, 30, True, 100 * 590 / 3600),  # up to 10 minutes
+        (700, 30, True, 0.0),  # longer: dropped
+        (500, 30, False, 0.0),  # estimating off: measured only
+        (500, 300, True, 0.0),  # already silent (estimated) before the stop
+    ],
+)
+def test_restart_gap_is_bridged(
+    hass: HomeAssistant,
+    gap: float,
+    quiet_before_stop: float,
+    estimate: bool,
+    expected_wh: float,
+) -> None:
+    coordinator = _coordinator(hass, estimate=estimate)
+    _learn_shares(coordinator)
+    measured = coordinator.data["nodes"][A]["daily_energy_wh"]
+    _restart(coordinator, A, gap, quiet_before_stop)
+    _report(coordinator, A, 100.0)
+    assert coordinator.estimated_energy(A)[0] == pytest.approx(expected_wh, abs=0.05)
+    assert coordinator.data["nodes"][A]["daily_energy_wh"] == measured
+
+
+def test_restart_gap_only_for_first_reading_after_start(hass: HomeAssistant) -> None:
+    """A long gap later in the run is not a restart gap."""
+    coordinator = _coordinator(hass)
+    _learn_shares(coordinator)
+    _restart(coordinator, A, 60, 30)
+    _report(coordinator, A, 100.0)  # first reading after the restart
+    before = coordinator.estimated_energy(A)[0]
+    acc = coordinator._energy_state[A]
+    coordinator._stopped_at = acc.last_reading_ts
+    _gap(coordinator, A, 500)
+    _report(coordinator, A, 100.0)
+    assert coordinator.estimated_energy(A)[0] == pytest.approx(before)
+
+
+async def test_saved_at_round_trip(hass: HomeAssistant) -> None:
+    """The save time is stored and read back as the restart's stop time."""
+    coordinator = _coordinator(hass)
+    coordinator._store.async_save = AsyncMock()
+    await coordinator._async_save_coordinator_state()
+    saved = coordinator._store.async_save.call_args[0][0]
+    assert "saved_at" in saved
+
+    restarted = _coordinator(hass)
+    restarted._store.async_load = AsyncMock(return_value=saved)
+    await restarted._async_load_coordinator_state()
+    assert restarted._stopped_at == datetime.fromisoformat(saved["saved_at"])

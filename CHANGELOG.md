@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Restart gaps are bridged** — PyTap can't hear the bus while Home Assistant is down, so each optimizer's energy for a daytime restart used to be lost. Now, for each optimizer that was reporting when Home Assistant stopped, a gap of up to 10 minutes between its last reading before the restart and its first after is bridged with the average of the two, counted as estimated energy (when **Estimate silent optimizers** is on). Longer outages, such as a host reboot, are still lost; the README's Known limitations now explains this.
+
 ### Example dashboards
 
 - **New PV Panels dashboard** (`dashboards/pv_panels_dashboard.yaml`, documented in `dashboards/pv_panels.md`): one view in which every panel tile shows live power (or *Asleep*, *Est.*, *Silent*, *No data*), today's energy and today's readings, with a red-to-green connectivity bar along its bottom edge. A **Colour tiles by [Power | Energy]** switch (helper `input_select.tigo_tile_colour`) picks what the tile colour shows; estimated, silent and no-data panels keep their amber, red and grey colours in both modes. Styling lives in two `button_card_templates`, so each panel is one line. The README now leads with it.

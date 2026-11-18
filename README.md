@@ -156,7 +156,7 @@ PyTap uses this on the String and Total devices:
 
 1. **Learning each optimizer's share.** While an optimizer and the rest of its string are reporting, PyTap keeps a rolling average (over roughly the last 10 minutes) of its power divided by the average power of the others in its string. This captures shading: a panel that is shaded in the afternoon has a share below 1 at that time.
 2. **Estimating.** Once an optimizer has been quiet for 2 minutes, and at least half of the other optimizers in its string are reporting, its estimated power is its share × their current average. If no share has been learned yet, it is assumed to produce the average.
-3. **Estimated energy.** The estimated power is added up as *estimated energy* from its last report until it reports again, and checked every minute. A gap of 2–3 minutes that ends before the next check is bridged with the average of the optimizer's own readings either side of it, also counted as estimated energy. (Optimizers report power, not energy: PyTap adds up energy from readings no more than 120 s apart, so without this such a gap would be lost.)
+3. **Estimated energy.** The estimated power is added up as *estimated energy* from its last report until it reports again, and checked every minute. A gap of 2–3 minutes that ends before the next check is bridged with the average of the optimizer's own readings either side of it, also counted as estimated energy. (Optimizers report power, not energy: PyTap adds up energy from readings no more than 120 s apart, so without this such a gap would be lost.) The same applies after a Home Assistant restart, for gaps of up to 10 minutes: see [Known limitations](#known-limitations).
 
 | | Optimizer's own sensors | String and Total devices |
 | --- | --- | --- |
@@ -394,6 +394,7 @@ In normal running, debug adds one line per write interval and gateway listing ho
 - **Listen-only.** PyTap never transmits, so it can't request data, change settings or trigger rapid shutdown. It needs a working Tigo CCA on the bus.
 - **One reading per optimizer.** A dual-module optimizer reports both panels combined. See [Dual-module optimizers](#dual-module-optimizers).
 - **Per-optimizer energy** is integrated from power readings by PyTap, so it can differ slightly from Tigo's cloud figures.
+- **Nothing is recorded while Home Assistant is down.** PyTap only listens, and the bus doesn't replay missed readings (the CCA still uploads to Tigo's cloud as usual). PyTap saves its state when Home Assistant stops and resumes at once on start, without waiting for a node table. For each optimizer that was reporting when Home Assistant stopped, the first reading after the restart is compared with the last one before it: a gap of up to 10 minutes is bridged with the average of the two and counted as estimated energy (when **Estimate silent optimizers** is on). Energy produced during a longer daytime outage, such as a host reboot or OS update, is lost: daily and lifetime totals carry on from where they were. At night nothing is lost.
 - **Estimates can't see a shorted panel.** If a panel's bypass diode shorts, the string keeps running at full current but that panel contributes nothing. Its neighbours look normal, so while it is silent its estimate over-counts. Only the inverter's string voltage would reveal this.
 
 ---

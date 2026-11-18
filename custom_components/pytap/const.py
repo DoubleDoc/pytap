@@ -73,6 +73,10 @@ BUS_ERROR_LOG_INTERVAL_SECONDS = 60 * 60
 # string's average, and the estimate is added to string/total energy.
 ESTIMATE_AFTER_SECONDS = ENERGY_GAP_THRESHOLD_SECONDS
 ESTIMATE_MIN_PEER_FRACTION = 0.5
+# After a Home Assistant restart, an optimizer's first reading is compared
+# with its last one before the stop. Gaps up to this long are bridged with
+# the average of the two readings, counted as estimated energy.
+RESTART_BRIDGE_MAX_SECONDS = 600
 SHARE_MIN_PEER_POWER_W = 10.0
 SHARE_SMOOTHING = 0.2
 SHARE_MAX = 2.0

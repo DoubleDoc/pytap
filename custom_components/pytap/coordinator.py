@@ -54,6 +54,7 @@ from .const import (
     ESTIMATE_AFTER_SECONDS,
     ESTIMATE_MIN_PEER_FRACTION,
     HEALTH_CHECK_INTERVAL_SECONDS,
+    RESTART_BRIDGE_MAX_SECONDS,
     LINK_DOWN_SECONDS,
     LOW_SUN_ELEVATION,
     MAPPING_COMPLETE,
@@ -256,6 +257,11 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._est_power: dict[str, float] = {}
         self._est_cursor: dict[str, float] = {}
         self._est_close: dict[str, float] = {}
+        # Restart gaps: when state was last saved before this start, and which
+        # optimizers have reported since (only an optimizer's first reading
+        # after a restart can close a restart gap).
+        self._stopped_at: datetime | None = None
+        self._seen_since_start: set[str] = set()
         # RS-485 frame error tracking
         self._parser: Any = None
         self._bus_window: tuple[float, int, int] | None = None
@@ -1280,6 +1286,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             barcode,
             EnergyAccumulator(daily_reset_date=now.date().isoformat()),
         )
+        previous_ts = acc.last_reading_ts
+        first_since_start = barcode not in self._seen_since_start
+        self._seen_since_start.add(barcode)
         update_result = accumulate_energy(
             acc,
             power=event.power,
@@ -1288,15 +1297,28 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             low_power_threshold=ENERGY_LOW_POWER_THRESHOLD_W,
         )
         if update_result.discarded_gap_during_production:
+            gap = update_result.gap_seconds
+            short_gap = gap <= ESTIMATE_AFTER_SECONDS + HEALTH_CHECK_INTERVAL_SECONDS
+            # A restart gap: the first reading since Home Assistant started,
+            # from an optimizer that was still reporting when PyTap stopped
+            # (so none of the gap was estimated from its string before).
+            restart_gap = (
+                first_since_start
+                and self._stopped_at is not None
+                and previous_ts is not None
+                and previous_ts
+                >= self._stopped_at - timedelta(seconds=ESTIMATE_AFTER_SECONDS)
+                and gap <= RESTART_BRIDGE_MAX_SECONDS
+            )
             if (
                 self._estimate_enabled
                 and barcode not in self._est_cursor
-                and update_result.gap_seconds
-                <= ESTIMATE_AFTER_SECONDS + HEALTH_CHECK_INTERVAL_SECONDS
+                and (short_gap or restart_gap)
             ):
                 # A short gap that ended before the health check started
-                # estimating: bridge it with the optimizer's own readings
-                # either side, counted as estimated energy.
+                # estimating, or a restart gap: bridge it with the
+                # optimizer's own readings either side, counted as
+                # estimated energy.
                 add_estimated_energy(
                     acc, update_result.discarded_wh, now.date().isoformat()
                 )
@@ -1653,6 +1675,12 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if stored is None:
             return
 
+        if raw_saved_at := stored.get("saved_at"):
+            try:
+                self._stopped_at = datetime.fromisoformat(raw_saved_at)
+            except (TypeError, ValueError):
+                self._stopped_at = None
+
         # Restore barcode ↔ node_id mappings
         barcode_to_node = stored.get("barcode_to_node", {})
         for barcode, node_id in barcode_to_node.items():
@@ -1745,6 +1773,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Save all state (barcode mappings, discovered barcodes, parser state) to HA Store."""
         self._unsaved_changes = False
         data = {
+            # When PyTap last saved, i.e. roughly when it stopped hearing the
+            # bus if Home Assistant restarts next; see restart gaps.
+            "saved_at": dt_util.now().isoformat(),
             "barcode_to_node": {
                 barcode: node_id for barcode, node_id in self._barcode_to_node.items()
             },
