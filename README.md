@@ -525,7 +525,7 @@ Run `./deploy/deploy.sh --help` for all options.
 
 ## Acknowledgements
 
-**PyTap is the work of [Adam Zebrowski](https://github.com/azebro)** ([azebro/pytap](https://github.com/azebro/pytap)), and this fork stands entirely on it. Adam wrote the integration from the ground up: the embedded Python parser for the Tigo gateway protocol, the push-based coordinator that turns bus traffic into Home Assistant entities, node-table and barcode mapping that survives restarts, per-optimizer energy integration, the String and Total devices, the configuration flow, and the PV Production dashboard and its Grafana version. Everything this fork adds builds on that foundation, and it's a pleasure to build on: a clean design, thorough tests and careful documentation. Thank you, Adam.
+**PyTap is the work of [Adam Zebrowski](https://github.com/azebro)** ([azebro/pytap](https://github.com/azebro/pytap)), and this fork stands entirely on it. Adam wrote the integration from the ground up: the embedded Python parser for the Tigo gateway protocol, the push-based coordinator that turns bus traffic into Home Assistant entities, node-table and barcode mapping that survives restarts, per-optimizer energy integration, the string and installation totals, the configuration flow, and the PV Production dashboard and its Grafana version. Everything this fork adds builds on that foundation, and it's a pleasure to build on: a clean design, thorough tests and careful documentation. Thank you, Adam.
 
 [Kyrill](https://github.com/poolski) contributed the averaged reporting interval upstream: the configurable write interval and the time-weighted averaging of readings across it, which this fork now uses by default.
 
