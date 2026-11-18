@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Brand icon** — PyTap now ships its own icon and logo (`brand/`), so Home Assistant 2026.3+ shows them on the integration and device pages instead of "logo not available". The artwork is original: a solar panel with a radio-signal badge. It isn't Tigo's logo.
+- HACS validation now runs the brands check too (it was skipped while there were no brand images).
+
 ### Dashboards
 
 - Colouring by power compares each panel with the best panel's live power or 20 W, whichever is higher, so a panel making 1 W at dusk no longer shows full brightness when the best panel also makes 1 W (PV Panels dashboard and the classic Panel Power view).
