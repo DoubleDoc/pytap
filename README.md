@@ -5,6 +5,8 @@
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Validate](https://github.com/DoubleDoc/pytap/actions/workflows/validate.yml/badge.svg)](https://github.com/DoubleDoc/pytap/actions/workflows/validate.yml)
 
+> **This is a fork** of [azebro/pytap](https://github.com/azebro/pytap) by Adam Zebrowski, which built the integration: the protocol parser, the Home Assistant integration and the original dashboards. This fork adds per-panel data validity and health tracking, estimates for silent optimizers, a bus status sensor, lower database load, energy bridging across short gaps and restarts, and the single-view [PV Panels dashboard](dashboards/pv_panels.md). See the [changelog](CHANGELOG.md) for everything that differs, and [Acknowledgements](#acknowledgements) for credits.
+
 A Home Assistant custom integration for monitoring **Tigo TS4 optimizers** locally, without Tigo's cloud. PyTap listens to the RS-485 bus between a Tigo CCA and its TAP through an RS-485 to TCP converter, and exposes real-time per-optimizer sensors: power, voltage, current, temperature, energy and more.
 
 ## See every panel at once
@@ -522,6 +524,10 @@ Run `./deploy/deploy.sh --help` for all options.
 ---
 
 ## Acknowledgements
+
+**PyTap is the work of [Adam Zebrowski](https://github.com/azebro)** ([azebro/pytap](https://github.com/azebro/pytap)), and this fork stands entirely on it. Adam wrote the integration from the ground up: the embedded Python parser for the Tigo gateway protocol, the push-based coordinator that turns bus traffic into Home Assistant entities, node-table and barcode mapping that survives restarts, per-optimizer energy integration, the String and Total devices, the configuration flow, and the PV Production dashboard and its Grafana version. Everything this fork adds builds on that foundation, and it's a pleasure to build on: a clean design, thorough tests and careful documentation. Thank you, Adam.
+
+[Kyrill](https://github.com/poolski) contributed the averaged reporting interval upstream: the configurable write interval and the time-weighted averaging of readings across it, which this fork now uses by default.
 
 The Tigo protocol was reverse-engineered by [taptap](https://github.com/willglynn/taptap) (Will Glynn). Inspired by the [taptap fork](https://github.com/litinoveweedle/taptap) and [taptap Home Assistant add-on](https://github.com/litinoveweedle/hassio-addons).
 
