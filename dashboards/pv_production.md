@@ -42,6 +42,10 @@ Shows daily energy production per panel. Each tile displays the panel name and `
 
 *End of a day on the same 6 + 12 panel installation. Brightness is relative to the best panel (1.83 kWh), so the 6-panel string, which produced about half as much per panel that day, shows as darker green. Differences within a string are visible too: P01 on the 12-panel string is the dimmest of its row.*
 
+![PV Panel Layout view just after midnight: every panel 0 Wh](images/energy-view-midnight.png)
+
+*Just after midnight: daily energy has reset to 0 Wh on every panel, so every tile is dark until the panels start producing.*
+
 ### 2. Panel Connectivity (`/panel-connectivity`)
 
 Shows the number of readings received today per panel using `sensor.tigo_ts4_<panel>_readings_today`.
