@@ -357,6 +357,12 @@ views:
                 name: C2
                 show_state: true
                 show_icon: false
+                state_display: &conn_state_display >
+                  [[[
+                    const max = parseFloat(states['sensor.tigo_max_readings_today']?.state) || 0;
+                    if (max <= 0) return '–';
+                    return (parseFloat(entity.state) || 0).toLocaleString();
+                  ]]]
                 view_layout: { grid-row: 1, grid-column: 11 / 14 }
                 styles: &conn_tile_landscape
                   card:
@@ -365,16 +371,21 @@ views:
                     - border: "1px solid #3b4252"
                     - background: >
                         [[[
-                          const max = parseFloat(states['sensor.tigo_max_readings_today']?.state) || 1;
+                          const max = parseFloat(states['sensor.tigo_max_readings_today']?.state) || 0;
+                          const base = `linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 40%, rgba(0,0,0,0.6) 100%), repeating-linear-gradient(0deg, transparent, transparent 18%, rgba(255,255,255,0.1) 18%, rgba(255,255,255,0.1) 20%), repeating-linear-gradient(90deg, transparent, transparent 18%, rgba(255,255,255,0.1) 18%, rgba(255,255,255,0.1) 20%), #0a111a`;
+                          // No panel has reported yet today (just after midnight): stay dark
+                          // rather than red, since nothing is wrong.
+                          if (max <= 0) return base;
                           const val = parseFloat(entity.state) || 0;
                           const pct = Math.min(Math.max(val, 0) / max, 1);
                           const hue = Math.round(pct * 120);
                           const alpha = 0.55;
-                          return `linear-gradient(hsla(${hue}, 80%, 50%, ${alpha}), hsla(${hue}, 80%, 50%, ${alpha})), linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 40%, rgba(0,0,0,0.6) 100%), repeating-linear-gradient(0deg, transparent, transparent 18%, rgba(255,255,255,0.1) 18%, rgba(255,255,255,0.1) 20%), repeating-linear-gradient(90deg, transparent, transparent 18%, rgba(255,255,255,0.1) 18%, rgba(255,255,255,0.1) 20%), #0a111a`;
+                          return `linear-gradient(hsla(${hue}, 80%, 50%, ${alpha}), hsla(${hue}, 80%, 50%, ${alpha})), ${base}`;
                         ]]]
                     - box-shadow: >
                         [[[
-                          const max = parseFloat(states['sensor.tigo_max_readings_today']?.state) || 1;
+                          const max = parseFloat(states['sensor.tigo_max_readings_today']?.state) || 0;
+                          if (max <= 0) return '0 4px 8px rgba(0,0,0,0.5)';
                           const val = parseFloat(entity.state) || 0;
                           const pct = Math.min(Math.max(val, 0) / max, 1);
                           const hue = Math.round(pct * 120);
@@ -396,6 +407,7 @@ views:
                 name: C3
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 1, grid-column: 14 / 17 }
                 styles: *conn_tile_landscape
 
@@ -404,6 +416,7 @@ views:
                 name: C4
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 9 / 11 }
                 styles: &conn_tile_portrait
                   card:
@@ -412,16 +425,21 @@ views:
                     - border: "1px solid #3b4252"
                     - background: >
                         [[[
-                          const max = parseFloat(states['sensor.tigo_max_readings_today']?.state) || 1;
+                          const max = parseFloat(states['sensor.tigo_max_readings_today']?.state) || 0;
+                          const base = `linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 40%, rgba(0,0,0,0.6) 100%), repeating-linear-gradient(0deg, transparent, transparent 18%, rgba(255,255,255,0.1) 18%, rgba(255,255,255,0.1) 20%), repeating-linear-gradient(90deg, transparent, transparent 18%, rgba(255,255,255,0.1) 18%, rgba(255,255,255,0.1) 20%), #0a111a`;
+                          // No panel has reported yet today (just after midnight): stay dark
+                          // rather than red, since nothing is wrong.
+                          if (max <= 0) return base;
                           const val = parseFloat(entity.state) || 0;
                           const pct = Math.min(Math.max(val, 0) / max, 1);
                           const hue = Math.round(pct * 120);
                           const alpha = 0.55;
-                          return `linear-gradient(hsla(${hue}, 80%, 50%, ${alpha}), hsla(${hue}, 80%, 50%, ${alpha})), linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 40%, rgba(0,0,0,0.6) 100%), repeating-linear-gradient(0deg, transparent, transparent 18%, rgba(255,255,255,0.1) 18%, rgba(255,255,255,0.1) 20%), repeating-linear-gradient(90deg, transparent, transparent 18%, rgba(255,255,255,0.1) 18%, rgba(255,255,255,0.1) 20%), #0a111a`;
+                          return `linear-gradient(hsla(${hue}, 80%, 50%, ${alpha}), hsla(${hue}, 80%, 50%, ${alpha})), ${base}`;
                         ]]]
                     - box-shadow: >
                         [[[
-                          const max = parseFloat(states['sensor.tigo_max_readings_today']?.state) || 1;
+                          const max = parseFloat(states['sensor.tigo_max_readings_today']?.state) || 0;
+                          if (max <= 0) return '0 4px 8px rgba(0,0,0,0.5)';
                           const val = parseFloat(entity.state) || 0;
                           const pct = Math.min(Math.max(val, 0) / max, 1);
                           const hue = Math.round(pct * 120);
@@ -443,6 +461,7 @@ views:
                 name: C10
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 11 / 13 }
                 styles: *conn_tile_portrait
 
@@ -451,6 +470,7 @@ views:
                 name: C9
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 13 / 15 }
                 styles: *conn_tile_portrait
 
@@ -459,6 +479,7 @@ views:
                 name: C8
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 15 / 17 }
                 styles: *conn_tile_portrait
 
@@ -467,6 +488,7 @@ views:
                 name: C7
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 17 / 19 }
                 styles: *conn_tile_portrait
 
@@ -476,6 +498,7 @@ views:
                 name: D12
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 1, grid-column: 21 / 24 }
                 styles: *conn_tile_landscape
 
@@ -484,6 +507,7 @@ views:
                 name: D13
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 21 / 24 }
                 styles: *conn_tile_landscape
 
@@ -505,6 +529,7 @@ views:
                 name: C1
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 1, grid-column: 8 / 10 }
                 styles: *conn_tile_portrait
 
@@ -513,6 +538,7 @@ views:
                 name: C6
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 1, grid-column: 10 / 12 }
                 styles: *conn_tile_portrait
 
@@ -521,6 +547,7 @@ views:
                 name: D6
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 1, grid-column: 12 / 14 }
                 styles: *conn_tile_portrait
 
@@ -529,6 +556,7 @@ views:
                 name: D7
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 1, grid-column: 14 / 16 }
                 styles: *conn_tile_portrait
 
@@ -537,6 +565,7 @@ views:
                 name: D8
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 1, grid-column: 16 / 18 }
                 styles: *conn_tile_portrait
 
@@ -545,6 +574,7 @@ views:
                 name: D9
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 1, grid-column: 18 / 20 }
                 styles: *conn_tile_portrait
 
@@ -553,6 +583,7 @@ views:
                 name: C11
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 1, grid-column: 20 / 22 }
                 styles: *conn_tile_portrait
 
@@ -561,6 +592,7 @@ views:
                 name: D11
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 4 / 6 }
                 styles: *conn_tile_portrait
 
@@ -569,6 +601,7 @@ views:
                 name: D5
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 6 / 8 }
                 styles: *conn_tile_portrait
 
@@ -577,6 +610,7 @@ views:
                 name: C12
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 8 / 10 }
                 styles: *conn_tile_portrait
 
@@ -585,6 +619,7 @@ views:
                 name: D4
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 10 / 12 }
                 styles: *conn_tile_portrait
 
@@ -593,6 +628,7 @@ views:
                 name: D3
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 12 / 14 }
                 styles: *conn_tile_portrait
 
@@ -601,6 +637,7 @@ views:
                 name: D1
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 14 / 16 }
                 styles: *conn_tile_portrait
 
@@ -609,6 +646,7 @@ views:
                 name: D2
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 16 / 18 }
                 styles: *conn_tile_portrait
 
@@ -617,6 +655,7 @@ views:
                 name: C5
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 18 / 20 }
                 styles: *conn_tile_portrait
 
@@ -625,6 +664,7 @@ views:
                 name: C13
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 20 / 22 }
                 styles: *conn_tile_portrait
 
@@ -633,6 +673,7 @@ views:
                 name: D10
                 show_state: true
                 show_icon: false
+                state_display: *conn_state_display
                 view_layout: { grid-row: 2, grid-column: 22 / 24 }
                 styles: *conn_tile_portrait
 

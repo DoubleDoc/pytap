@@ -50,7 +50,7 @@ Shows daily energy production per panel. Each tile displays the panel name and `
 
 Shows the number of readings received today per panel using `sensor.tigo_ts4_<panel>_readings_today`.
 
-**Color scale:** Red → Green. HSL hue scales 0° (red) → 120° (green) relative to `sensor.tigo_max_readings_today`. Low-connectivity panels are immediately visible in red.
+**Color scale:** Red → Green. HSL hue scales 0° (red) → 120° (green) relative to `sensor.tigo_max_readings_today`. Low-connectivity panels are immediately visible in red. Until any panel has reported today (from midnight until the panels wake), the tiles stay dark and show `–` instead of turning red, since nothing is wrong. That's a shared `state_display` template, anchor `&conn_state_display`.
 
 ![Panel Connectivity view: every panel green, 17,386 to 18,515 readings](images/connectivity-view.png)
 
@@ -139,7 +139,8 @@ const alpha = pct * 0.7;
 ### Page 2 color formula (Connectivity)
 
 ```javascript
-const max = parseFloat(states['sensor.tigo_max_readings_today']?.state) || 1;
+const max = parseFloat(states['sensor.tigo_max_readings_today']?.state) || 0;
+if (max <= 0) return base;  // no readings yet today: dark, no overlay
 const pct = Math.min(Math.max(val, 0) / max, 1);
 const hue = Math.round(pct * 120);  // 0°=red → 120°=green
 // Color overlay: hsla(hue, 80%, 50%, 0.55)
