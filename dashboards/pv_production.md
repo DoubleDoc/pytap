@@ -34,7 +34,7 @@ They find the panels themselves (every entity on a PyTap device of model TS4), s
 
 ### 1. PV Panel Layout (`/pv-layout`)
 
-Shows daily energy production per panel. Each tile displays the panel name and `sensor.tigo_ts4_<panel>_daily_energy` value.
+Shows daily energy production per panel. Each tile displays the panel name and `sensor.tigo_ts4_<panel>_daily_energy` value, shortened to fit a portrait tile: `838 Wh` below 1,000 Wh, `1.61 kWh` from there (a shared `state_display` template, anchor `&energy_state_display`).
 
 **Color scale:** Transparent → Green. Green overlay alpha scales from 0 to 0.7 relative to `sensor.tigo_max_daily_energy`. An inner green glow intensifies with production.
 
