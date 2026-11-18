@@ -82,7 +82,6 @@ pytap/                              # Repository root
 │   ├── test_energy.py              # Energy accumulation unit tests
 │   ├── test_migration.py           # Entity migration tests
 │   └── test_sensor.py              # Sensor platform tests
-├── requirements.txt                # Pinned HA + dev dependencies
 └── pytest.ini                      # Test configuration
 ```
 

@@ -483,7 +483,6 @@ pytap/
 │   ├── implementation.md        # Implementation details & history
 │   └── images/                  # README images
 ├── config/                      # Dev HA config directory
-├── requirements.txt             # HA + dev dependencies
 ├── requirements-test.txt        # Test dependencies
 └── pytest.ini                   # Test configuration
 ```
