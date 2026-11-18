@@ -523,7 +523,6 @@ Returns `True` when `coordinator.data["nodes"][barcode]` exists (or a value was 
 
 **Extra state attributes:**
 - `string_group` — from user config (if set).
-- `last_update` — ISO timestamp from coordinator data.
 - `gateway_id` — the gateway this optimizer communicates through.
 
 ---

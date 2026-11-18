@@ -106,8 +106,11 @@ async def test_sensor_device_names_use_inverter(hass: HomeAssistant) -> None:
         "Tigo Master Total",
     }
     optimizer = next(e for e in entities if isinstance(e, PyTapSensor))
-    # last_update changes on every reading; it must not be recorded.
-    assert "last_update" in optimizer._unrecorded_attributes
+    # No attribute that changes with every reading (it would force a state
+    # row per reading even when the value is unchanged).
+    optimizer.coordinator.data = {"nodes": {optimizer._barcode: {
+        "gateway_id": 1, "last_update": "2026-11-17T12:00:00"}}}
+    assert "last_update" not in (optimizer.extra_state_attributes or {})
 
 
 # ---- migration ----

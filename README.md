@@ -116,7 +116,7 @@ Each gateway (each PyTap entry, i.e. each CCA) has a **Bus status** sensor on it
 | RS-485 converter unreachable | The TCP connection to the converter fails or keeps dropping. | The converter's power, network cable or Wi-Fi, IP address and port. |
 | Bus quiet | The converter accepts the connection but has nothing to forward. | That the Tigo CCA is powered and running, and the converter's A/B wiring to the CCA's gateway bus. |
 
-The `last_data` attribute shows when data last arrived.
+While the status isn't normal, the `last_data` attribute shows when data last arrived.
 
 ### When readings go to 0 or unavailable
 
@@ -170,7 +170,7 @@ Each optimizer has a diagnostic **Data validity** sensor that shows how much its
 
 While the gateway's [Bus status](#bus-status) isn't normal, Data validity is unavailable too: the problem is the whole gateway, not the optimizer.
 
-Its attributes show the last report time, the learned share of the string average, and the energy estimated for it today. A panel that often shows *Estimated*, *Silent, estimated in string* or *Silent* has a weak radio link to the TAP.
+Its attributes show the learned share of the string average (to the nearest 0.05), the energy estimated for it today and, once it has stopped reporting, `last_report`: when it last reported. The optimizer's other sensors have no per-reading timestamp attribute: one that changes with every reading would make Home Assistant write a database row on every reading even when the value hasn't changed. A panel that often shows *Estimated*, *Silent, estimated in string* or *Silent* has a weak radio link to the TAP.
 
 ### Device naming
 

@@ -249,7 +249,11 @@ def test_data_validity_sensor(hass: HomeAssistant) -> None:
     attrs = sensor.extra_state_attributes
     assert attrs["share"] == pytest.approx(0.5, abs=0.01)
     assert attrs["estimated_energy_today"] > 0
-    assert "last_report" in sensor._unrecorded_attributes
+    assert attrs["last_report"] is not None
+    # While reporting, no last_report: it would change with every reading.
+    _report(coordinator, A, 100.0)
+    assert sensor.native_value == VALIDITY_REPORTING
+    assert "last_report" not in sensor.extra_state_attributes
 
 
 def test_estimated_energy_resets_daily() -> None:

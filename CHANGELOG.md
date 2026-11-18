@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.5] - Unreleased
+
+### Changed
+
+- **Fewer database writes** — Home Assistant writes a new state row whenever any attribute changes, even an attribute excluded from the recorder. So the per-optimizer `last_update` attribute, which changed with every reading, forced a write on every reading even when the value was unchanged (measured: 720 rows in 6 daytime hours for a temperature sensor whose value changed 414 times). It is removed. The Data validity sensor shows `last_report` only once the optimizer has stopped reporting, with its share rounded to 0.05, and the Bus status sensor shows `last_data` only while the status isn't normal.
+
 ## [1.4.4] - 2026-11-17
 
 ### Fixed

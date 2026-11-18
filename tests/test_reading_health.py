@@ -498,7 +498,7 @@ def test_bus_status_sensor(hass: HomeAssistant) -> None:
     coordinator = _coordinator(hass)
     sensor = PyTapBusStatusSensor(coordinator, MagicMock(), "u")
     assert sensor.native_value == BUS_NORMAL
-    assert sensor.extra_state_attributes == {"last_data": None}
+    assert sensor.extra_state_attributes == {}
     coordinator._last_data_mono = time.monotonic() - LINK_DOWN_SECONDS - 1
     assert sensor.native_value == BUS_CONVERTER_UNREACHABLE
     assert sensor.extra_state_attributes["last_data"] is not None

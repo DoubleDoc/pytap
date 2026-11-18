@@ -38,6 +38,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    BUS_NORMAL,
     BUS_STATES,
     CONF_INVERTER,
     CONF_MODULE_BARCODE,
@@ -53,6 +54,7 @@ from .const import (
     READING_ASLEEP,
     READING_OFFLINE,
     READING_SILENT,
+    VALIDITY_REPORTING,
     VALIDITY_STATES,
 )
 from .coordinator import PyTapDataUpdateCoordinator
@@ -413,9 +415,10 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
     """
 
     _attr_has_entity_name = True
-    # last_update changes on every reading; recording it creates a new
-    # attributes row per state write.
-    _unrecorded_attributes = frozenset({"last_update"})
+    # No per-reading timestamp attribute: any attribute that changes with
+    # every reading makes Home Assistant write a new state row even when the
+    # value is unchanged. The optimizer's Data validity sensor shows when it
+    # last reported once it stops.
     entity_description: PyTapSensorEntityDescription
 
     def __init__(
@@ -522,9 +525,6 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
         attrs: dict[str, Any] = {}
         if self._module_string:
             attrs["string_group"] = self._module_string
-        last_update = node_data.get("last_update")
-        if last_update:
-            attrs["last_update"] = last_update
         gateway_id = node_data.get("gateway_id")
         if gateway_id is not None:
             attrs["gateway_id"] = gateway_id
@@ -848,7 +848,9 @@ class PyTapDataValiditySensor(
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_options = VALIDITY_STATES
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    # Both change with every reading or every minute.
+    # Attributes are kept stable while the optimizer reports, so they don't
+    # cause a state write per reading: last_report appears only once it stops
+    # reporting, and the share is rounded to 0.05.
     _unrecorded_attributes = frozenset({"last_report", "share"})
 
     def __init__(
@@ -885,16 +887,19 @@ class PyTapDataValiditySensor(
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the last report time, learned share and estimated energy."""
-        node = self.coordinator.data.get("nodes", {}).get(self._barcode) or {}
+        """Return the learned share, estimated energy and, once the optimizer
+        has stopped reporting, when it last reported."""
         share = self.coordinator.share(self._barcode)
-        return {
-            "last_report": node.get("last_update"),
-            "share": round(share, 2) if share is not None else None,
+        attrs: dict[str, Any] = {
+            "share": round(round(share * 20) / 20, 2) if share is not None else None,
             "estimated_energy_today": round(
                 self.coordinator.estimated_energy(self._barcode)[0], 1
             ),
         }
+        if self.native_value not in (None, VALIDITY_REPORTING):
+            node = self.coordinator.data.get("nodes", {}).get(self._barcode) or {}
+            attrs["last_report"] = node.get("last_update")
+        return attrs
 
 
 class PyTapBusStatusSensor(
@@ -934,6 +939,12 @@ class PyTapBusStatusSensor(
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return when data last arrived."""
+        """Return when data last arrived, once it has stopped arriving.
+
+        Left out while normal: it would change on every update and make
+        Home Assistant write a new state row each time.
+        """
+        if self.native_value == BUS_NORMAL:
+            return {}
         last = self.coordinator.last_data
         return {"last_data": last.isoformat() if last else None}
