@@ -46,6 +46,10 @@ Shows daily energy production per panel. Each tile displays the panel name and `
 
 *Just after midnight: daily energy has reset to 0 Wh on every panel, so every tile is dark until the panels start producing.*
 
+![PV Panel Layout view at dawn: the 12-panel string at 0-1 Wh, the 6-panel string still at 0 Wh](images/energy-view-dawn.png)
+
+*About 07:45, as the panels start up. The 12-panel string has made its first watt-hour or so, which is already the day's maximum, so even 1 Wh shows as bright green: brightness is relative to the best panel, not absolute. The 6-panel string, facing differently, hasn't produced anything yet.*
+
 ### 2. Panel Connectivity (`/panel-connectivity`)
 
 Shows the number of readings received today per panel using `sensor.tigo_ts4_<panel>_readings_today`.
@@ -59,6 +63,10 @@ Shows the number of readings received today per panel using `sensor.tigo_ts4_<pa
 ![Panel Connectivity view just after midnight: every tile dark, showing a dash](images/connectivity-view-midnight.png)
 
 *Just after midnight: the readings counts have reset and no panel has reported yet, so the tiles stay dark and show `–` until the panels wake.*
+
+![Panel Connectivity view at dawn: the 6-panel string green, the 12-panel string from yellow-green at P01 to green at P10](images/connectivity-view-dawn.png)
+
+*About 07:45, with 439 to 657 readings each. Panels wake at slightly different times, so early in the day the colours spread out (here P01 on the 12-panel string woke last and shows yellow-green). The spread narrows as the day's counts grow.*
 
 ### 3. Panel Power (`/panel-power`)
 
@@ -76,6 +84,10 @@ Shows the live power output per panel using `sensor.tigo_ts4_<panel>_power`, col
 ![Panel Power view at night: every panel dark and labelled Asleep](images/power-view-asleep.png)
 
 *At night, on an installation with a 6-panel and a 12-panel string (laid out to match that roof): every panel is asleep.*
+
+![Panel Power view at dawn: the 6-panel string reporting 0 W, the 12-panel string at 3-4 W](images/power-view-dawn.png)
+
+*About 07:45. Every panel is reporting. The 6-panel string is awake but producing 0 W, so its tiles are dark with `0 W` rather than `Asleep`; the 12-panel string is making 3–4 W per panel, already the maximum, so it shows green.*
 
 Without a Data validity sensor (PyTap before 1.4.2) every tile is green by power, as before. A silent panel's power sensor is unavailable, so without this colouring it looked the same as a sleeping one.
 
