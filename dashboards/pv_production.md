@@ -57,6 +57,10 @@ Shows the live power output per panel using `sensor.tigo_ts4_<panel>_power`, col
 | Asleep | Dark (no overlay) | `Asleep` |
 | Unavailable (bus status not normal) | Grey | `No data` |
 
+![Panel Power view at night: every panel dark and labelled Asleep](images/power-view-asleep.png)
+
+*At night, on an installation with a 6-panel and a 12-panel string (laid out to match that roof): every panel is asleep.*
+
 Without a Data validity sensor (PyTap before 1.4.2) every tile is green by power, as before. A silent panel's power sensor is unavailable, so without this colouring it looked the same as a sleeping one.
 
 ## Physical Layout
