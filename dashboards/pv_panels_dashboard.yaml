@@ -21,9 +21,13 @@ button_card_templates:
 
   # One panel. The tile's entity is the panel's _power sensor; its energy,
   # readings and data validity sensors are found by replacing the _power suffix.
+  # button-card redraws a tile only when its own entity changes, so update_timer
+  # redraws it every 10 s to pick up changes in those other sensors too (for
+  # example a panel turning Estimated while its power stays at 0 W).
   pytap_panel:
     show_icon: false
     show_state: true
+    update_timer: 10s
     state_display: |
       [[[
         const base = entity.entity_id.replace(/_power$/, '');

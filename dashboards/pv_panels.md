@@ -45,6 +45,14 @@ The W and Wh units tell power and energy apart, and the readings count has its o
 
 Problems show the same way in both modes, so a silent panel is red whichever you're looking at.
 
+![PV Panels view at dusk coloured by energy: P01 and P02 of the 12-panel string amber, P03 holding](images/panels-view-energy-dusk-holding.png)
+
+*About 17:17 at dusk, coloured by energy. On the 12-panel string, P01 and P02 have stopped reporting while the rest of their string still reports, so their share of the string total is estimated: the tiles are amber and show `Est.`. P03 missed its latest report and shows its last value as `1 W*` (holding).*
+
+![Two minutes later: P01 to P03 amber](images/panels-view-energy-dusk-estimated.png)
+
+*Two minutes later P03 is estimated too. As the light fades, a string drops out one panel at a time, usually starting with the panel that gets the least light, and each panel turns Asleep once it has been quiet for 10 minutes with the sun below 10°. The bottom bars stay green: these panels reported well all day.*
+
 ![PV Panels view coloured by energy: 6-panel string still dark at dawn, 12-panel string green](images/panels-view-energy.png)
 
 *About 08:25 on a 6 + 12 panel installation, coloured by energy. The 12-panel string has started producing; the 6-panel string faces differently and hasn't yet, so its tiles are dark. Every panel's connectivity bar (bottom edge) is green.*
@@ -84,6 +92,8 @@ The example is a roof with two strings: **Master** with 6 panels in 3 rows of 2,
 - Add a `heading` and a grid for each string or roof face.
 
 All styling lives in two `button_card_templates` at the top of the file, `pytap_panel` (the tile) and `pytap_colour_option` (one half of the switch), so you only edit the panel lines.
+
+button-card redraws a tile only when the tile's own entity (the Power sensor) changes. `pytap_panel` sets `update_timer: 10s` so each tile also redraws every 10 seconds and picks up changes in the panel's other sensors, such as a panel turning Estimated while its power stays at 0 W. Keep it if you copy the template.
 
 ## Classic dashboard
 

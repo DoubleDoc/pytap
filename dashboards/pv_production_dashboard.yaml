@@ -719,6 +719,7 @@ views:
             cards:
               - type: custom:button-card
                 entity: sensor.tigo_ts4_c2_power
+                update_timer: 10s
                 name: C2
                 show_state: true
                 show_icon: false
@@ -787,6 +788,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_c3_power
+                update_timer: 10s
                 name: C3
                 show_state: true
                 show_icon: false
@@ -796,6 +798,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_c4_power
+                update_timer: 10s
                 name: C4
                 show_state: true
                 show_icon: false
@@ -853,6 +856,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_c10_power
+                update_timer: 10s
                 name: C10
                 show_state: true
                 show_icon: false
@@ -862,6 +866,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_c9_power
+                update_timer: 10s
                 name: C9
                 show_state: true
                 show_icon: false
@@ -871,6 +876,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_c8_power
+                update_timer: 10s
                 name: C8
                 show_state: true
                 show_icon: false
@@ -880,6 +886,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_c7_power
+                update_timer: 10s
                 name: C7
                 show_state: true
                 show_icon: false
@@ -890,6 +897,7 @@ views:
               # D12 & D13 — South-facing, separated by spacer gap
               - type: custom:button-card
                 entity: sensor.tigo_ts4_d12_power
+                update_timer: 10s
                 name: D12
                 show_state: true
                 show_icon: false
@@ -899,6 +907,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_d13_power
+                update_timer: 10s
                 name: D13
                 show_state: true
                 show_icon: false
@@ -921,6 +930,7 @@ views:
             cards:
               - type: custom:button-card
                 entity: sensor.tigo_ts4_c1_power
+                update_timer: 10s
                 name: C1
                 show_state: true
                 show_icon: false
@@ -930,6 +940,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_c6_power
+                update_timer: 10s
                 name: C6
                 show_state: true
                 show_icon: false
@@ -939,6 +950,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_d6_power
+                update_timer: 10s
                 name: D6
                 show_state: true
                 show_icon: false
@@ -948,6 +960,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_d7_power
+                update_timer: 10s
                 name: D7
                 show_state: true
                 show_icon: false
@@ -957,6 +970,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_d8_power
+                update_timer: 10s
                 name: D8
                 show_state: true
                 show_icon: false
@@ -966,6 +980,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_d9_power
+                update_timer: 10s
                 name: D9
                 show_state: true
                 show_icon: false
@@ -975,6 +990,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_c11_power
+                update_timer: 10s
                 name: C11
                 show_state: true
                 show_icon: false
@@ -984,6 +1000,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_d11_power
+                update_timer: 10s
                 name: D11
                 show_state: true
                 show_icon: false
@@ -993,6 +1010,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_d5_power
+                update_timer: 10s
                 name: D5
                 show_state: true
                 show_icon: false
@@ -1002,6 +1020,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_c12_power
+                update_timer: 10s
                 name: C12
                 show_state: true
                 show_icon: false
@@ -1011,6 +1030,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_d4_power
+                update_timer: 10s
                 name: D4
                 show_state: true
                 show_icon: false
@@ -1020,6 +1040,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_d3_power
+                update_timer: 10s
                 name: D3
                 show_state: true
                 show_icon: false
@@ -1029,6 +1050,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_d1_power
+                update_timer: 10s
                 name: D1
                 show_state: true
                 show_icon: false
@@ -1038,6 +1060,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_d2_power
+                update_timer: 10s
                 name: D2
                 show_state: true
                 show_icon: false
@@ -1047,6 +1070,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_c5_power
+                update_timer: 10s
                 name: C5
                 show_state: true
                 show_icon: false
@@ -1056,6 +1080,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_c13_power
+                update_timer: 10s
                 name: C13
                 show_state: true
                 show_icon: false
@@ -1065,6 +1090,7 @@ views:
 
               - type: custom:button-card
                 entity: sensor.tigo_ts4_d10_power
+                update_timer: 10s
                 name: D10
                 show_state: true
                 show_icon: false

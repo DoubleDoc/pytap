@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Dashboards
+
+- PV Panels dashboard and the classic Panel Power view: tiles redraw every 10 seconds (`update_timer`), so a panel's data validity, energy and readings show current values even while its power is unchanged, such as a panel turning Estimated at 0 W at dusk.
+- `dashboards/pv_panels.md`: dusk screenshots showing Estimated (amber) and holding (`1 W*`) tiles, and a note on the refresh timer.
+
 ## [1.4.9] - 2026-11-18
 
 ### Documentation
