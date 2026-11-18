@@ -186,7 +186,7 @@ Each optimizer has a diagnostic **Data validity** sensor that shows how much its
 | Holding last value | Quiet for more than 2 minutes; its sensors hold the last values, and no estimate is possible (or estimating is off). |
 | Estimated from string | Quiet for less than 30 minutes; the String and Total devices are using an estimate from the rest of its string. Its own sensors hold the last values. |
 | Silent, estimated in string | Quiet for 30 minutes or more in daylight. Its own live readings are unavailable, but the rest of its string is producing, so the String and Total devices still use an estimate. A long dropout like this usually means a weak radio link to the TAP. |
-| Asleep | Night: live readings read 0. |
+| Asleep | Night: sun below 10° and quiet for 10 minutes. Live readings read 0. At dusk an optimizer shows Asleep once it has been quiet that long, even while others in its string are still awake. |
 | Silent | Quiet for 30 minutes in daylight with no estimate; live readings are unavailable. |
 
 While the gateway's [Bus status](#bus-status) isn't normal, Data validity is unavailable too: the problem is the whole gateway, not the optimizer.

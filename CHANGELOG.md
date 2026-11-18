@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [1.4.10] - 2026-11-18
+
+### Changed
+
+- **Data validity at dusk** — An optimizer that has been quiet for 10 minutes with the sun below 10° now shows *Asleep*, even while others in its string are still awake. It used to show *Estimated* until half its string had gone quiet, although the estimate was about 0 W (the awake optimizers report about 0 W at dusk). Energy is unchanged; by day, estimating works as before.
 
 ### Dashboards
 

@@ -425,6 +425,11 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         state = self.reading_state(barcode)
         if state == READING_OFFLINE:
             return None
+        if state == READING_ASLEEP and self._sun_low:
+            # At dusk the string's last awake optimizers keep reporting about
+            # 0 W, so a sleeping optimizer would otherwise stay "estimated"
+            # (at 0 W) until half its string sleeps. Asleep is what it is.
+            return VALIDITY_ASLEEP
         if self.estimated_power(barcode) is not None:
             # After SILENT_UNAVAILABLE_SECONDS its own live sensors are
             # unavailable even though the string still estimates it.

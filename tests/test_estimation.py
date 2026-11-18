@@ -22,7 +22,9 @@ from custom_components.pytap.const import (
     CONF_MODULES,
     DEFAULT_PORT,
     DOMAIN,
+    NIGHT_QUIET_SECONDS,
     SILENT_UNAVAILABLE_SECONDS,
+    VALIDITY_ASLEEP,
     VALIDITY_ESTIMATED,
     VALIDITY_HOLDING,
     VALIDITY_REPORTING,
@@ -157,6 +159,40 @@ def test_silent_optimizer_estimated_from_string(hass: HomeAssistant) -> None:
     assert daily.extra_state_attributes["estimated_energy"] == pytest.approx(
         est_today, abs=0.1
     )
+
+
+def test_asleep_at_dusk_even_while_string_estimates(hass: HomeAssistant) -> None:
+    """At low sun a quiet optimizer is asleep, not estimated at ~0 W."""
+    coordinator = _coordinator(hass)
+    _learn_shares(coordinator)
+    coordinator._sun_low = True
+    coordinator._day_since = None
+    _report(coordinator, B, 0.5)
+    _report(coordinator, C, 0.5)
+
+    # Quiet for a few minutes: estimated from the still-awake string.
+    _quiet(coordinator, A, 200)
+    coordinator._update_estimates(time.monotonic())
+    assert coordinator.estimated_power(A) is not None
+    assert coordinator.data_validity(A) == VALIDITY_ESTIMATED
+
+    # Quiet past NIGHT_QUIET_SECONDS: asleep, though half its string reports.
+    _quiet(coordinator, A, NIGHT_QUIET_SECONDS + 30)
+    coordinator._update_estimates(time.monotonic())
+    assert coordinator.estimated_power(A) is not None
+    assert coordinator.data_validity(A) == VALIDITY_ASLEEP
+
+
+def test_late_waker_by_day_is_still_estimated(hass: HomeAssistant) -> None:
+    """By day, an optimizer not heard from since dawn stays estimated."""
+    coordinator = _coordinator(hass)
+    _learn_shares(coordinator)
+    coordinator._day_since = time.monotonic() - 15 * 60
+    _quiet(coordinator, A, 10 * 3600)
+    _report(coordinator, B, 300.0)
+    _report(coordinator, C, 300.0)
+    coordinator._update_estimates(time.monotonic())
+    assert coordinator.data_validity(A) == VALIDITY_ESTIMATED
 
 
 def test_estimate_follows_string_down(hass: HomeAssistant) -> None:
