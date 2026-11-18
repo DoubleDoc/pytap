@@ -150,7 +150,7 @@ These rules apply to each optimizer's own sensors. For the String and Total devi
 
 ### Estimating silent optimizers
 
-An optimizer that stops reporting hasn't necessarily stopped producing. The optimizers in a string are wired in series and carry the same current, so if the rest of the string is producing normally, the silent one almost certainly is too; it just isn't being heard. If it really had failed in a way that broke the string, the others would show it, because the string's current would drop.
+An optimizer that stops reporting hasn't necessarily stopped producing. The optimizers in a string are wired in series and carry the same current, so if the rest of the string is producing normally, the silent one likely is too; it just isn't being heard. If it fails in a way that breaks the string, the others may show it, because the string's current might drop.
 
 PyTap uses this on the String and Total devices:
 
