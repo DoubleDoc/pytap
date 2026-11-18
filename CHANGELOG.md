@@ -10,6 +10,12 @@ Decoding now follows how the Tigo CCA firmware decodes power reports, as documen
 - **Temperature** is taken only from reports whose status word marks the field as a temperature (bit 0x20); other reports keep the last valid temperature.
 - **RSSI** of 0 means "no usable value" and no longer replaces the last valid RSSI.
 - **12-byte power reports** (no RSSI byte) are decoded instead of dropped.
+- **Saving state when Home Assistant stops** — PyTap stopped its listener and saved its state only when its entry was unloaded, which Home Assistant doesn't do at shutdown. So the last few seconds of changes weren't saved at a restart, and Home Assistant logged the listener thread as still running at shutdown. PyTap now stops and saves when Home Assistant stops, after the last reading.
+
+### Testing
+
+- Tests run against Home Assistant 2026.10.4 on Python 3.14 (were 2026.2.2 on 3.13), and CI now also runs the embedded parser's own tests. PyTap was also checked by hand on Home Assistant 2026.11.2, replaying recorded bus traffic.
+- Removed `requirements.txt`, an unused copy of Home Assistant 2026.2's pinned dependencies that raised 137 Dependabot alerts.
 
 ### Documentation
 
