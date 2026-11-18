@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.6] - Unreleased
+
+### Fixed
+
+- `reporting_count` on the String and Total devices counted asleep and briefly quiet optimizers as reporting (at night it showed 12 of 12). It now counts only optimizers whose Data validity is *Reporting*: those that reported within the last 2 minutes.
+
 ## [1.4.5] - 2026-11-17
 
 The two database-write changes below come from [seaosair](https://github.com/seaosair)'s upstream [PR #25](https://github.com/azebro/pytap/pull/25). They found that the `last_update` attribute, not the values, was forcing a write on every reading, showed that excluding it from the recorder doesn't stop the write, and showed that rounding only pays off once that attribute is fixed. They backed each point with measurements from a 23-module installation. We measured the same effects here before adopting them. Thank you, seaosair.

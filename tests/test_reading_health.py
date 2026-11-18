@@ -238,7 +238,16 @@ def test_total_power_skips_silent_and_counts_asleep_as_zero(hass: HomeAssistant)
     assert _total(hass, coordinator, "performance").native_value == 45.0
 
     _set(coordinator, sun_low=True, a=NIGHT_QUIET_SECONDS + 1, c=NIGHT_QUIET_SECONDS + 1)
-    assert _total(hass, coordinator, "power").native_value == 0.0
+    total = _total(hass, coordinator, "power")
+    assert total.native_value == 0.0
+    # Asleep optimizers aren't reporting.
+    assert total.extra_state_attributes["reporting_count"] == 0
+
+    # Quiet for a few minutes by day (holding) isn't reporting either.
+    _set(coordinator, sun_low=False, day_for=4 * 3600, a=300, c=5)
+    assert _total(hass, coordinator, "power").extra_state_attributes[
+        "reporting_count"
+    ] == 1
 
 
 def test_total_power_unavailable_when_all_silent_or_offline(hass: HomeAssistant) -> None:

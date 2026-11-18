@@ -792,12 +792,14 @@ class PyTapAggregateSensor(
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return additional aggregate state attributes."""
         nodes = self.coordinator.data.get("nodes", {})
+        # Reporting means it has reported recently (Data validity
+        # "reporting"): asleep, holding, estimated and silent optimizers
+        # don't count.
         reporting = [
             barcode
             for barcode in self._barcodes
             if nodes.get(barcode) is not None
-            and self.coordinator.reading_state(barcode)
-            not in (READING_SILENT, READING_OFFLINE)
+            and self.coordinator.data_validity(barcode) == VALIDITY_REPORTING
         ]
         attrs: dict[str, Any] = {
             "optimizer_count": len(self._barcodes),

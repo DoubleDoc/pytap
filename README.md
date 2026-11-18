@@ -149,7 +149,7 @@ PyTap uses this on the String and Total devices:
 | Power | What it reported (held, then 0 or unavailable as above) | The estimate while one is available |
 | Daily and total energy | **Only what it reported** | What all optimizers reported **plus** estimated energy |
 
-So a string's energy can be slightly more than the sum of its optimizers' energy sensors, by exactly the string's `estimated_energy` attribute. The **Power** sensors on the String and Total devices have an `estimated_count` attribute showing how many optimizers are being estimated right now, and `reporting_count` showing how many are reporting.
+So a string's energy can be slightly more than the sum of its optimizers' energy sensors, by exactly the string's `estimated_energy` attribute. The **Power** sensors on the String and Total devices have an `estimated_count` attribute showing how many optimizers are being estimated right now, and `reporting_count` showing how many reported within the last 2 minutes (Data validity *Reporting*; asleep, holding, estimated and silent optimizers aren't counted).
 
 Estimating needs neighbours: an optimizer that is alone in its string, or without a string, is never estimated, and nothing is estimated when fewer than half of the others in its string are reporting (for example at night). A silent optimizer without an estimate is left out of the String and Total devices' **Power** until it reports again.
 
