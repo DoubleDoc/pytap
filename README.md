@@ -422,7 +422,7 @@ Both point the same way: **much of PyTap would work better on a small device at 
 
 Home Assistant would keep what it's good at: history, dashboards, the Energy dashboard, automations, and string-level views and estimates across many devices.
 
-[Bobsilvio/tigo_server](https://github.com/Bobsilvio/tigo_server) shows this approach working. An ESP32 with a receive-only RS-485 module listens to the same TAP–CCA bus and decodes each panel's power, voltages, current and temperature. It runs as an [ESPHome device](https://github.com/Bobsilvio/tigo_server/blob/main/esphome/README.md) with native Home Assistant entities. An optional add-on puts its dashboard in the Home Assistant sidebar. Prepackaged hardware is it's main holdup at present.
+[Bobsilvio/tigo_server](https://github.com/Bobsilvio/tigo_server) shows this approach working. An ESP32 with a receive-only RS-485 module listens to the same TAP–CCA bus and decodes each panel's power, voltages, current and temperature. It runs as an [ESPHome device](https://github.com/Bobsilvio/tigo_server/blob/main/esphome/README.md) with native Home Assistant entities. An optional add-on puts its dashboard in the Home Assistant sidebar. Prepackaged hardware is its main holdup at present.
 
 ---
 
