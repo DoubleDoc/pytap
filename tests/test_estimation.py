@@ -2,7 +2,7 @@
 the estimated energy in string/total sensors, the data validity sensor and
 the estimate option."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 from unittest.mock import MagicMock
 
@@ -292,3 +292,43 @@ async def test_options_estimate_checkbox(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.MENU
     assert entry.data[CONF_ESTIMATE_SILENT] is False
     assert entry.data["write_interval"] == 30
+
+
+def _gap(coordinator, barcode: str, seconds: float) -> None:
+    """Pretend the optimizer's last reading was `seconds` ago."""
+    acc = coordinator._energy_state[barcode]
+    acc.last_reading_ts = acc.last_reading_ts - timedelta(seconds=seconds)
+
+
+@pytest.mark.parametrize(
+    ("gap", "estimate", "expected_wh"),
+    [
+        (150, True, 100 * 150 / 3600),  # bridged before estimating began
+        (150, False, 0.0),  # estimating off: measured only
+        (400, True, 0.0),  # long gap: the string estimate covers it
+    ],
+)
+def test_short_gap_is_bridged(
+    hass: HomeAssistant, gap: float, estimate: bool, expected_wh: float
+) -> None:
+    coordinator = _coordinator(hass, estimate=estimate)
+    _learn_shares(coordinator)
+    measured = coordinator.data["nodes"][A]["daily_energy_wh"]
+    _gap(coordinator, A, gap)
+    _report(coordinator, A, 100.0)
+    assert coordinator.estimated_energy(A)[0] == pytest.approx(expected_wh, abs=0.05)
+    # The optimizer's own energy never includes it.
+    assert coordinator.data["nodes"][A]["daily_energy_wh"] == measured
+
+
+def test_short_gap_not_counted_twice_when_estimating(hass: HomeAssistant) -> None:
+    """If the health check already estimated the gap, it isn't bridged too."""
+    coordinator = _coordinator(hass)
+    _learn_shares(coordinator)
+    _quiet(coordinator, A, 150)
+    coordinator._update_estimates(time.monotonic())
+    first = coordinator.estimated_energy(A)[0]
+    assert first > 0
+    _gap(coordinator, A, 150)
+    _report(coordinator, A, 100.0)
+    assert coordinator.estimated_energy(A)[0] == pytest.approx(first)

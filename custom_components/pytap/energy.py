@@ -34,6 +34,10 @@ class EnergyUpdateResult:
 
     increment_wh: float = 0.0
     discarded_gap_during_production: bool = False
+    # The trapezoid that was left out because the gap was too long, and the
+    # gap's length, so a caller can count a short gap as estimated energy.
+    discarded_wh: float = 0.0
+    gap_seconds: float = 0.0
 
 
 def accumulate_energy(
@@ -56,6 +60,8 @@ def accumulate_energy(
 
     increment_wh = 0.0
     discarded_gap_during_production = False
+    discarded_wh = 0.0
+    delta_seconds = 0.0
 
     if acc.last_reading_ts is not None:
         delta_seconds = (now - acc.last_reading_ts).total_seconds()
@@ -71,6 +77,9 @@ def accumulate_energy(
             previous_power_w > low_power_threshold or power_w > low_power_threshold
         ):
             discarded_gap_during_production = True
+            discarded_wh = ((previous_power_w + power_w) / 2.0) * (
+                delta_seconds / 3600.0
+            )
 
     acc.last_power_w = power_w
     acc.last_reading_ts = now
@@ -79,6 +88,8 @@ def accumulate_energy(
     return EnergyUpdateResult(
         increment_wh=increment_wh,
         discarded_gap_during_production=discarded_gap_during_production,
+        discarded_wh=discarded_wh,
+        gap_seconds=delta_seconds,
     )
 
 

@@ -1288,10 +1288,31 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             low_power_threshold=ENERGY_LOW_POWER_THRESHOLD_W,
         )
         if update_result.discarded_gap_during_production:
-            self._log.debug(
-                "Discarded energy trapezoid for %s due to long gap during production",
-                barcode,
-            )
+            if (
+                self._estimate_enabled
+                and barcode not in self._est_cursor
+                and update_result.gap_seconds
+                <= ESTIMATE_AFTER_SECONDS + HEALTH_CHECK_INTERVAL_SECONDS
+            ):
+                # A short gap that ended before the health check started
+                # estimating: bridge it with the optimizer's own readings
+                # either side, counted as estimated energy.
+                add_estimated_energy(
+                    acc, update_result.discarded_wh, now.date().isoformat()
+                )
+                self._schedule_save()
+                self._log.debug(
+                    "Bridged a %.0f s gap for %s: %.2f Wh estimated",
+                    update_result.gap_seconds,
+                    self._module_label(barcode),
+                    update_result.discarded_wh,
+                )
+            else:
+                self._log.debug(
+                    "Discarded energy trapezoid for %s due to long gap during "
+                    "production",
+                    barcode,
+                )
 
         self.data["nodes"][barcode] = {
             "gateway_id": event.gateway_id,
