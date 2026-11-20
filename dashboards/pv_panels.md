@@ -86,7 +86,7 @@ The example is a roof with two strings: **Master** with 6 panels in 3 rows of 2,
 - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_4_000001a_power, name: P01, view_layout: { grid-row: 1, grid-column: 1 / 3 } }
 ```
 
-- **`entity`** — the panel's **Power** sensor, named `sensor.tigo_<barcode>_power` (see [Device naming](../README.md#device-naming)). The tile finds the panel's other sensors by replacing `_power` in the entity ID with `_daily_energy`, `_readings_today` and `_data_validity`, so those must keep PyTap's default IDs.
+- **`entity`** — the panel's **Power** sensor, named `sensor.tigo_<barcode>_power` (see [Device naming](../docs/entities.md#device-naming)). The tile finds the panel's other sensors by replacing `_power` in the entity ID with `_daily_energy`, `_readings_today` and `_data_validity`, so those must keep PyTap's default IDs.
 - **`name`** — the label on the tile.
 - **`view_layout`** — the tile's grid row and columns. A portrait tile spans 2 columns (`1 / 3`, `3 / 5`, …). For a landscape panel, span 3 columns and change the template's `aspect-ratio` to `3/2` in a copy of the template.
 - Add a `heading` and a grid for each string or roof face.

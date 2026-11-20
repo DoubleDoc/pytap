@@ -4,7 +4,7 @@ Home Assistant Lovelace dashboard displaying the physical solar panel layout wit
 
 > **New in this fork: the [PV Panels dashboard](pv_panels.md)** puts power, energy, readings and data validity on every tile in a single view, with a switch to colour the tiles by power or energy. Start there; this classic dashboard is kept and maintained for one-measure-per-view use and its Grafana version.
 
-> **This is a worked example for one roof**, not a drop-in dashboard. It lays out 26 panels named C1–D13 and uses entity IDs such as `sensor.tigo_ts4_c1_power`, which PyTap created for modules named `C1` before version 1.4.0. On your installation the IDs depend on your module, string and inverter names (for example `sensor.tigo_s2_p01_power`; see [Device naming](../README.md#device-naming)). To use it, replace the panel entity IDs and grid positions with your own. The max sensors in `tigo.yaml` work on any installation as they are.
+> **This is a worked example for one roof**, not a drop-in dashboard. It lays out 26 panels named C1–D13 and uses entity IDs such as `sensor.tigo_ts4_c1_power`, which PyTap created for modules named `C1` before version 1.4.0. On your installation the IDs depend on your module, string and inverter names (for example `sensor.tigo_s2_p01_power`; see [Device naming](../docs/entities.md#device-naming)). To use it, replace the panel entity IDs and grid positions with your own. The max sensors in `tigo.yaml` work on any installation as they are.
 
 ## Files
 

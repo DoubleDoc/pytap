@@ -5,7 +5,7 @@ Each TS4 power report carries two flag bytes that PyTap doesn't turn into entiti
 - **status**: report bytes 8–9 (a 16-bit word; byte 8 has been 0 in every report seen so far),
 - **jstatus**: report byte 7.
 
-They are **bitfields**: read them bit by bit, not as whole codes. PyTap keeps the latest values per optimizer, shows them decoded under `flags` in the integration's diagnostics, and exposes them as diagnostic entities (Status, Low input voltage, Producing; and, disabled by default, Idle pass-through, State field, jstatus level; see the README's [Sensors](../README.md#sensors) section).
+They are **bitfields**: read them bit by bit, not as whole codes. PyTap keeps the latest values per optimizer, shows them decoded under `flags` in the integration's diagnostics, and exposes them as diagnostic entities (Status, Low input voltage, Producing; and, disabled by default, Idle pass-through, State field, jstatus level; see [Status flags and reading faults](entities.md#status-flags-and-reading-faults) section).
 
 The meanings below come from a passive capture of two gateways (6 and 12 optimizers) on 2026-11-20 from wake-up (07:26) to full sun (10:35), about 99,600 power reports, compared with the inverters' own string measurements. Meanings that one morning can't settle are marked **tentative** or **open**. Earlier observations: Bobsilvio's [protocol notes](https://github.com/Bobsilvio/tigo_server/blob/main/docs/PROTOCOL-NOTES.md) (bit 5 from the CCA firmware) and Tim Laing's upstream [PR #39](https://github.com/azebro/pytap/pull/39).
 
@@ -35,7 +35,7 @@ A capture through midday and dusk, and the optimizers' hardware IDs (from their 
 
 ## Contributing data
 
-Captures from other installations help most, especially with different optimizer hardware. Record one with the `pytap.start_capture` action (see [Packet capture and replay](../README.md#packet-capture-and-replay)), then run:
+Captures from other installations help most, especially with different optimizer hardware. Record one with the `pytap.start_capture` action (see [Packet capture and replay](capture.md#packet-capture-and-replay)), then run:
 
 ```sh
 python scripts/capture_reports.py /path/to/capture --output reports.csv --summary

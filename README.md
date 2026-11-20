@@ -1,690 +1,83 @@
 # PyTap
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![HA Version](https://img.shields.io/badge/Home%20Assistant-2026.11%2B-blue.svg)](https://www.home-assistant.io/)
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/DoubleDoc/pytap/blob/main/LICENSE)
+[![Home Assistant 2026.11+](https://img.shields.io/badge/Home%20Assistant-2026.11%2B-blue.svg)](https://www.home-assistant.io/)
+[![Marketplace: custom repository](https://img.shields.io/badge/Marketplace-custom%20repository-41BDF5.svg)](https://github.com/DoubleDoc/pytap/blob/main/docs/installation.md)
 [![Validate](https://github.com/DoubleDoc/pytap/actions/workflows/validate.yml/badge.svg)](https://github.com/DoubleDoc/pytap/actions/workflows/validate.yml)
 
-> **This is a fork** of [azebro/pytap](https://github.com/azebro/pytap) by Adam Zebrowski, who built the integration: the protocol parser, the Home Assistant integration and the original dashboards. What the fork changes for you:
->
-> - **Easier setup and maintenance.** Optimizers can be discovered automatically, so setup can finish without typing in barcodes. Panel entity IDs are the optimizer's barcode (`sensor.tigo_4_5db467z_power`), so moving panels between strings or inverters, or renaming them, never breaks dashboards or history; device names follow every change. One CCA serving several inverters can name each string's inverter and gets a total per inverter.
-> - **More ways to connect.** Besides an RS-485 to TCP converter, a serial adapter on the Home Assistant host or an ESPHome serial proxy.
-> - **Readings you can trust.** Per-panel data validity and health, status flags from each report and discarding of physically impossible readings, estimates for silent optimizers, a bus status sensor, sun-aware night handling with a choice of what stale readings show, and energy bridged across short gaps and restarts. String and total energy never jump when modules move, and a malformed bus frame can't crash the parser.
-> - **Robust over time.** Clean stops and reloads, saved energy that is never overwritten by unreadable state, a DST-safe midnight reset, and much lower database load.
-> - **Troubleshooting and research tools.** Record the raw bus on demand, replay it offline through PyTap's own parser, and export every report with its decoded status bits.
-> - **The single-view [PV Panels dashboard](dashboards/pv_panels.md).**
->
-> Many of these come from [Tim Laing](https://github.com/timlaing)'s upstream pull requests [#32](https://github.com/azebro/pytap/pull/32)–[#39](https://github.com/azebro/pytap/pull/39), adopted here. See the [changelog](CHANGELOG.md) for everything that differs, and [Acknowledgements](#acknowledgements) for credits.
+**Local monitoring of Tigo TS4 optimizers in Home Assistant, without Tigo's cloud.** PyTap listens to the RS-485 bus between your Tigo CCA and its TAP and gives every panel its own live sensors: power, voltage, current, temperature, energy and health.
 
-A Home Assistant custom integration for monitoring **Tigo TS4 optimizers** locally, without Tigo's cloud. PyTap listens to the RS-485 bus between a Tigo CCA and its TAP, through an RS-485 to TCP converter, a serial adapter or an ESPHome serial proxy, and exposes real-time per-optimizer sensors: power, voltage, current, temperature, energy and more.
+> An independently maintained fork of [azebro/pytap](https://github.com/azebro/pytap) by Adam Zebrowski, who built the integration. See the [changelog](https://github.com/DoubleDoc/pytap/blob/main/CHANGELOG.md) for what differs and [credits](#credits) for everyone whose work it includes.
 
-## See every panel at once
+![PV Panels dashboard: every panel as a tile laid out like the roof, showing power, today's energy and readings, coloured by energy](https://raw.githubusercontent.com/DoubleDoc/pytap/main/dashboards/images/panels-view-energy-midday.png)
 
-![PV Panels dashboard: each panel as a tile laid out like the roof, showing power, today's energy and readings, coloured by energy](dashboards/images/panels-view-energy-midday.png)
+<table>
+  <tr>
+    <td width="33%"><img src="https://raw.githubusercontent.com/DoubleDoc/pytap/main/dashboards/images/panels-view-power-midday.png" alt="The PV Panels view coloured by power at midday"></td>
+    <td width="33%"><img src="https://raw.githubusercontent.com/DoubleDoc/pytap/main/dashboards/images/panels-view-energy-dusk-estimated.png" alt="At dusk: three panels shown amber, estimated from their string"></td>
+    <td width="33%"><img src="https://raw.githubusercontent.com/DoubleDoc/pytap/main/dashboards/images/connectivity-view.png" alt="PV Production dashboard: readings per panel today"></td>
+  </tr>
+  <tr>
+    <td><sub>Coloured by power</sub></td>
+    <td><sub>At dusk: quiet panels estimated (amber)</sub></td>
+    <td><sub>Classic PV Production: readings per panel today</sub></td>
+  </tr>
+</table>
 
-This fork comes with the **[PV Panels dashboard](dashboards/pv_panels.md)**: one view with every panel laid out like your roof. Each tile shows:
+## What you get
 
-- **live power**, or the panel's state when it isn't reporting normally (`Asleep`, `Est.`, `Silent`, `No data`);
-- **today's energy**;
-- **today's readings count**, plus a red-to-green connectivity bar along its bottom edge.
+- **Every panel, live.** 13 sensors per optimizer (power, voltages, currents, temperature, duty cycle, signal, daily and lifetime energy, performance), totals per string, inverter and gateway, and Energy dashboard ready. [Entities →](https://github.com/DoubleDoc/pytap/blob/main/docs/entities.md)
+- **Quick setup, painless maintenance.** Optimizers are found automatically. Entity IDs are the optimizer's barcode, so moving panels between strings or inverters, or renaming them, never breaks dashboards or history. [Configuration →](https://github.com/DoubleDoc/pytap/blob/main/docs/configuration.md)
+- **Numbers you can trust.** Each panel's data validity, sun-aware night handling, estimates for briefly silent panels, and physically impossible readings thrown out. [When readings stop →](https://github.com/DoubleDoc/pytap/blob/main/docs/readings.md)
+- **Health at a glance.** Bus status per gateway, and per-panel status flags decoded from every report. [Status flags →](https://github.com/DoubleDoc/pytap/blob/main/docs/entities.md#status-flags-and-reading-faults)
+- **Local and listen-only.** Nothing is sent on the bus, so the CCA and Tigo's cloud keep working as before. Connect with an RS-485 to TCP converter, a serial adapter or an ESPHome serial proxy. [Hardware →](https://github.com/DoubleDoc/pytap/blob/main/docs/hardware.md)
+- **Light on your database.** Readings are averaged (60 s by default) and rounded, and flags are written only when they change. [Reporting modes →](https://github.com/DoubleDoc/pytap/blob/main/docs/configuration.md#reporting-modes)
+- **Research tools.** Record the raw bus on demand and replay it offline through PyTap's own parser. [Packet capture →](https://github.com/DoubleDoc/pytap/blob/main/docs/capture.md)
+- **Ready-made dashboards.** [PV Panels](https://github.com/DoubleDoc/pytap/blob/main/dashboards/pv_panels.md), one view of the whole roof, and the classic [PV Production](https://github.com/DoubleDoc/pytap/blob/main/dashboards/pv_production.md) views, with a Grafana version.
 
-A **Colour tiles by [Power | Energy]** switch picks what the tile colour shows. Problem panels stand out in either mode: estimated panels are amber, silent ones red, and panels with no data grey. These states come from this fork's per-panel [Data validity](#sensors) sensor.
+## Quick start
 
-The tiles are driven by two shared templates, so adapting the dashboard to your roof means editing one line per panel. See [`dashboards/pv_panels.md`](dashboards/pv_panels.md) to set it up. The original three-view [PV Production dashboard](dashboards/pv_production.md) is still included and maintained.
+You need Home Assistant 2026.11 or later and a Tigo CCA with its TAP(s) and TS4 optimizers.
 
----
+1. **Connect to the bus.** Wire an RS-485 to TCP converter (for example a Waveshare RS485 to Ethernet), a serial RS-485 adapter or an ESPHome serial proxy to the CCA's GATEWAY A and B terminals. [Hardware and wiring →](https://github.com/DoubleDoc/pytap/blob/main/docs/hardware.md)
+2. **Install.** In **Settings → Marketplace**, select **Add from link**, enter `DoubleDoc/pytap`, install **PyTap** and restart Home Assistant. [Installation →](https://github.com/DoubleDoc/pytap/blob/main/docs/installation.md)
+3. **Add the integration.** **Settings → Devices & services → Add integration → PyTap**, choose your connection, and select **Finish setup**: discovery adds your optimizers. [Configuration →](https://github.com/DoubleDoc/pytap/blob/main/docs/configuration.md)
+4. **Wait for sunrise.** PyTap learns which optimizer is which when the optimizers power up in the morning; after that, readings flow and restarts resolve straight away. [First start →](https://github.com/DoubleDoc/pytap/blob/main/docs/configuration.md#first-start-what-to-expect)
 
-## Hardware requirements
+## Documentation
 
-PyTap needs an **RS-485 to TCP converter** connected to the bus between your Tigo CCA and its TAP(s). PyTap only listens: it never transmits, so the CCA and Tigo's cloud keep working as before. For background on the bus and other ways to connect, see [taptap](https://github.com/willglynn/taptap#connecting).
-
-You need one converter, and one PyTap entry, per CCA.
-
-**Other ways to connect** (Home Assistant 2026.11 and later): instead of a TCP converter, PyTap can read the bus from a **serial RS-485 adapter** on the Home Assistant host (for example a USB adapter), or from an **ESPHome device with `serial_proxy`** next to the CCA. Choose **Serial port or ESPHome serial proxy** when adding PyTap, and pick the port from Home Assistant's list. PyTap opens it at 38400 baud, 8N1, never changes DTR/RTS and never transmits. One port can be used by only one PyTap entry. (From [Tim Laing](https://github.com/timlaing)'s upstream [PR #36](https://github.com/azebro/pytap/pull/36).)
-
-### Wiring
-
-Connect the converter to the CCA's **GATEWAY** terminals, the same ones the TAP uses:
-
-| CCA GATEWAY terminal | Converter terminal |
+| | |
 | --- | --- |
-| A | A (sometimes labelled A+ or 485+) |
-| B | B (sometimes labelled B- or 485-) |
-| – (ground) | GND, if the converter has one |
-| + | **Not connected.** This powers the TAPs; power the converter from its own supply or PoE. |
-
-- Keep the converter's wires short, or move the CCA's A and B wires to the converter and run new wires from it to the CCA.
-- The bus is already terminated at the CCA and at the last TAP. If your converter has a termination resistor (a jumper, DIP switch or setting, usually 120 Ω), **turn it off**.
-
-### Example: Waveshare RS485 to Ethernet converter
-
-Waveshare's RS485-to-Ethernet converters work well. Open the converter's web page (its IP address in a browser) and set:
-
-| Setting | Value | Why |
-| --- | --- | --- |
-| Work Mode | **TCP Server** | PyTap connects to the converter. |
-| Device Port | **502** | PyTap's default port. Any port works if you enter the same one in PyTap. |
-| IP mode | DHCP with a reservation on your router, or Static | PyTap connects by address, so it must not change. |
-| Destination IP/DNS, Destination Port | (ignored) | Only used in client modes. |
-| Baud Rate | **38400** | Speed of the Tigo gateway bus. |
-| Databits / Parity / Stopbits | **8 / None / 1** | |
-| Flow control | **None** | |
-| No-Data-Restart | **Disable** | PyTap reconnects by itself when data stops. |
-| Protocol | **None** | Raw passthrough. Modbus conversion would corrupt the Tigo frames. |
-| Enable Multi-host | **No** | |
-
-![Waveshare RS485 to Ethernet settings for PyTap](docs/images/waveshare-rs485-eth-settings.png)
-
-When you add PyTap, enter the converter's IP address as the **host** and its Device Port as the **port**.
-
-## Features
-
-- **Real-time streaming** — Push-based data delivery with sub-second latency (no polling).
-- **Configurable reporting** — Choose a **time-weighted averaged interval** (default for new entries, every 60 seconds) that caches readings and pushes a single representative value to reduce CPU and recorder load, or **live reporting** (every reading delivered as it arrives).
-- **Per-optimizer sensors** — 13 sensor entities per Tigo TS4 module: performance,
-  power, voltage in/out, current in/out, temperature, DC-DC duty cycle, RSSI,
-  daily energy, total energy, readings today and data validity.
-- **Aggregate sensors** — 4 sensors per string and 4 per gateway total: performance, power, daily energy, total energy.
-- **Performance tracking** — Per-optimizer, per-string and per-gateway performance percentage based on configurable peak panel power (Wp).
-- **Diagnostics download** — Integration diagnostics export includes parser counters, infrastructure/mapping state, and per-node summaries.
-- **Menu-driven setup** — Add optimizer modules one at a time with guided form fields.
-- **Barcode-based identification** — Stable hardware barcodes as entity identifiers (survives gateway restarts).
-- **Discovery logging** — Unconfigured barcodes seen on the bus are logged for easy identification.
-- **Persistent barcode mapping** — Discovered barcodes and node mappings are
-    saved across restarts. When you add a previously-discovered barcode,
-    it resolves instantly without waiting for the next gateway enumeration.
-- **Restart-safe availability** — Last known node readings are persisted and
-    restored on startup, so sensors stay available with the most recent value
-    even before the first live frame arrives (for example after a night restart).
-- **Night and dropout handling** — Live readings go to 0 when the optimizers fall asleep at night, and become unavailable only after a long daytime silence or when the converter stops sending data (see [When readings go to 0 or unavailable](#when-readings-go-to-0-or-unavailable)).
-- **Estimating silent optimizers** — While an optimizer is silent but the rest of its string is producing normally, the String and Total devices use an estimate based on its usual share of the string, including the energy it produced while silent. Its own sensors only ever show what it reported (see [Estimating silent optimizers](#estimating-silent-optimizers)).
-- **Data validity sensor** — Per optimizer: reporting, holding last value, estimated, asleep or silent.
-- **Bus status sensor** — Per gateway: normal, RS-485 converter unreachable, or bus quiet (CCA off or wiring), so an outage points at the right box.
-- **Energy accumulation** — Trapezoidal Wh integration with proactive midnight reset and monotonic lifetime totals. Daily sensors zero at exactly midnight local time.
-- **No external dependencies** — The protocol parser library is fully embedded; nothing to install from PyPI.
-- **Options flow** — Add, edit or remove optimizer modules and rename strings at any time without reconfiguring.
-- **Structured device names** — `Tigo [inverter] [string] [module]`, with an optional inverter name for installations with more than one gateway (see [Device naming](#device-naming)).
-- **Node mapping sensor** — Shows whether readings can be matched to your modules yet, so a new installation that is still waiting for its first node table is visibly working (see [First start: what to expect](#first-start-what-to-expect)).
-
-## Sensors
-
-Each configured Tigo TS4 optimizer exposes the following sensors:
-
-| Sensor | Unit | Device Class |
-| --- | --- | --- |
-| Performance | % | — |
-| Power | W | `power` |
-| Voltage In | V | `voltage` |
-| Voltage Out | V | `voltage` |
-| Current In | A | `current` |
-| Current Out | A | `current` |
-| Temperature | °C | `temperature` |
-| DC-DC Duty Cycle | % | — |
-| RSSI | dBm | `signal_strength` |
-| Daily Energy | Wh | `energy` |
-| Total Energy | Wh | `energy` |
-| Readings Today | — | — (diagnostic) |
-| Data validity | — | `enum` (diagnostic): see below |
-
-Each optimizer also has **flag entities** from its power reports' flag bytes, and a **Reading fault** indicator (all diagnostic; adapted from [Tim Laing](https://github.com/timlaing)'s upstream [PR #39](https://github.com/azebro/pytap/pull/39)). Tigo doesn't document the flag bytes: they're read bit by bit, and the names describe what captured data shows ([details and evidence](docs/protocol-status-bits.md)).
-
-| Entity | Type | Source | Meaning | Enabled |
-| --- | --- | --- | --- | --- |
-| Status | sensor | status byte | The whole byte, e.g. `0x64`; its bits decoded as attributes | yes |
-| Low input voltage | binary | status bit 7 | The optimizer's input voltage is low (around 15 V on average when set) | yes |
-| Producing | binary | jstatus bit 7 | Current is flowing through the optimizer | yes |
-| Reading fault | binary (problem) | — | The latest report was physically impossible (see below) | yes |
-| Idle pass-through | binary | status bit 1 | **Tentative:** an idle state passing input straight through, which only some optimizers enter | no |
-| State field | sensor | status bits 3–2 | Always 1 or 2 so far; **meaning open** | no |
-| jstatus level | sensor | jstatus bits 0–6 | **Tentative:** 1–4 while producing, following how hard the optimizer converts | no |
-
-Enable the disabled ones on the optimizer's device page if you want to follow them. Flag entities record a state only when their value changes. They show the latest report's flags while the optimizer reports and while it's asleep at night (its last report then shows its idle state); when it goes silent in daylight they become unavailable, unless the stale-reading settings hold or zero the readings, in which case they keep the last flags.
-
-**Reading fault:** a report is discarded as impossible when its output voltage is more than 2 V above its input (TS4 optimizers only step voltage down), a voltage is outside 0–100 V, or a valid temperature is outside −40…125 °C. A discarded report doesn't replace the last good values, add energy, or count as a fresh report; Reading fault turns on (attributes `fault_reasons` and `last_fault_at`) and a warning is logged, and it turns off with the next valid report. In a 99,618-report capture here, no report broke these rules.
-
-Readings are decoded the way the Tigo CCA's own firmware does it:
-
-- **Current In** uses each optimizer's input current scale, which depends on its hardware: 0.0025 A per unit for older units, 0.005 A for most, 0.025 A for "higher rated" units. PyTap learns each optimizer's hardware ID from its Version answer when the CCA asks for it, keeps it across restarts, and assumes 0.005 A until then. **Power** is Voltage In × Current In.
-- **Temperature** is updated only from reports that mark the field as a temperature, and **RSSI** only from reports with a usable value (not 0, and not the short 12-byte report, which has none); otherwise the last valid value is kept.
-
-PyTap also creates aggregate virtual devices:
-
-- **Tigo [inverter] String <name>** — `performance`, `power`, `daily_energy`, `total_energy`. Created for every string, even when there is only one, so a string keeps its history when more strings are added later.
-- **Tigo [inverter] Total** — `performance`, `power`, `daily_energy`, `total_energy`, plus two diagnostic sensors: **Node mapping** (whose `silent_modules` attribute lists silent modules) and **Bus status** (see below).
-
-On each device page these sensors are simply called **Power**, **Performance**, **Daily energy** and **Total energy**; the device name tells them apart (full names such as *Tigo Master String 2 Power* and *Tigo Master Total Power*). "Total" therefore means two things: the **Total device** (the whole gateway) and the **Total energy** sensor (lifetime energy), which on the Total device is named *Tigo … Total Total energy*. This README says "the String and Total devices" for the sums, and "Total energy" only for lifetime energy.
-
-### Bus status
-
-Each gateway (each PyTap entry, i.e. each CCA) has a **Bus status** sensor on its Total device. The Tigo CCA polls its optimizers around the clock, so the bus is never quiet in normal operation, even at night. If no data arrives for 5 minutes, PyTap can't tell anything about any optimizer on that gateway, so **every optimizer's live readings and Data validity become unavailable** until data returns. Energy totals are kept.
-
-| State | Meaning | Check |
-| --- | --- | --- |
-| Normal | Data is arriving from the bus. | — |
-| RS-485 converter unreachable | The TCP connection to the converter fails or keeps dropping. | The converter's power, network cable or Wi-Fi, IP address and port. |
-| Bus quiet | The converter accepts the connection but has nothing to forward. | That the Tigo CCA is powered and running, and the converter's A/B wiring to the CCA's gateway bus. |
-
-While the status isn't normal, the `last_data` attribute shows when data last arrived.
-
-### When readings go to 0 or unavailable
-
-Optimizers stop reporting when it gets dark, and by day one can drop off the radio link to the TAP for a while (2.4 GHz interference) and come back by itself. PyTap therefore treats silence differently depending on the sun's position, which it works out from your Home Assistant location:
-
-| Situation | Live readings | Energy and Readings Today |
-| --- | --- | --- |
-| Reporting | Latest values | Counting |
-| Sun below 10° and no report for 10 minutes (asleep) | Power, voltage, current, performance and duty cycle read **0**; temperature and RSSI keep their last value | Kept |
-| Daylight, no report yet since the optimizers went to sleep | Stay at 0 | Kept |
-| Daylight, no report for **30 minutes** (silent) | **Unavailable**, and a warning is logged | Kept |
-| Bus status not normal: no data from the bus for 5 minutes | **Unavailable** for every optimizer on that gateway, and a warning is logged | Kept |
-
-Short daytime gaps keep the last value, so a brief radio dropout doesn't zero a panel or break its history. If Home Assistant has no location set, PyTap never assumes it is night.
-
-**You can change what an optimizer's own live sensors show** under **Configure → Change stale reading behaviour**:
-
-| Setting | Choices | Default |
-| --- | --- | --- |
-| At night (asleep) | **Zero** as above, or **Hold last value** | Zero |
-| When silent in daylight | **Unavailable** as above, **Hold last value**, or **Zero** (as at night) | Unavailable |
-| Silent after | 5–240 minutes | 30 |
-
-Energy and Readings Today are never affected, and the String and Total devices keep their rules whatever you choose: sleeping optimizers count as 0 W, and silent ones as their estimate. Short dropouts are normal: on one 19-panel installation, gaps between reports reached about 76 s during production and 171 s at dawn, so keep *Silent after* well above a few minutes. These settings and the measurements come from [Tim Laing](https://github.com/timlaing)'s upstream [PR #34](https://github.com/azebro/pytap/pull/34).
-
-These rules apply to each optimizer's own sensors. For the String and Total devices, see the next section.
-
-### Estimating silent optimizers
-
-An optimizer that stops reporting hasn't necessarily stopped producing. The optimizers in a string are wired in series and carry the same current, so if the rest of the string is producing normally, the silent one likely is too; it just isn't being heard. If it fails in a way that breaks the string, the others may show it, because the string's current might drop.
-
-PyTap uses this on the String and Total devices:
-
-1. **Learning each optimizer's share.** While an optimizer and the rest of its string are reporting, PyTap keeps a rolling average (over roughly the last 10 minutes) of its power divided by the average power of the others in its string. This captures shading: a panel that is shaded in the afternoon has a share below 1 at that time.
-2. **Estimating.** Once an optimizer has been quiet for 2 minutes, and at least half of the other optimizers in its string are reporting, its estimated power is its share × their current average. If no share has been learned yet, it is assumed to produce the average.
-3. **Estimated energy.** The estimated power is added up as *estimated energy* from its last report until it reports again, and checked every minute. A gap of 2–3 minutes that ends before the next check is bridged with the average of the optimizer's own readings either side of it, also counted as estimated energy. (Optimizers report power, not energy: PyTap adds up energy from readings no more than 120 s apart, so without this such a gap would be lost.) The same applies after a Home Assistant restart, for gaps of up to 10 minutes: see [Known limitations](#known-limitations).
-
-| | Optimizer's own sensors | String and Total devices |
-| --- | --- | --- |
-| Power | What it reported (held, then 0 or unavailable as above) | The estimate while one is available |
-| Daily and total energy | **Only what it reported** | What all optimizers reported **plus** estimated energy |
-
-So a string's energy can be slightly more than the sum of its optimizers' energy sensors, by exactly the string's `estimated_energy` attribute. The **Power** sensors on the String and Total devices have an `estimated_count` attribute showing how many optimizers are being estimated right now, and `reporting_count` showing how many reported within the last 2 minutes (Data validity *Reporting*; asleep, holding, estimated and silent optimizers aren't counted).
-
-Estimating needs neighbours: an optimizer that is alone in its string, or without a string, is never estimated, and nothing is estimated when fewer than half of the others in its string are reporting (for example at night). A silent optimizer without an estimate is left out of the String and Total devices' **Power** until it reports again.
-
-**Turning it off.** Untick **Estimate silent optimizers** under **Configure → Change reporting settings**. The String and Total devices then hold a silent optimizer's last reported power instead, and no energy is added for the time it was silent. Energy already estimated stays in the lifetime totals, since those can't go down.
-
-#### Data validity sensor
-
-Each optimizer has a diagnostic **Data validity** sensor that shows how much its current readings can be trusted:
-
-| State | Meaning |
-| --- | --- |
-| Reporting | Readings received within the last 2 minutes. |
-| Holding last value | Quiet for more than 2 minutes; its sensors hold the last values, and no estimate is possible (or estimating is off). |
-| Estimated from string | Quiet for less than 30 minutes; the String and Total devices are using an estimate from the rest of its string. Its own sensors hold the last values. |
-| Silent, estimated in string | Quiet for 30 minutes or more in daylight. Its own live readings are unavailable, but the rest of its string is producing, so the String and Total devices still use an estimate. A long dropout like this usually means a weak radio link to the TAP. |
-| Asleep | Night: sun below 10° and quiet for 10 minutes. Live readings read 0. At dusk an optimizer shows Asleep once it has been quiet that long, even while others in its string are still awake. |
-| Silent | Quiet for 30 minutes in daylight with no estimate; live readings are unavailable. |
-
-While the gateway's [Bus status](#bus-status) isn't normal, Data validity is unavailable too: the problem is the whole gateway, not the optimizer.
-
-Its attributes show the learned share of the string average (to the nearest 0.05), the energy estimated for it today and, once it has stopped reporting, `last_report`: when it last reported. The optimizer's other sensors have no per-reading timestamp attribute: one that changes with every reading would make Home Assistant write a database row on every reading even when the value hasn't changed. A panel that often shows *Estimated*, *Silent, estimated in string* or *Silent* has a weak radio link to the TAP.
-
-### Device naming
-
-**Entity IDs are the optimizer's barcode**, which never changes: `sensor.tigo_4_5db467z_power` for barcode `4-5DB467Z`. Moving a module to another string or inverter, renaming it, or changing its position never changes its entity IDs, so dashboards, automations and history keep working through maintenance. The barcode is printed on the optimizer and shown on its device page.
-
-**Device names are for reading** and follow every change. They're built from up to four levels, leaving out any that aren't set:
-
-| Level | Set in | Example |
-| --- | --- | --- |
-| Inverter | **Inverter name** (per PyTap entry), or a string's own inverter (**Set a string's inverter**) | `Master` |
-| String | Each module's **String group** | `2` (numbers are shown as `S2`) or `East` |
-| Module | Each module's **Name**, usually its position; a discovered optimizer shows its barcode until named | `P01` |
-
-| Device | One inverter (no inverter name) | Inverters named (`Master`, `Slave`) |
-| --- | --- | --- |
-| Optimizer | `Tigo S2 P01` | `Tigo Master S2 P01` |
-| String total | `Tigo String 2` | `Tigo Master String 2` |
-| Total | `Tigo Total` | `Tigo Master Total` |
-
-Entity *names* (what cards and history show, e.g. "Tigo Master S2 P01 Power") come from the device name, so they follow moves too. String and total entity IDs are named after the string or total (`sensor.tigo_master_string_2_power`).
-
-**Which setup you have:**
-
-- **One inverter, one CCA** (most installations): one PyTap entry, inverter name blank.
-- **One CCA per inverter:** one PyTap entry per CCA, each with an inverter name (`Master`, `Slave`). Each entry's Total device is that inverter's total.
-- **One CCA serving several inverters:** one PyTap entry. Use **Configure → Set a string's inverter** to name the inverter each string is wired to; strings you don't set feed the entry's inverter name. As soon as strings feed more than one inverter, each inverter gets its own Total device (`Tigo Master Total`, entity IDs `sensor.tigo_inverter_master_…`), and the entry's Total becomes the CCA total (`Tigo Master CCA Total`, or `Tigo CCA Total` without an inverter name). String names must be unique within the entry (for example `1`–`4`, or `M1`, `S1`).
-
-**Upgrading:** entity IDs that already exist are never changed; the barcode pattern applies to entities created from now on. Rename older ones in Home Assistant if you want them to match (history and statistics move with the rename).
-
-### Dual-module optimizers
-
-- **TS4-A-O-DUO / TS4-R-O-DUO** connect two panels in series to one optimizer. It has one barcode and sends one set of readings, so it appears as one device whose voltage, power and energy cover both panels. Name it for both positions (for example `P01+P02`) and set its peak power to the two panels combined.
-- **TS4-A-F / TS4-A-2F** are rapid-shutdown-only devices that don't report to the TAP, so PyTap can't see them.
-
----
-
-## Installation
-
-PyTap isn't in the default HACS or Marketplace list, so add it as a custom repository. How you do that depends on your Home Assistant version: Home Assistant 2026.11 replaced HACS with the built-in **Marketplace**, and existing HACS installs move over automatically when you update.
-
-### Home Assistant 2026.11 and later (Marketplace)
-
-1. Go to **Settings → Marketplace**. The first time, accept the warning about community projects.
-2. Select **Add from link** (top right), enter `DoubleDoc/pytap` and select **Add**. This needs a GitHub connection; follow the prompt to sign in with a code on GitHub.
-3. Open **PyTap** under **Custom repositories** and select **Install**.
-4. Restart Home Assistant if a repair asks you to, then add the integration as described under [Configuration](#configuration).
-
-Updates appear in the Marketplace and as an update entity. Restart Home Assistant after updating; a repair offers to do it for you.
-
-### Home Assistant 2024.4 to 2026.10 (HACS, PyTap 1.4.x only)
-
-PyTap 1.5 and later need Home Assistant 2026.11 (for serial connections). On older versions, HACS offers PyTap 1.4.x.
-
-
-1. Open **HACS**, select the **three dots** menu (top right) and choose **Custom repositories**.
-2. Add `https://github.com/DoubleDoc/pytap` with type **Integration**.
-3. Search for **PyTap**, open it and select **Download**.
-4. Restart Home Assistant, then add the integration as described under [Configuration](#configuration).
-
-Updates appear in HACS and as an update entity; restart Home Assistant after updating.
-
-### Manual
-
-1. Copy the `custom_components/pytap` folder from this repository into your Home Assistant `config/custom_components/` folder.
-2. Restart Home Assistant, then add the integration as described under [Configuration](#configuration).
-
-### Upgrading from 1.3.x
-
-Version 1.4.0 renames devices (see [Device naming](#device-naming)): optimizers change from `Tigo TS4 <name>` to `Tigo <string> <name>`, and `Tigo Installation` becomes `Tigo Total`. Entity IDs don't change, so automations and dashboards keep working. If your module names include the string or inverter (for example `Master-2-P01`), use **Edit a module** to shorten them to the position (`P01`), and set an inverter name if you have more than one gateway.
-
----
-
-## Configuration
-
-PyTap is configured entirely through the Home Assistant UI — no YAML needed.
-
-### Step 1: Add the Integration
-
-1. Go to **Settings → Devices & Services → Add Integration**.
-2. Search for **PyTap**.
-3. Enter your RS-485 converter's **host** (IP address or hostname) and **port** (default: 502). See [Hardware requirements](#hardware-requirements).
-4. Optionally enter an **Inverter name**. Leave it blank if you have one gateway; see [Device naming](#device-naming).
-
-> **Note:** The connection test only warns. If the converter can't be reached
-> yet, setup continues and PyTap connects when it becomes available.
-
-### Step 2: Add Modules
-
-After entering connection details, you'll see a modules menu. **Module discovery** is on by default for new setups, so you can select **Finish setup** without adding anything:
-
-- **Discovery on (Automatic):** every optimizer PyTap hears on the bus is added by itself, usually the first morning after setup (see [First start](#first-start-what-to-expect)). It starts with no name (its device is `Tigo [inverter] Discovered <barcode>`; its entity IDs are `sensor.tigo_<barcode>_…`, as for every optimizer), in string **Discovered**, with an unknown rating (0 Wp). Until it has a rating, its performance entities and those of the totals it belongs to are disabled. Name it, set its string and rating under **Configure → Edit a module**. Its entity IDs don't change. Discovery only listens; it never sends anything to the gateway.
-- **Discovery off (Manual):** only the modules you add are tracked. Turn it off under **Module discovery**.
-
-You can also add modules yourself, with or without discovery:
-
-1. Click **"Add a module"**.
-2. Fill in the fields:
-   - **String group** — Required label to group optimizers by string (e.g., `1`, `2`, `East`).
-   - **Name** — The optimizer's position within the string (e.g., `P01`). The device name adds the inverter and string for you, so don't repeat them here.
-   - **Barcode** — The Tigo optimizer barcode printed on the module (e.g., `A-1234567B`).
-   - **Peak power (Wp)** — The panel's peak power rating in watts (1–1000, default 455 Wp). Used to calculate performance percentage.
-3. Repeat for each optimizer you want to monitor.
-4. Click **"Finish setup"** when done (with discovery off, add at least one module first).
-
-Installations set up before discovery existed keep manual mode; turn discovery on under **Configure → Change module discovery**. A diagnostic **Module discovery** sensor on the Total device shows *Waiting for modules* until the first optimizer is tracked.
-
-### First start: what to expect
-
-**On a new installation, expect no readings until the next morning.** That's normal; here's why.
-
-1. Optimizers identify themselves in every reading by a short **node ID** (for example `node 12`), not by the barcode you entered.
-2. The link between node IDs and barcodes is the gateway's **node table**. PyTap only listens on the RS-485 bus, so it learns the table only when it overhears the CCA reading it from the gateway.
-3. That happens when the optimizer network forms, which in practice means **when the optimizers power up at sunrise** after being dark overnight.
-4. Until then PyTap can't tell which panel sent each reading, so it drops them, and your sensors stay *unknown*.
-5. Once a node table has been seen, the mapping is saved. Later Home Assistant restarts resolve readings straight away, without waiting for another morning.
-
-The **Node mapping** sensor on the **Tigo Total** device shows where things stand:
-
-| State | Meaning |
-| --- | --- |
-| Waiting for node table | No configured module can be matched yet. If **Unidentified nodes reporting** is above 0, readings are arriving and the wiring is fine: wait for the next morning. |
-| Partly mapped | A node table arrived, but some configured barcodes weren't in it. Check **Unmapped barcodes** for typos. |
-| Complete | Every configured module is matched. |
-
-If it still says *Waiting for node table* after a full morning and **Unidentified nodes reporting** is 0, PyTap isn't receiving data: check the RS-485 converter's wiring and the host and port.
-
-The log also explains what's happening: `Power report for node … waiting for node table` when readings first arrive, and `First node table this session … configured barcodes matched` when the table is seen.
-
-### Finding Barcodes
-
-Barcodes are printed on each Tigo TS4 optimizer module. If you can't physically access them, PyTap will log any **unconfigured** barcodes it discovers on the bus:
-
-```
-INFO: Discovered unconfigured Tigo optimizer barcode: A-9999999Z
-      (gateway=1, node=55). Add it to your PyTap module list to start tracking.
-```
-
-With [module discovery](#step-2-add-modules) on, they're added automatically instead. Barcodes are discovered from the node table, so they appear in the log after the first node table is seen, normally the first morning after setup (see [First start: what to expect](#first-start-what-to-expect)).
-
-### Managing Modules After Setup
-
-Go to **Settings → Devices & Services → PyTap → Configure** to:
-
-- **Change connection** — Update the RS-485 converter's IP address and port.
-- **Change reporting settings** — Toggle live reporting or set the averaged reporting interval (see [Reporting modes](#reporting-modes)).
-- **Change inverter name** — Set or clear the inverter name used in device names.
-- **Add** new optimizer modules (if the barcode was previously seen on the bus, it resolves instantly).
-- **Change module discovery** — Turn automatic discovery on or off.
-- **Edit** a module's string, name or peak power (0 = unknown), including discovered optimizers. The barcode can't be edited; remove and re-add the module to replace an optimizer.
-  Entity IDs never change (see [Device naming](#device-naming)).
-- **Set a string's inverter** — For one CCA serving several inverters: name the inverter a string is wired to (see [Device naming](#device-naming)).
-- **Rename a string** for all of its modules. The String device's sensors keep their history.
-- **Remove** modules you no longer want to track. A removed optimizer is excluded, so discovery won't add it back; add it again to track it. You can also delete an optimizer's device from its device page (same effect), or an empty string device. The Total device and strings with modules can't be deleted.
-- **Save and close** to apply changes.
-
-Connection and reporting changes are saved as soon as you submit them. Inverter name, discovery and module changes (add, edit, rename string, remove) are saved only when you select **Save and close**; closing the dialog without it discards them.
-
-### Reporting modes
-
-PyTap can deliver readings to Home Assistant in two ways, selectable under **Configure → Change reporting settings**:
-
-- **Live reporting** — Each reading is pushed to Home Assistant as soon as it arrives from the gateway, giving sub-second latency. Live reporting will likely swell your HA database and load your system if run constantly.
-- **Averaged interval (default for new entries)** — Readings are cached and a **time-weighted average** is pushed once per *reporting interval* (5–300 seconds, default 60). Weighting each reading by how long it remained the latest value yields a representative average even when readings arrive at uneven intervals. This reduces event-loop, CPU, and recorder/database load on installations with many panels.
-
-> **Setting the interval:** The reporting interval only applies in averaged mode, so it is hidden while **Live reporting** is enabled. To change it, open **Change reporting settings**, untick **Live reporting**, and click **Submit** — a follow-up **Reporting Interval** screen then lets you enter the value. Leaving **Live reporting** ticked skips that screen entirely.
-
-> **Database size:** in live mode every reading is written to Home Assistant's recorder. On an 18-panel installation this was about 4 million state rows a day, enough to grow the database by several GB within a week and make backups too large to upload. Unless you need sub-second updates, use the averaged interval (on that installation, 30 seconds cut PyTap's rows by about 90%, and 60 seconds halves that again), or exclude the per-optimizer sensors from the [recorder](https://www.home-assistant.io/integrations/recorder/).
-
-States are rounded to a sensible precision (power 1 W, voltage 0.1 V, current 0.01 A, temperature 1 °C, performance 0.1 %, duty cycle 1 %), and no attribute changes with every reading. A value that hasn't changed then doesn't add a database row. Both ideas, and the measurements that showed they matter, come from [seaosair](https://github.com/seaosair) in upstream [PR #25](https://github.com/azebro/pytap/pull/25).
-
-Energy totals (daily and lifetime) are always integrated from the raw readings, so the reporting mode only affects the instantaneous values (power, voltage, current, temperature) shown on dashboards — never the accumulated energy figures.
-
-The same screen has **Estimate silent optimizers** (on by default); see [Estimating silent optimizers](#estimating-silent-optimizers).
-
-### Diagnostics Download
-
-PyTap diagnostics are available from the integration page:
-
-1. Go to **Settings → Devices & Services → Integrations**.
-2. Open **PyTap**.
-3. Use the menu (⋮) and select **Download diagnostics**.
-
-The diagnostics JSON includes parser counters, infrastructure and node mappings,
-the node mapping status, discovered barcodes, connection state, module discovery, packet capture counters, and per-node summaries with their decoded flag bytes. Host/IP and serial port are redacted.
-
-### Packet capture and replay
-
-PyTap can record the raw bytes it reads from the bus, so problems can be studied later, offline, and so protocol details such as the [flag bytes](docs/protocol-status-bits.md) can be researched from real data. It's useful for reporting a problem too: a capture shows exactly what your gateway sent. Adapted from [Tim Laing](https://github.com/timlaing)'s upstream [PR #38](https://github.com/azebro/pytap/pull/38).
-
-**It's off unless you start it, and only listens.** A capture copies what the existing connection reads, before decoding: no second connection to the converter (so it works with serial ports too), nothing sent on the bus. It never resumes after a restart or reload, and is stopped and finalised when Home Assistant shuts down.
-
-#### Recording
-
-All actions are admin-only. Run them from the **Actions** tab of Home Assistant's developer tools; each shows its result there.
-
-1. **`pytap.start_capture`**: pick the PyTap instance (one per gateway), a maximum duration (`duration_minutes`, default 1440 = 24 h, up to 7 days) and a storage budget (`max_storage_mib`, default 1024 MiB). For example:
-
-   ```yaml
-   action: pytap.start_capture
-   data:
-     config_entry_id: <your PyTap entry>   # picked from a list in the UI
-     duration_minutes: 240
-   ```
-
-2. **`pytap.capture_status`**: progress, bytes recorded, and why a capture stopped. Diagnostics show the same counters (never the captured data).
-3. **`pytap.stop_capture`** when you're done, or let the duration or budget stop it. A capture that reaches its budget stops; it never deletes older data to make room.
-4. **`pytap.list_captures`**: the latest 20 captures of an instance, with their `capture_id`.
-5. **`pytap.export_capture`** (optional): checks a stopped capture and writes a private ZIP next to it, to copy off with Samba or a file manager add-on. It isn't offered for download over the web on purpose.
-
-**Size:** measured over one morning, about **10–12 MB an hour per gateway** (6 and 12 optimizers), so plan on up to about 300 MB a day per gateway; the default 1 GiB budget lasts about 3 days. Night-time traffic hasn't been measured yet.
-
-**Privacy:** captures contain your optimizers' barcodes and everything on the bus. Files are readable only by Home Assistant, and contain no host names, IP addresses or credentials, but share a capture only deliberately.
-
-#### When you're done: delete the files
-
-Captures stay until you delete them (except when the PyTap entry itself is deleted). They live in your configuration folder, under `/config/pytap_captures/<config_entry_id>/` (one folder per capture, with any ZIP exports next to it), so **they are also included in Home Assistant backups**.
-
-1. Copy off anything you want to keep (export it first if you want a ZIP).
-2. Run **`pytap.list_captures`** for the instance to see the `capture_id`s.
-3. Run **`pytap.delete_capture`** with each `capture_id`. This deletes the capture and its ZIP exports. A running capture must be stopped first.
-
-   ```yaml
-   action: pytap.delete_capture
-   data:
-     config_entry_id: <your PyTap entry>
-     capture_id: <capture_id from list_captures>
-   ```
-
-4. Run `pytap.list_captures` again: it should list nothing you meant to delete.
-5. **Backups:** backups made while captures existed still contain them. Delete those backups too if you don't want the data kept (Settings → System → Backups).
-
-Deleting the PyTap entry deletes all of its captures. Files can also be removed by hand from `/config/pytap_captures/` with Samba, SSH or a file manager add-on, while no capture is running.
-
-#### Reading captures offline
-
-Two scripts in [`scripts/`](scripts/) read captures without Home Assistant (run with Python 3 from a copy of this repository). They never change the capture.
-
-- **`capture_reports.py`** replays a capture through PyTap's own parser, at the recorded times, and writes every power report to a CSV: measurements plus the flag bytes decoded bit by bit (low input voltage, the state field, idle pass-through, producing, jstatus level; see [protocol-status-bits.md](docs/protocol-status-bits.md)). `--summary` prints how often each status and jstatus value occurred per optimizer, `--start`/`--end` select a time window, and `--state` starts from PyTap's saved state (`.storage/pytap_<config_entry_id>_coordinator`) so barcodes are known from the first report.
-
-  ```sh
-  python scripts/capture_reports.py /path/to/capture --output reports.csv --summary
-  ```
-
-- **`replay_capture.py`** checks a capture and exports its index, every frame (including ones the live parser would drop, and why) and every decoded event as JSON lines, with a summary.
-
-`capture_reports.py` also reads simple recordings made by other tools: a file of records, each an 8-byte big-endian Unix time, a 4-byte big-endian length and that many raw bytes. The output CSV contains barcodes too: keep it private and delete it when done.
-
-### Energy dashboard
-
-Each optimizer, string and gateway total has a **Total energy** sensor (Wh, `total_increasing`). Add the gateway totals under **Settings → Dashboards → Energy → Solar production** to see PyTap's production there. If your inverter also reports production, add only one of them to avoid counting it twice.
-
-The String and Total devices' energy sensors keep their own running count: they add up each member's increase since it was last seen, rather than summing the members' lifetime totals. So moving a module to another string, or adding or removing one, never adds its whole history to a total or looks like a meter reset in long-term statistics; only energy produced afterwards counts. (From [Tim Laing](https://github.com/timlaing)'s upstream [PR #35](https://github.com/azebro/pytap/pull/35).)
-
-### Example dashboards
-
-- **[PV Panels](dashboards/pv_panels.md)** (recommended): one view with power, today's energy, readings and data validity on every panel tile, and a switch to colour the tiles by power or energy. See [See every panel at once](#see-every-panel-at-once).
-- **[PV Production](dashboards/pv_production.md)** (classic): three views, each colouring the panels by one measure (daily energy, connectivity or power), for Home Assistant (Lovelace) and Grafana.
-
-Both are laid out for a specific roof, so you'll need to replace their panel entity IDs and positions. Their helper sensors in `tigo.yaml` work on any installation.
-
-### Log messages
-
-Every PyTap line starts with the inverter name (or the converter's address when no inverter name is set), e.g. `[Master]`, so installations with more than one gateway can tell them apart. At the default log level you only see problems:
-
-- **Connection to the RS-485 converter failed** or **No data from the RS-485 converter**: logged once per outage; retries back off from 5 to 60 seconds and are logged at debug level. An info line follows when data has flowed again for a minute.
-- **Converter unreachable: no connection to the RS-485 converter … for 5 min** or **Bus quiet: the RS-485 converter is connected but has received nothing for 5 min**: the outage has lasted long enough that live readings are unavailable; the message says what to check (see [Bus status](#bus-status)).
-- **Optimizer P03 (…) has not reported for 30 min while others have**: one optimizer is silent by day. If it persists, check that optimizer and its distance from the TAP. If every optimizer is silent while the converter is still sending data, a single warning points at the CCA instead.
-- **N of M RS-485 frames failed their checks**: more than 2% of frames are corrupted, so readings are being lost; check the wiring, termination and the converter's serial settings. Repeated at most hourly.
-- **Configured barcodes NOT found in node table**: a configured barcode doesn't exist on the bus; check it for typos.
-- **Unexpected error while processing data**: a bug. It is logged once with a traceback; please report it.
-
-### Debug logging
-
-To see what PyTap receives, add this to `configuration.yaml` and restart, or turn on debug logging from the integration's page:
-
-```yaml
-logger:
-  logs:
-    custom_components.pytap: debug
-```
-
-In normal running, debug adds one line per write interval and gateway listing how many readings each module sent, e.g. `[Master] HA update: 6 node(s) — P01: 16 reading(s), …`, plus each node table page, reconnect attempt and change in a module's reading state.
-
-### Removing the integration
-
-1. Go to **Settings → Devices & Services → PyTap**, open each entry's menu (⋮) and select **Delete**.
-2. Remove PyTap in the Marketplace or HACS (or delete `config/custom_components/pytap`), then restart Home Assistant.
-
-## Known limitations
-
-- **No data until the first node table** on a new installation, normally the next morning. See [First start: what to expect](#first-start-what-to-expect).
-- **Listen-only.** PyTap never transmits, so it can't request data, change settings or trigger rapid shutdown. It needs a working Tigo CCA on the bus.
-- **One reading per optimizer.** A dual-module optimizer reports both panels combined. See [Dual-module optimizers](#dual-module-optimizers).
-- **Per-optimizer energy** is integrated from power readings by PyTap, so it can differ slightly from Tigo's cloud figures.
-- **Nothing is recorded while Home Assistant is down.** PyTap only listens, and the bus doesn't replay missed readings (the CCA still uploads to Tigo's cloud as usual). PyTap saves its state when Home Assistant stops and resumes at once on start, without waiting for a node table. For each optimizer that was reporting when Home Assistant stopped, the first reading after the restart is compared with the last one before it: a gap of up to 10 minutes is bridged with the average of the two and counted as estimated energy (when **Estimate silent optimizers** is on). Energy produced during a longer daytime outage, such as a host reboot or OS update, is lost: daily and lifetime totals carry on from where they were. At night nothing is lost. See [Future work](#future-work).
-- **Estimates can't see a shorted panel.** If a panel's bypass diode shorts, the string keeps running at full current but that panel contributes nothing. Its neighbours look normal, so while it is silent its estimate over-counts. Only the inverter's string voltage would reveal this.
-
----
-
-## Future work
-
-PyTap's two biggest limitations come from where it runs: inside Home Assistant.
-
-- **Database load.** Each optimizer has 13 sensors, and every update is a state row in Home Assistant's recorder. The averaged interval, rounding and the removal of per-reading timestamp attributes have cut PyTap's writes by well over 90% compared with live reporting (see [Database size](#configuration)), but a large installation still writes many rows a day for values that change slowly, and Home Assistant has to receive and process the full stream of readings first.
-- **Losses while Home Assistant is offline.** PyTap can only hear the bus while Home Assistant is running. Restarts of up to 10 minutes are bridged, but anything longer, such as a host reboot, an OS update or a crash, loses that time's energy for good (see [Known limitations](#known-limitations)).
-
-Both point the same way: **much of PyTap would work better on a small device at the RS-485 bus itself**, such as an ESP32 next to the CCA, or the RS-485 converter if it can run its own code. Such a device would:
-
-- listen around the clock, independently of Home Assistant, so restarts and updates lose nothing;
-- integrate energy where the readings arrive, keeping per-panel daily and lifetime counters that Home Assistant reads, rather than reconstructs;
-- send Home Assistant only what it needs (averaged values, energy counters, data validity and bus status) at a rate it chooses, instead of every raw reading;
-- keep the node table and barcode mapping on the device, so they never have to be relearned.
-
-Home Assistant would keep what it's good at: history, dashboards, the Energy dashboard, automations, and string-level views and estimates across many devices.
-
-[Bobsilvio/tigo_server](https://github.com/Bobsilvio/tigo_server) shows this approach working. An ESP32 with a receive-only RS-485 module listens to the same TAP–CCA bus and decodes each panel's power, voltages, current and temperature. It runs as an [ESPHome device](https://github.com/Bobsilvio/tigo_server/blob/main/esphome/README.md) with native Home Assistant entities. An optional add-on puts its dashboard in the Home Assistant sidebar. Prepackaged hardware is its main holdup at present.
-
----
-
-## How It Works
-
-```
-Tigo CCA ⇄ TAP (RS-485 bus)
-    │
-    │  RS-485 to TCP converter, TCP stream (port 502)
-    ▼
-PyTap Coordinator
-    │
-    ├── Embedded protocol parser (pytap library)
-    │   └── Parses frames → PowerReport, Infrastructure, Topology events
-    │
-    ├── Barcode allowlist filter
-    │   ├── Configured → update sensor entities
-    │   └── Unconfigured → log for discovery
-    │
-    └── Push to Home Assistant event loop
-        └── Sensor entities update in real time
-```
-
-PyTap uses a background listener thread that streams data from the gateway, parses protocol frames, and dispatches events to the Home Assistant event loop. Only events matching your configured barcodes create or update sensor entities. In the default **live reporting** mode each update is forwarded immediately; in **averaged interval** mode updates are buffered and flushed as a time-weighted average every few seconds (see [Reporting modes](#reporting-modes)).
-
-On startup, PyTap restores persisted coordinator state (barcode mappings, energy accumulators, and last node snapshots). Sensor entities also use Home Assistant restore fallback if needed, so a restart during low/no production does not force entities into unavailable when prior data exists.
-
----
-
-## Development
-
-This repository includes a dev container with Home Assistant pre-installed for local development and testing. Pushes and pull requests run hassfest, HACS validation, Ruff and the test suite in GitHub Actions.
-
-### Project Structure
-
-```
-pytap/
-├── custom_components/pytap/     # The HA custom component
-│   ├── __init__.py              # Integration lifecycle
-│   ├── config_flow.py           # Config & options flows
-│   ├── const.py                 # Constants
-│   ├── coordinator.py           # Push-based data coordinator
-│   ├── diagnostics.py           # Diagnostics download
-│   ├── energy.py                # Energy integration (Wh accumulation)
-│   ├── naming.py                # Device names (inverter / string / module)
-│   ├── sensor.py                # Sensor platform
-│   ├── manifest.json            # Integration metadata
-│   ├── strings.json             # UI strings
-│   ├── translations/en.json     # English translations
-│   └── pytap/                   # Embedded protocol parser library
-├── deploy/                      # Deployment tooling
-│   ├── deploy.sh                # Deploy script (SSH-based)
-│   └── .deploy.env.example      # Example credentials config
-├── tests/                       # Integration tests
-├── dashboards/                  # Example dashboards: PV Panels (pv_panels.md), classic PV Production, Grafana
-├── docs/
-│   ├── architecture.md          # Architecture & design document
-│   ├── implementation.md        # Implementation details & history
-│   └── images/                  # README images
-├── config/                      # Dev HA config directory
-├── requirements-test.txt        # Test dependencies
-└── pytest.ini                   # Test configuration
-```
-
-### Running Home Assistant (Dev)
-
-```bash
-python3 -m homeassistant --config config/ --debug
-```
-
-### Running Tests
-
-```bash
-# Integration tests (config flow + sensor platform)
-python3 -m pytest tests/ -vv --tb=short
-
-# Parser library tests
-python3 -m pytest custom_components/pytap/pytap/tests/ -vv
-```
-
-### Linting
-
-```bash
-python3 -m ruff check custom_components/pytap/
-```
-
-### Deploying to a Home Assistant Instance
-
-A deployment script is provided in `deploy/` to push the component to a remote HA OS installation via SSH.
-
-**Setup:**
-
-```bash
-# Copy the example config and fill in your credentials
-cp deploy/.deploy.env.example deploy/.deploy.env
-# Edit deploy/.deploy.env with your host, username, and password
-```
-
-> **Note:** `deploy/.deploy.env` is gitignored — credentials are never committed.
-
-**Deploy:**
-
-```bash
-# Using the config file
-./deploy/deploy.sh
-
-# Or pass credentials directly
-./deploy/deploy.sh --host 192.168.1.184 --user 'user' --password 'yourpass'
-
-# Deploy without restarting HA
-./deploy/deploy.sh --no-restart
-```
-
-The script uploads the component via tar-over-SSH (compatible with HA OS SSH add-on), verifies the deployment, and optionally restarts Home Assistant Core.
-
-Run `./deploy/deploy.sh --help` for all options.
-
-### Documentation
-
-- **[Architecture](docs/architecture.md)** — System design, module responsibilities, data flow, and design decisions.
-- **[Implementation](docs/implementation.md)** — Current implementation state, module details, test coverage, and development history.
-
----
-
-## Acknowledgements
-
-**PyTap is the work of [Adam Zebrowski](https://github.com/azebro)** ([azebro/pytap](https://github.com/azebro/pytap)), and this fork stands entirely on it. Adam wrote the integration from the ground up: the embedded Python parser for the Tigo gateway protocol, the push-based coordinator that turns bus traffic into Home Assistant entities, node-table and barcode mapping that survives restarts, per-optimizer energy integration, the string and installation totals, the configuration flow, and the PV Production dashboard and its Grafana version. Everything this fork adds builds on that foundation, and it's a pleasure to build on: a clean design, thorough tests and careful documentation. Thank you, Adam.
-
-**[Tim Laing](https://github.com/timlaing)** wrote a careful series of upstream pull requests that this fork has adopted, fitting each to the fork's design: parser hardening against invalid slot counters ([#32](https://github.com/azebro/pytap/pull/32)); the reliability work that separates the listener's state from Home Assistant's, bounds shutdown and fixes lifecycle edge cases ([#33](https://github.com/azebro/pytap/pull/33)); configurable stale-reading behaviour ([#34](https://github.com/azebro/pytap/pull/34)); aggregate energy that survives membership changes ([#35](https://github.com/azebro/pytap/pull/35)); serial and ESPHome serial-proxy connections ([#36](https://github.com/azebro/pytap/pull/36)); passive module discovery with module editing ([#37](https://github.com/azebro/pytap/pull/37)); and opt-in raw packet capture with offline replay ([#38](https://github.com/azebro/pytap/pull/38)), whose durable, checksummed capture format is the basis of the fork's research tools; and per-optimizer status entities with detection of impossible readings ([#39](https://github.com/azebro/pytap/pull/39)). The series is thoughtfully designed and thoroughly tested, and it made PyTap sturdier, easier to set up and easier to maintain. Thank you, Tim.
-
-[Kyrill](https://github.com/poolski) contributed the averaged reporting interval upstream: the configurable write interval and the time-weighted averaging of readings across it, which this fork now uses by default.
-
-The Tigo protocol was reverse-engineered by [taptap](https://github.com/willglynn/taptap) (Will Glynn). Inspired by the [taptap fork](https://github.com/litinoveweedle/taptap) and [taptap Home Assistant add-on](https://github.com/litinoveweedle/hassio-addons).
-
-The decoding details above (input current scale by hardware ID, the temperature status bit, RSSI 0, 12-byte reports) come from [Bobsilvio](https://github.com/Bobsilvio)'s [protocol notes](https://github.com/Bobsilvio/tigo_server/blob/main/docs/PROTOCOL-NOTES.md) for [tigo_server](https://github.com/Bobsilvio/tigo_server), which work out how the CCA firmware itself decodes the bus and where taptap is incomplete. Their ESP32 project, which grew from [tictactom/tigo_server](https://github.com/tictactom/tigo_server), is also the example in [Future work](#future-work).
-
-[seaosair](https://github.com/seaosair) worked out why PyTap wrote so much to the recorder, and proposed rounding states and fixing the per-reading `last_update` attribute in [PR #25](https://github.com/azebro/pytap/pull/25). They backed the proposal with careful measurements from a 23-module installation, including the less obvious points: excluding an attribute from the recorder doesn't stop the write, and rounding only helps once that attribute is fixed. PyTap's rounding and its removal of per-reading timestamp attributes follow their work.
-
----
+| [Hardware](https://github.com/DoubleDoc/pytap/blob/main/docs/hardware.md) | Ways to connect, wiring, Waveshare converter settings |
+| [Installation](https://github.com/DoubleDoc/pytap/blob/main/docs/installation.md) | Marketplace, HACS (older Home Assistant), manual, upgrading, removing |
+| [Configuration](https://github.com/DoubleDoc/pytap/blob/main/docs/configuration.md) | Setup, discovery, the first morning, managing modules, reporting modes |
+| [Entities and devices](https://github.com/DoubleDoc/pytap/blob/main/docs/entities.md) | Sensors, status flags, totals, bus status, device naming, Energy dashboard |
+| [When readings stop](https://github.com/DoubleDoc/pytap/blob/main/docs/readings.md) | Night, dropouts, stale-reading settings, estimates, data validity |
+| [Dashboards](https://github.com/DoubleDoc/pytap/blob/main/dashboards/pv_panels.md) | PV Panels; also [PV Production](https://github.com/DoubleDoc/pytap/blob/main/dashboards/pv_production.md) and Grafana |
+| [Troubleshooting](https://github.com/DoubleDoc/pytap/blob/main/docs/troubleshooting.md) | Diagnostics, log messages, debug logging, known limitations |
+| [Packet capture](https://github.com/DoubleDoc/pytap/blob/main/docs/capture.md) | Recording the bus, deleting captures, offline tools |
+| [Protocol status bits](https://github.com/DoubleDoc/pytap/blob/main/docs/protocol-status-bits.md) | What each flag bit means, and the evidence |
+| [How it works](https://github.com/DoubleDoc/pytap/blob/main/docs/how-it-works.md) | Data flow, and future work |
+| [Development](https://github.com/DoubleDoc/pytap/blob/main/docs/development.md) | Project layout, tests, linting, deploying |
+| [Changelog](https://github.com/DoubleDoc/pytap/blob/main/CHANGELOG.md) | Every release |
+
+Questions and problems: [open an issue](https://github.com/DoubleDoc/pytap/issues).
+
+## Credits
+
+<table>
+  <tr>
+    <td align="center" width="16%"><a href="https://github.com/azebro"><img src="https://github.com/azebro.png?size=120" width="64" height="64" alt=""><br><b>Adam Zebrowski</b></a><br><sub>Wrote PyTap</sub></td>
+    <td align="center" width="16%"><a href="https://github.com/timlaing"><img src="https://github.com/timlaing.png?size=120" width="64" height="64" alt=""><br><b>Tim Laing</b></a><br><sub>Reliability, serial, discovery, capture, status (#32–#39)</sub></td>
+    <td align="center" width="16%"><a href="https://github.com/poolski"><img src="https://github.com/poolski.png?size=120" width="64" height="64" alt=""><br><b>Kyrill</b></a><br><sub>Averaged reporting</sub></td>
+    <td align="center" width="16%"><a href="https://github.com/seaosair"><img src="https://github.com/seaosair.png?size=120" width="64" height="64" alt=""><br><b>seaosair</b></a><br><sub>Database load</sub></td>
+    <td align="center" width="16%"><a href="https://github.com/willglynn"><img src="https://github.com/willglynn.png?size=120" width="64" height="64" alt=""><br><b>Will Glynn</b></a><br><sub>taptap: the protocol</sub></td>
+    <td align="center" width="16%"><a href="https://github.com/Bobsilvio"><img src="https://github.com/Bobsilvio.png?size=120" width="64" height="64" alt=""><br><b>Bobsilvio</b></a><br><sub>Protocol notes</sub></td>
+  </tr>
+</table>
+
+What each contributed, in detail: [Credits](https://github.com/DoubleDoc/pytap/blob/main/docs/credits.md).
 
 ## License
 
-[MIT](LICENSE) © Adam Zebrowski
+[MIT](https://github.com/DoubleDoc/pytap/blob/main/LICENSE). © Adam Zebrowski, and © DoubleDoc for the fork's changes.
