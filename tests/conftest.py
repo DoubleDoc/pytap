@@ -36,8 +36,12 @@ def cancel_coordinator_timers():
         for coordinator in created:
             for attr in ("_save_task", "_midnight_reset_unsub"):
                 handle = getattr(coordinator, attr, None)
-                if handle is not None and hasattr(handle, "cancel"):
-                    handle.cancel()
+                if handle is None:
+                    continue
+                if hasattr(handle, "cancel"):
+                    handle.cancel()  # a loop timer (pending save)
+                elif callable(handle):
+                    handle()  # an HA listener's remove callback (midnight reset)
             # A save request queued from the listener thread may still run
             # after this; with a save "already pending" it starts no timer.
             coordinator._save_task = _NoTimer()

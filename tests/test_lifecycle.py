@@ -15,7 +15,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
-import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.pytap import coordinator as coordinator_module
@@ -64,17 +63,16 @@ async def test_remove_entry_deletes_saved_state(hass: HomeAssistant) -> None:
     assert await coordinator_store(hass, entry.entry_id).async_load() is None
 
 
-@pytest.mark.enable_socket
 def test_interrupt_wakes_a_blocked_read() -> None:
-    """A real socket read blocked in another thread returns promptly."""
-    server = socket.socket()
-    server.bind(("127.0.0.1", 0))
-    server.listen(1)
-    port = server.getsockname()[1]
-    source = TcpSource("127.0.0.1", port)
-    source.connect()
-    conn, _ = server.accept()
-    source._socket.settimeout(30)  # much longer than the test waits
+    """A read blocked in another thread returns promptly after interrupt().
+
+    Uses a local socket pair (the test harness blocks TCP sockets); interrupt()
+    shuts the socket down the same way for a TCP connection.
+    """
+    ours, peer = socket.socketpair()
+    source = TcpSource("127.0.0.1", 0)
+    source._socket = ours
+    ours.settimeout(30)  # much longer than the test waits
     done = threading.Event()
 
     def reader() -> None:
@@ -87,14 +85,14 @@ def test_interrupt_wakes_a_blocked_read() -> None:
     thread = threading.Thread(target=reader)
     thread.start()
     time.sleep(0.2)
+    assert not done.is_set()
     started = time.monotonic()
     source.interrupt()
     assert done.wait(5)
     assert time.monotonic() - started < 5
     thread.join()
     source.close()
-    conn.close()
-    server.close()
+    peer.close()
 
 
 async def test_stop_that_times_out_parks_and_setup_waits(hass: HomeAssistant) -> None:
