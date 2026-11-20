@@ -46,9 +46,12 @@ def string_label(string_name: str) -> str:
     return string_name
 
 
-def optimizer_device_name(inverter: str, module_name: str) -> str:
-    """Name of an optimizer device, e.g. ``Tigo Master P01``."""
-    return _join(PREFIX, inverter, module_name)
+def optimizer_device_name(inverter: str, module_name: str, barcode: str = "") -> str:
+    """Name of an optimizer device, e.g. ``Tigo Master P01``.
+
+    A discovered optimizer that isn't named yet uses its barcode instead.
+    """
+    return _join(PREFIX, inverter, module_name.strip() or barcode)
 
 
 def optimizer_object_id(inverter: str, module_name: str, barcode: str) -> str:

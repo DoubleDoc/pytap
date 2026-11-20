@@ -11,9 +11,10 @@
       },
       "modules_menu": {
         "title": "Configure Modules",
-        "description": "{modules_list}\n\n{error}",
+        "description": "{modules_list}\n\nModule discovery: **{discovery_mode}**\n\n{error}",
         "menu_options": {
           "add_module": "Add a module",
+          "discovery": "Module discovery",
           "finish": "Finish setup"
         }
       },
@@ -61,6 +62,13 @@
           "serial_port": "A USB or other RS-485 adapter on this host, or an ESPHome device with serial_proxy. PyTap only listens: it never transmits on the bus.",
           "baud_rate": "38400 for the Tigo gateway bus.",
           "inverter": "Only needed with more than one gateway: a short label such as Master or East, used at the start of device names. Leave blank for a single gateway."
+        }
+      },
+      "discovery": {
+        "title": "Module discovery",
+        "description": "With discovery on, optimizers heard on the Tigo bus are added automatically, with their barcode as their name, string \"Discovered\" and an unknown rating. Name them, set their string and rating under Edit a module; naming one gives its entity IDs its position (sensor.tigo_<inverter>_<position>_<barcode>_…). Discovery only listens; it never sends anything to the gateway.",
+        "data": {
+          "auto_discovery": "Discover optimizers automatically"
         }
       }
     },
@@ -207,6 +215,13 @@
             "name": "Last data received"
           }
         }
+      },
+      "module_discovery": {
+        "name": "Module discovery",
+        "state": {
+          "waiting_for_modules": "Waiting for modules",
+          "modules_discovered": "Modules discovered"
+        }
       }
     }
   },
@@ -214,7 +229,7 @@
     "step": {
       "init": {
         "title": "PyTap Options",
-        "description": "{modules_list}",
+        "description": "{modules_list}\n\nModule discovery: **{discovery_mode}**",
         "menu_options": {
           "change_connection": "Change connection settings",
           "add_module": "Add a module",
@@ -224,7 +239,8 @@
           "change_inverter": "Change inverter name",
           "edit_module": "Edit a module",
           "rename_string": "Rename a string",
-          "change_stale": "Change stale reading behaviour"
+          "change_stale": "Change stale reading behaviour",
+          "change_discovery": "Change module discovery"
         }
       },
       "change_connection": {
@@ -301,8 +317,8 @@
         },
         "data_description": {
           "string": "String group label (e.g. A, B, East, West). Required for aggregate energy tracking.",
-          "name": "A friendly name for this optimizer (e.g. Panel_01).",
-          "peak_power": "The peak power rating of this panel in watts (STC). Used to calculate performance percentage. Default: 455 Wp."
+          "name": "Usually the panel's position (e.g. P01). Naming a discovered optimizer adds the name to its entity IDs.",
+          "peak_power": "The panel's rated power in watts (STC), used for performance percentages. 0 = unknown: performance entities stay disabled."
         }
       },
       "rename_string": {
@@ -345,6 +361,13 @@
           "serial_port": "A USB or other RS-485 adapter on this host, or an ESPHome device with serial_proxy. PyTap only listens: it never transmits on the bus.",
           "baud_rate": "38400 for the Tigo gateway bus."
         }
+      },
+      "change_discovery": {
+        "title": "Module discovery",
+        "description": "With discovery on, optimizers heard on the Tigo bus are added automatically, with their barcode as their name, string \"Discovered\" and an unknown rating. Name them, set their string and rating under Edit a module; naming one gives its entity IDs its position (sensor.tigo_<inverter>_<position>_<barcode>_…). Discovery only listens; it never sends anything to the gateway.",
+        "data": {
+          "auto_discovery": "Discover optimizers automatically"
+        }
       }
     },
     "error": {
@@ -358,7 +381,8 @@
       "invalid_serial_port": "Choose a serial device under /dev or a Home Assistant serial proxy.",
       "invalid_baud_rate": "Enter a baud rate from 1 to 4000000.",
       "unsupported_serial_settings": "The serial port doesn’t support these settings.",
-      "invalid_connection_type": "Unknown connection type."
+      "invalid_connection_type": "Unknown connection type.",
+      "no_modules": "Add at least one module, or turn on discovery."
     }
   },
   "exceptions": {

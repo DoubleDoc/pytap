@@ -33,6 +33,7 @@ from custom_components.pytap.sensor import (
     _coerce_restored_state_value,
     async_setup_entry,
 )
+from tests.conftest import with_modules
 
 MOCK_MODULES = [
     {
@@ -145,6 +146,7 @@ def _make_mock_coordinator(hass, entry, node_data=None):
     coordinator.estimated_energy.return_value = (0.0, 0.0)
     coordinator.data_validity.return_value = "reporting"
     coordinator.share.return_value = None
+    with_modules(coordinator, entry.data.get(CONF_MODULES, []))
     return coordinator
 
 

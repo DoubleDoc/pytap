@@ -32,6 +32,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import ExtraStoredData
@@ -46,7 +47,6 @@ from .const import (
     CONF_MODULE_NAME,
     CONF_MODULE_PEAK_POWER,
     CONF_MODULE_STRING,
-    CONF_MODULES,
     DEFAULT_PEAK_POWER,
     DOMAIN,
     MAPPING_COMPLETE,
@@ -348,64 +348,17 @@ async def async_setup_entry(
 ) -> None:
     """Set up PyTap sensors from a config entry.
 
-    Creates sensor entities deterministically from the configured module list.
-    Each configured module gets the 12 measurement sensors plus a Data validity sensor.
+    Each module gets the 12 measurement sensors plus a Data validity sensor,
+    and strings and the gateway get totals. With discovery on, optimizers
+    heard on the bus are added as they appear (adapted from Tim Laing's
+    upstream PR azebro/pytap#37).
     """
     coordinator = entry.runtime_data
-    modules: list[dict[str, str]] = entry.data.get(CONF_MODULES, [])
     inverter: str = entry.data.get(CONF_INVERTER, "") or ""
 
-    entities: list[SensorEntity] = []
-    string_to_barcodes: dict[str, list[str]] = {}
-    all_barcodes: list[str] = []
-
-    for module_config in modules:
-        barcode = module_config.get(CONF_MODULE_BARCODE, "")
-        string_name = module_config.get(CONF_MODULE_STRING, "")
-        if not barcode:
-            continue
-        all_barcodes.append(barcode)
-        if string_name:
-            string_to_barcodes.setdefault(string_name, []).append(barcode)
-
-        for description in SENSOR_DESCRIPTIONS:
-            entities.append(
-                PyTapSensor(
-                    coordinator=coordinator,
-                    description=description,
-                    module_config=module_config,
-                    entry=entry,
-                    inverter=inverter,
-                )
-            )
-        entities.append(
-            PyTapDataValiditySensor(
-                coordinator=coordinator,
-                module_config=module_config,
-                inverter=inverter,
-            )
-        )
-
-    for string_name, barcodes in string_to_barcodes.items():
-        device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{entry.entry_id}_string_{string_name}")},
-            name=string_device_name(inverter, string_name),
-            manufacturer="Tigo Energy",
-            model="String Aggregate",
-        )
-        for description in STRING_SENSOR_DESCRIPTIONS:
-            entities.append(
-                PyTapAggregateSensor(
-                    coordinator=coordinator,
-                    description=description,
-                    barcodes=barcodes,
-                    device_info=device_info,
-                    unique_id=(
-                        f"{DOMAIN}_{entry.entry_id}_string_{string_name}_{description.key}"
-                    ),
-                )
-            )
-
+    known_barcodes: set[str] = set()
+    string_sensors: dict[str, list[PyTapAggregateSensor]] = {}
+    total_sensors: list[PyTapAggregateSensor] = []
     total_device_info = DeviceInfo(
         identifiers={(DOMAIN, f"{entry.entry_id}_installation")},
         name=total_device_name(inverter),
@@ -413,39 +366,186 @@ async def async_setup_entry(
         model="Installation Aggregate",
     )
 
-    if all_barcodes:
-        device_info = total_device_info
-        for description in INSTALLATION_SENSOR_DESCRIPTIONS:
+    @callback
+    def add_new_entities() -> None:
+        """Add entities for modules not seen yet (runs on HA's loop)."""
+        if len(known_barcodes) == coordinator.module_count:
+            return
+        entities: list[SensorEntity] = []
+        string_to_barcodes: dict[str, list[str]] = {}
+        all_barcodes: list[str] = []
+
+        for module_config in coordinator.modules:
+            barcode = module_config.get(CONF_MODULE_BARCODE, "")
+            if not barcode:
+                continue
+            all_barcodes.append(barcode)
+            if string_name := module_config.get(CONF_MODULE_STRING, ""):
+                string_to_barcodes.setdefault(string_name, []).append(barcode)
+            if barcode in known_barcodes:
+                continue
+            known_barcodes.add(barcode)
+            for description in SENSOR_DESCRIPTIONS:
+                entities.append(
+                    PyTapSensor(
+                        coordinator=coordinator,
+                        description=description,
+                        module_config=module_config,
+                        entry=entry,
+                        inverter=inverter,
+                    )
+                )
             entities.append(
+                PyTapDataValiditySensor(
+                    coordinator=coordinator,
+                    module_config=module_config,
+                    inverter=inverter,
+                )
+            )
+
+        aggregates: list[SensorEntity] = []
+        for string_name, barcodes in string_to_barcodes.items():
+            if string_name not in string_sensors:
+                device_info = DeviceInfo(
+                    identifiers={(DOMAIN, f"{entry.entry_id}_string_{string_name}")},
+                    name=string_device_name(inverter, string_name),
+                    manufacturer="Tigo Energy",
+                    model="String Aggregate",
+                )
+                string_sensors[string_name] = [
+                    PyTapAggregateSensor(
+                        coordinator=coordinator,
+                        description=description,
+                        barcodes=barcodes,
+                        device_info=device_info,
+                        unique_id=(
+                            f"{DOMAIN}_{entry.entry_id}_string_{string_name}_{description.key}"
+                        ),
+                    )
+                    for description in STRING_SENSOR_DESCRIPTIONS
+                ]
+                aggregates.extend(string_sensors[string_name])
+            for sensor in string_sensors[string_name]:
+                sensor.set_barcodes(barcodes)
+
+        if all_barcodes and not total_sensors:
+            total_sensors.extend(
                 PyTapAggregateSensor(
                     coordinator=coordinator,
                     description=description,
                     barcodes=all_barcodes,
-                    device_info=device_info,
-                    unique_id=(
-                        f"{DOMAIN}_{entry.entry_id}_installation_{description.key}"
-                    ),
+                    device_info=total_device_info,
+                    unique_id=f"{DOMAIN}_{entry.entry_id}_installation_{description.key}",
+                )
+                for description in INSTALLATION_SENSOR_DESCRIPTIONS
+            )
+            aggregates.extend(total_sensors)
+            aggregates.append(
+                PyTapNodeMappingSensor(
+                    coordinator=coordinator,
+                    device_info=total_device_info,
+                    unique_id=f"{DOMAIN}_{entry.entry_id}_node_mapping",
                 )
             )
-
-        entities.append(
-            PyTapNodeMappingSensor(
-                coordinator=coordinator,
-                device_info=total_device_info,
-                unique_id=f"{DOMAIN}_{entry.entry_id}_node_mapping",
+            aggregates.append(
+                PyTapBusStatusSensor(
+                    coordinator=coordinator,
+                    device_info=total_device_info,
+                    unique_id=f"{DOMAIN}_{entry.entry_id}_bus_status",
+                )
             )
-        )
-        entities.append(
-            PyTapBusStatusSensor(
-                coordinator=coordinator,
-                device_info=total_device_info,
-                unique_id=f"{DOMAIN}_{entry.entry_id}_bus_status",
-            )
+        for sensor in total_sensors:
+            sensor.set_barcodes(all_barcodes)
+
+        # String and total devices first: optimizer devices connect via them.
+        if aggregates or entities:
+            async_add_entities([*aggregates, *entities])
+        _sync_performance_entities(
+            hass, entry.entry_id, coordinator, string_to_barcodes, all_barcodes
         )
 
-    # String and total devices first: optimizer devices connect via them.
-    entities.sort(key=lambda entity: not isinstance(entity, PyTapAggregateSensor))
-    async_add_entities(entities)
+    # Registered first, so totals learn new members before their own update.
+    entry.async_on_unload(coordinator.async_add_listener(add_new_entities))
+    add_new_entities()
+    if coordinator.auto_discovery:
+        async_add_entities([PyTapDiscoverySensor(coordinator, entry, total_device_info)])
+
+
+@callback
+def _sync_performance_entities(
+    hass: HomeAssistant,
+    entry_id: str,
+    coordinator: PyTapDataUpdateCoordinator,
+    string_to_barcodes: dict[str, list[str]],
+    all_barcodes: list[str],
+) -> None:
+    """Disable performance entities until every panel they cover has a rating.
+
+    Only entities that are enabled, or that PyTap disabled, are changed; a
+    user's own choice to disable one is left alone. From azebro/pytap#37.
+    """
+
+    def rated(barcodes: list[str]) -> bool:
+        return all(coordinator.module_peak_power(barcode) > 0 for barcode in barcodes)
+
+    wanted = {f"{DOMAIN}_{barcode}_performance": rated([barcode]) for barcode in all_barcodes}
+    for string_name, barcodes in string_to_barcodes.items():
+        wanted[f"{DOMAIN}_{entry_id}_string_{string_name}_performance"] = rated(barcodes)
+    if all_barcodes:
+        wanted[f"{DOMAIN}_{entry_id}_installation_performance"] = rated(all_barcodes)
+
+    registry = er.async_get(hass)
+    for unique_id, has_rating in wanted.items():
+        if (entity_id := registry.async_get_entity_id("sensor", DOMAIN, unique_id)) is None:
+            continue
+        disabled_by = registry.entities[entity_id].disabled_by
+        if not has_rating and disabled_by is None:
+            registry.async_update_entity(
+                entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION
+            )
+        elif has_rating and disabled_by is er.RegistryEntryDisabler.INTEGRATION:
+            registry.async_update_entity(entity_id, disabled_by=None)
+
+
+class PyTapDiscoverySensor(CoordinatorEntity[PyTapDataUpdateCoordinator], SensorEntity):
+    """Shows whether discovery has found any optimizers yet (from azebro/pytap#37)."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "module_discovery"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["waiting_for_modules", "modules_discovered"]
+
+    def __init__(
+        self,
+        coordinator: PyTapDataUpdateCoordinator,
+        entry: ConfigEntry,
+        device_info: DeviceInfo,
+    ) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_{entry.entry_id}_module_discovery"
+        self._attr_device_info = device_info
+
+    @property
+    def native_value(self) -> str:
+        """Waiting until the first optimizer is tracked."""
+        return "modules_discovered" if self.coordinator.module_count else "waiting_for_modules"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """How many optimizers are tracked, and how many await naming."""
+        return {
+            "tracked": self.coordinator.module_count,
+            "unnamed": sum(
+                1 for m in self.coordinator.discovered_modules.values()
+                if not m.get(CONF_MODULE_NAME)
+            ),
+        }
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        if self.coordinator.affects(()):
+            self.async_write_ha_state()
 
 
 class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
@@ -489,7 +589,7 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
         # Device info — groups all sensors for one optimizer under one device
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._barcode)},
-            name=optimizer_device_name(inverter, self._module_name),
+            name=optimizer_device_name(inverter, self._module_name, self._barcode),
             via_device=(DOMAIN, f"{entry.entry_id}_string_{self._module_string}")
             if self._module_string
             else None,
@@ -659,7 +759,7 @@ class PyTapAggregateSensor(
         """Initialize aggregate sensor."""
         super().__init__(coordinator)
         self.entity_description = description
-        self._barcodes = barcodes
+        self._barcodes = list(barcodes)
         self._attr_unique_id = unique_id
         self._attr_device_info = device_info
         self._restored_native_value = False
@@ -667,6 +767,10 @@ class PyTapAggregateSensor(
         self._baselines: dict[str, float] = {}
         self._cycle_date: str | None = None
 
+
+    def set_barcodes(self, barcodes: list[str]) -> None:
+        """Update membership when optimizers are discovered (energy doesn't jump)."""
+        self._barcodes = list(barcodes)
     @property
     def _is_energy(self) -> bool:
         return self.entity_description.key in ("daily_energy", "total_energy")
@@ -1073,7 +1177,9 @@ class PyTapDataValiditySensor(
         )
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._barcode)},
-            name=optimizer_device_name(inverter, module_config[CONF_MODULE_NAME]),
+            name=optimizer_device_name(
+                inverter, module_config[CONF_MODULE_NAME], self._barcode
+            ),
             manufacturer="Tigo Energy",
             model="TS4",
             serial_number=self._barcode,

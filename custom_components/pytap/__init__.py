@@ -9,16 +9,19 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT, EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .connection import InvalidConnectionSettings
 from .const import (
+    CONF_AUTO_DISCOVERY,
     CONF_BAUD_RATE,
     CONF_CONNECTION_TYPE,
+    CONF_EXCLUDED_BARCODES,
     CONF_INVERTER,
     CONF_LIVE_REPORTING,
     CONF_MODULE_BARCODE,
@@ -84,7 +87,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PyTapConfigEntry) -> boo
     1. Wait for any previous listener for this entry to release its connection.
     2. Clean up legacy entity unique IDs from pre-v0.2.0.
     3. Create the coordinator and start the background listener.
-    4. Store the coordinator and forward platform setup.
+    4. Remove devices of excluded optimizers and empty strings.
+    5. Store the coordinator and forward platform setup.
 
     Lifecycle handling adapted from Tim Laing's upstream PR azebro/pytap#33.
     """
@@ -98,6 +102,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PyTapConfigEntry) -> boo
             )
         if parked.get(entry.entry_id) is previous:
             del parked[entry.entry_id]
+        previous.release_barcode_claims()
 
     # --- Legacy entity migration (voltage/current → voltage_in/out, current_in/out) ---
     await _async_cleanup_legacy_entities(hass, entry)
@@ -116,6 +121,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: PyTapConfigEntry) -> boo
         # Validates that the coordinator can be initialised; does not block on data
         await coordinator.async_config_entry_first_refresh()
         await coordinator.async_start_listener()
+        # Skipped if saved state couldn't be read: discovered modules unknown.
+        if coordinator.store_loaded:
+            _async_remove_orphaned_devices(hass, entry, coordinator)
         entry.runtime_data = coordinator
         _async_stop_on_shutdown(hass, entry, coordinator)
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -183,7 +191,9 @@ async def _async_stop_or_park(
     try:
         stopped = await coordinator.async_stop_listener()
     finally:
-        if not stopped:
+        if stopped:
+            coordinator.release_barcode_claims()
+        else:
             _async_park(hass, entry_id, coordinator)
     return stopped
 
@@ -204,6 +214,7 @@ def _async_park(
         if parked.get(entry_id) is coordinator and await coordinator.async_stop_listener():
             if parked.get(entry_id) is coordinator:
                 del parked[entry_id]
+                coordinator.release_barcode_claims()
 
     @callback
     def _async_listener_exited() -> None:
@@ -223,7 +234,70 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
                 del parked[entry.entry_id]
         else:
             _LOGGER.warning("PyTap listener is still stopping; deleting its saved state anyway")
+        coordinator.release_barcode_claims()
     await coordinator_store(hass, entry.entry_id).async_remove()
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: PyTapConfigEntry, device: dr.DeviceEntry
+) -> bool:
+    """Let users delete optimizer and empty string devices from the UI.
+
+    Deleting an optimizer removes it from the module list and excludes its
+    barcode, so discovery doesn't add it again; the entry then reloads. The
+    total device and strings that still have modules can't be deleted.
+    From Tim Laing's upstream PR azebro/pytap#37.
+    """
+    prefix = f"{entry.entry_id}_"
+    identifiers = {value for domain, value in device.identifiers if domain == DOMAIN}
+    modules = list(entry.data.get(CONF_MODULES, []))
+    if removed := {value for value in identifiers if not value.startswith(prefix)}:
+        excluded = set(entry.data.get(CONF_EXCLUDED_BARCODES, [])) | removed
+        hass.config_entries.async_update_entry(
+            entry,
+            data={
+                **entry.data,
+                CONF_MODULES: [m for m in modules if m.get(CONF_MODULE_BARCODE) not in removed],
+                CONF_EXCLUDED_BARCODES: sorted(excluded),
+            },
+        )
+        return True
+    known = entry.runtime_data.modules if entry.state is ConfigEntryState.LOADED else modules
+    used_strings = {f"{prefix}string_{m.get(CONF_MODULE_STRING)}" for m in known}
+    return not identifiers & ({f"{prefix}installation"} | used_strings)
+
+
+@callback
+def _async_remove_orphaned_devices(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: PyTapDataUpdateCoordinator
+) -> None:
+    """Remove devices (and entities) of excluded optimizers and empty strings.
+
+    Other unknown optimizer devices are kept: they may be discovered ones whose
+    saved state was lost, and come back once heard again. Empty strings are
+    kept too while discovery is on but nothing was restored.
+    From Tim Laing's upstream PR azebro/pytap#37.
+    """
+    prefix = f"{entry.entry_id}_"
+    modules = coordinator.modules
+    tracked = {module.get(CONF_MODULE_BARCODE, "") for module in modules}
+    excluded = set(entry.data.get(CONF_EXCLUDED_BARCODES, [])) - tracked
+    keep = tracked | {f"{prefix}installation"}
+    keep.update(f"{prefix}string_{module.get(CONF_MODULE_STRING, '')}" for module in modules)
+    strings_known = coordinator.store_restored or not coordinator.auto_discovery
+    registry = dr.async_get(hass)
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        identifiers = {value for domain, value in device.identifiers if domain == DOMAIN}
+        if not identifiers or identifiers & keep:
+            continue
+        barcodes = {value for value in identifiers if not value.startswith(prefix)}
+        if (barcodes and barcodes <= excluded) or (
+            not barcodes
+            and strings_known
+            and all(value.startswith(f"{prefix}string_") for value in identifiers)
+        ):
+            _LOGGER.info("Removing PyTap device %s: no longer configured", device.name)
+            registry.async_remove_device(device.id)
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -235,7 +309,8 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     v4 → v5: live_reporting toggle added (default True).
     v5 → v6: optional inverter name added (default blank).
     v6 → v7: existing connections explicitly marked as TCP (azebro/pytap#36).
-    v7 → v8: optimizer entity IDs renamed from string-based
+    v7 → v8: discovery off for existing entries (azebro/pytap#37), and
+             optimizer entity IDs renamed from string-based
              (sensor.tigo_master_s2_p01_power) to position + barcode
              (sensor.tigo_master_p01_4_5db467z_power); customised IDs are kept.
     """
@@ -338,7 +413,16 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry.entry_id,
             renamed,
         )
-        hass.config_entries.async_update_entry(entry, version=8)
+        # Existing entries keep manual module selection (discovery off).
+        hass.config_entries.async_update_entry(
+            entry,
+            data={
+                **entry.data,
+                CONF_AUTO_DISCOVERY: entry.data.get(CONF_AUTO_DISCOVERY, False),
+                CONF_EXCLUDED_BARCODES: entry.data.get(CONF_EXCLUDED_BARCODES, []),
+            },
+            version=8,
+        )
 
     return True
 

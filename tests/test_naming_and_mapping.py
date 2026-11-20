@@ -92,6 +92,9 @@ async def test_sensor_device_names_use_inverter(hass: HomeAssistant) -> None:
     }
     coordinator = MagicMock(spec=PyTapDataUpdateCoordinator)
     coordinator.data = {"nodes": {}}
+    from tests.conftest import with_modules
+
+    with_modules(coordinator, MODULES)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
     entry.runtime_data = coordinator
 

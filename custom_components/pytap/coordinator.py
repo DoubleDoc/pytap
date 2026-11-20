@@ -38,9 +38,11 @@ from .const import (
     BUS_ERROR_WINDOW_SECONDS,
     BUS_NORMAL,
     BUS_QUIET,
+    CONF_AUTO_DISCOVERY,
     CONF_BAUD_RATE,
     CONF_CONNECTION_TYPE,
     CONF_ESTIMATE_SILENT,
+    CONF_EXCLUDED_BARCODES,
     CONF_INVERTER,
     CONF_LIVE_REPORTING,
     CONF_MODULE_BARCODE,
@@ -54,6 +56,7 @@ from .const import (
     CONF_SILENT_MINUTES,
     CONF_WRITE_INTERVAL,
     CONNECTION_TCP,
+    DEFAULT_DISCOVERED_STRING,
     DEFAULT_ESTIMATE_SILENT,
     DEFAULT_LIVE_REPORTING,
     DEFAULT_NIGHT_ACTION,
@@ -187,6 +190,32 @@ def parked_coordinators(hass: HomeAssistant) -> dict[str, PyTapDataUpdateCoordin
     return hass.data.setdefault(f"{DOMAIN}_parked", {})
 
 
+class BarcodeClaims:
+    """Domain-wide optimizer ownership, so two entries never track one barcode.
+
+    From Tim Laing's upstream PR azebro/pytap#37.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._owners: dict[str, str] = {}
+
+    def claim(self, barcode: str, entry_id: str) -> bool:
+        """Claim ``barcode`` for ``entry_id``; True if it now (or already) owns it."""
+        with self._lock:
+            return self._owners.setdefault(barcode, entry_id) == entry_id
+
+    def release_entry(self, entry_id: str) -> None:
+        """Release every barcode claimed by ``entry_id``."""
+        with self._lock:
+            self._owners = {b: o for b, o in self._owners.items() if o != entry_id}
+
+
+def barcode_claims(hass: HomeAssistant) -> BarcodeClaims:
+    """The shared claim map (created on the event loop before any listener)."""
+    return hass.data.setdefault(f"{DOMAIN}_barcode_claims", BarcodeClaims())
+
+
 class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Manage streaming data from the Tigo gateway via pytap parser.
 
@@ -213,7 +242,15 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._log = _GatewayLog(
             _LOGGER, {"gateway": entry.data.get(CONF_INVERTER) or self.endpoint_label}
         )
-        self._modules: list[dict[str, Any]] = entry.data.get(CONF_MODULES, [])
+        self._modules: list[dict[str, Any]] = [
+            dict(m) for m in entry.data.get(CONF_MODULES, [])
+        ]
+        # Passive discovery (adapted from azebro/pytap#37): new optimizers seen
+        # on the bus are tracked automatically; removed ones stay excluded.
+        self._auto_discovery: bool = bool(entry.data.get(CONF_AUTO_DISCOVERY, False))
+        self._excluded_barcodes: set[str] = set(entry.data.get(CONF_EXCLUDED_BARCODES, []))
+        self._auto_modules: dict[str, dict[str, Any]] = {}
+        self._foreign_barcodes: set[str] = set()
         self._live_reporting: bool = entry.data.get(
             CONF_LIVE_REPORTING, DEFAULT_LIVE_REPORTING
         )
@@ -243,6 +280,16 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for m in self._modules
             if m.get(CONF_MODULE_BARCODE)
         }
+
+        # A barcode belongs to one PyTap entry at most (claimed on the loop
+        # here, atomically from the listener later).
+        self._claims = barcode_claims(hass)
+        for barcode in sorted(self._configured_barcodes):
+            if not self._claims.claim(barcode, entry.entry_id):
+                self._log.warning(
+                    "Optimizer %s is configured here but another PyTap entry tracks it",
+                    barcode,
+                )
 
         # Barcode ↔ node_id mapping learned from InfrastructureEvents
         self._barcode_to_node: dict[str, int] = {}
@@ -333,6 +380,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Set when the saved state couldn't be read (so it's never overwritten
         # with empty state) and when the entry is being removed.
         self._save_blocked: bool = False
+        # Store read without error / it actually held saved state.
+        self._store_loaded: bool = False
+        self._store_restored: bool = False
 
         # Listener worker (executor job) and stop coordination.
         self._worker_future: asyncio.Future | None = None
@@ -476,6 +526,95 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def configured_barcodes(self) -> set[str]:
         """Barcodes of the modules configured for this entry."""
         return set(self._configured_barcodes)
+
+    @property
+    def modules(self) -> list[dict[str, Any]]:
+        """Configured and discovered module metadata (copies)."""
+        return [dict(module) for module in list(self._modules)]
+
+    @property
+    def module_count(self) -> int:
+        """How many modules are tracked (lets platforms skip unchanged lists)."""
+        return len(self._configured_barcodes)
+
+    @property
+    def auto_discovery(self) -> bool:
+        """Whether new optimizers seen on the bus are tracked automatically."""
+        return self._auto_discovery
+
+    @property
+    def discovered_modules(self) -> dict[str, dict[str, Any]]:
+        """Modules admitted by discovery and not yet edited into the entry."""
+        return {barcode: dict(m) for barcode, m in self._auto_modules.items()}
+
+    def module_peak_power(self, barcode: str) -> int:
+        """Rated power in Wp; 0 means unknown (e.g. just discovered)."""
+        value = self._module_lookup.get(barcode, {}).get(
+            CONF_MODULE_PEAK_POWER, DEFAULT_PEAK_POWER
+        )
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return 0
+
+    @property
+    def store_loaded(self) -> bool:
+        """Saved state was read without error (it may have been empty)."""
+        return self._store_loaded
+
+    @property
+    def store_restored(self) -> bool:
+        """Saved state, including discovered modules, was restored."""
+        return self._store_restored
+
+    def release_barcode_claims(self) -> None:
+        """Let other entries track this entry's optimizers (unload or removal)."""
+        self._claims.release_entry(self.config_entry.entry_id)
+
+    def _add_discovered_module(
+        self, barcode: str, node_id: int | None = None, restored: dict[str, Any] | None = None
+    ) -> bool:
+        """Start tracking an optimizer seen on the bus (listener thread or load).
+
+        A discovered optimizer has no name (its device and entity IDs use its
+        barcode), string "Discovered" and an unknown rating (0 Wp) until the
+        user edits it. Adapted from Tim Laing's upstream PR azebro/pytap#37.
+        """
+        if barcode in self._configured_barcodes or barcode in self._excluded_barcodes:
+            return False
+        if not self._auto_discovery and restored is None:
+            return False
+        if not self._claims.claim(barcode, self.config_entry.entry_id):
+            if barcode not in self._foreign_barcodes:
+                self._foreign_barcodes.add(barcode)
+                self._log.info("Not tracking %s: another PyTap entry tracks it", barcode)
+            return False
+        module: dict[str, Any] = {
+            CONF_MODULE_BARCODE: barcode,
+            CONF_MODULE_NAME: "",
+            CONF_MODULE_STRING: DEFAULT_DISCOVERED_STRING,
+            CONF_MODULE_PEAK_POWER: 0,
+        }
+        if restored:
+            for field in (CONF_MODULE_NAME, CONF_MODULE_STRING):
+                if isinstance(value := restored.get(field), str):
+                    module[field] = value
+            rating = restored.get(CONF_MODULE_PEAK_POWER)
+            if type(rating) is int and 0 <= rating <= 1000:
+                module[CONF_MODULE_PEAK_POWER] = rating
+        with self._state_lock:
+            self._auto_modules[barcode] = module
+            self._modules.append(module)
+            self._module_lookup[barcode] = module
+            self._configured_barcodes.add(barcode)
+            payload = self._build_node_payload(barcode, module, node_id)
+            if acc := self._energy_state.get(barcode):
+                self._merge_energy_into_node(payload, acc)
+            self._state["nodes"].setdefault(barcode, payload)
+            self._mark_changed(None)  # platforms add the new entities
+        self._schedule_save()
+        self._log.info("Automatically tracking Tigo optimizer %s", barcode)
+        return True
 
     @property
     def link_up(self) -> bool:
@@ -699,7 +838,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return active
 
     def _module_label(self, barcode: str) -> str:
-        """Return 'P03 (4-ABC123D)' style label for log lines."""
+        """Return 'P03 (4-ABC123D)' style label for log lines (barcode if unnamed)."""
         name = self._module_lookup.get(barcode, {}).get(CONF_MODULE_NAME)
         return f"{name} ({barcode})" if name and name != barcode else barcode
 
@@ -907,6 +1046,13 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return coordinator diagnostics snapshot."""
         now = time.monotonic()
         return {
+            "module_discovery": {
+                "enabled": self._auto_discovery,
+                "module_count": len(self._modules),
+                "discovered_unsaved": sorted(self._auto_modules),
+                "excluded_barcodes": sorted(self._excluded_barcodes),
+                "owned_elsewhere": sorted(self._foreign_barcodes),
+            },
             "node_mapping_status": self.mapping_status(),
             "node_mappings": {
                 "barcode_to_node": dict(self._barcode_to_node),
@@ -1496,14 +1642,16 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._schedule_save()
                 self._log.info(
                     "Discovered unconfigured Tigo optimizer barcode: %s "
-                    "(gateway=%d, node=%d). Add it to your PyTap module "
-                    "list to start tracking.",
+                    "(gateway=%d, node=%d)%s",
                     barcode,
                     event.gateway_id,
                     event.node_id,
+                    "" if self._auto_discovery else
+                    ". Add it to your PyTap module list to start tracking.",
                 )
+            if not self._add_discovered_module(barcode, event.node_id):
                 return True
-            return False
+            # Newly discovered: process this first reading right away.
 
         mono = time.monotonic()
         if barcode in self._est_cursor and barcode not in self._est_close:
@@ -1512,16 +1660,11 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Get module metadata
         module_meta = self._module_lookup.get(barcode, {})
-        peak_power_raw = module_meta.get(CONF_MODULE_PEAK_POWER, DEFAULT_PEAK_POWER)
-        try:
-            peak_power = int(peak_power_raw)
-        except (TypeError, ValueError):
-            peak_power = DEFAULT_PEAK_POWER
-        if peak_power <= 0:
-            peak_power = DEFAULT_PEAK_POWER
+        # 0 Wp = rating unknown (a discovered module): no performance figure.
+        peak_power = self.module_peak_power(barcode)
 
         performance: float | None = None
-        if event.power is not None:
+        if event.power is not None and peak_power > 0:
             performance = (max(event.power, 0.0) / peak_power) * 100.0
         now = dt_util.now()
 
@@ -1684,11 +1827,13 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         discovered_changed = True
                         self._log.info(
                             "Discovered unconfigured Tigo optimizer barcode: %s "
-                            "(node=%d). Add it to your PyTap module list to "
-                            "start tracking.",
+                            "(node=%d)%s",
                             barcode,
                             node_id,
+                            "" if self._auto_discovery else
+                            ". Add it to your PyTap module list to start tracking.",
                         )
+                    self._add_discovered_module(barcode, node_id)
 
         if discovered_changed:
             self._state["discovered_barcodes"] = sorted(self._discovered_barcodes)
@@ -1842,8 +1987,8 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         else None
                     )
 
-            if avg_node.get("power") is not None:
-                peak = avg_node.get("peak_power", DEFAULT_PEAK_POWER)
+            peak = avg_node.get("peak_power", DEFAULT_PEAK_POWER) or 0
+            if avg_node.get("power") is not None and peak > 0:
                 avg_node["performance"] = round(
                     (max(avg_node["power"], 0.0) / peak) * 100.0,
                     2,
@@ -1936,6 +2081,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 exc_info=True,
             )
             stored = None
+        else:
+            self._store_loaded = True
+            self._store_restored = stored is not None
 
         if stored is None:
             return
@@ -1956,6 +2104,17 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         discovered = stored.get("discovered_barcodes", [])
         self._discovered_barcodes = set(discovered)
         self._state["discovered_barcodes"] = sorted(self._discovered_barcodes)
+
+        # Discovered modules (names, strings and ratings the user hasn't yet
+        # moved into the entry). The entry's own module list wins.
+        for module in stored.get("auto_modules", []):
+            if isinstance(module, dict) and isinstance(
+                barcode := module.get(CONF_MODULE_BARCODE), str
+            ) and barcode:
+                self._add_discovered_module(barcode, restored=module)
+        # Turning discovery on admits optimizers already heard in manual mode.
+        for barcode in sorted(self._discovered_barcodes):
+            self._add_discovered_module(barcode, self._barcode_to_node.get(barcode))
 
         # Restore parser infrastructure state
         parser_state_data = stored.get("parser_state")
@@ -2048,6 +2207,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 barcode: node_id for barcode, node_id in self._barcode_to_node.items()
             },
             "discovered_barcodes": sorted(self._discovered_barcodes),
+            "auto_modules": [dict(m) for m in self._auto_modules.values()],
             "parser_state": self._persistent_state.to_dict(),
             "energy_data": {
                 barcode: {

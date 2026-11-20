@@ -71,3 +71,17 @@ def mock_usb_hardware():
         patch("homeassistant.components.usb.scan_serial_ports", return_value=[]),
     ):
         yield
+
+
+def with_modules(coordinator, modules, auto_discovery=False):
+    """Give a mock coordinator the module properties the sensor platform reads."""
+    modules = [dict(m) for m in modules]
+    coordinator.modules = modules
+    coordinator.module_count = len({m["barcode"] for m in modules if m.get("barcode")})
+    coordinator.auto_discovery = auto_discovery
+    coordinator.discovered_modules = {}
+    coordinator.module_peak_power.side_effect = lambda b: next(
+        (int(m.get("peak_power", 455)) for m in modules if m.get("barcode") == b), 0
+    )
+    coordinator.async_add_listener.return_value = lambda: None
+    return coordinator

@@ -45,6 +45,11 @@ CONF_ESTIMATE_SILENT = "estimate_silent"
 CONF_NIGHT_ACTION = "night_action"  # asleep: "zero" or "hold"
 CONF_SILENT_ACTION = "silent_action"  # silent by day: "unavailable", "hold", "zero"
 CONF_SILENT_MINUTES = "silent_minutes"
+
+# Passive module discovery (adapted from Tim Laing's upstream PR azebro/pytap#37).
+CONF_AUTO_DISCOVERY = "auto_discovery"
+CONF_EXCLUDED_BARCODES = "excluded_barcodes"
+DEFAULT_DISCOVERED_STRING = "Discovered"
 STALE_ZERO = "zero"
 STALE_HOLD = "hold"
 STALE_UNAVAILABLE = "unavailable"

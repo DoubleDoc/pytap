@@ -856,6 +856,14 @@ async def test_finish_without_modules_explains(hass: HomeAssistant) -> None:
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {"host": MOCK_HOST, "port": MOCK_PORT}
         )
+    # New setups discover optimizers by default; without discovery, at least
+    # one module is needed.
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "discovery"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"auto_discovery": False}
+    )
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"next_step_id": "finish"}
     )

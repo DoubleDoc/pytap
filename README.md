@@ -288,7 +288,12 @@ PyTap is configured entirely through the Home Assistant UI — no YAML needed.
 
 ### Step 2: Add Modules
 
-After entering connection details, you'll see a modules menu:
+After entering connection details, you'll see a modules menu. **Module discovery** is on by default for new setups, so you can select **Finish setup** without adding anything:
+
+- **Discovery on (Automatic):** every optimizer PyTap hears on the bus is added by itself, usually the first morning after setup (see [First start](#first-start-what-to-expect)). It starts with no name (its device is `Tigo [inverter] <barcode>`, its entity IDs `sensor.tigo_<inverter>_<barcode>_…`), in string **Discovered**, with an unknown rating (0 Wp). Until it has a rating, its performance entities and those of the totals it belongs to are disabled. Name it, set its string and rating under **Configure → Edit a module**; naming it adds the position to its entity IDs (`sensor.tigo_master_p01_4_5db467z_power`), keeping its history. Discovery only listens; it never sends anything to the gateway.
+- **Discovery off (Manual):** only the modules you add are tracked. Turn it off under **Module discovery**.
+
+You can also add modules yourself, with or without discovery:
 
 1. Click **"Add a module"**.
 2. Fill in the fields:
@@ -297,7 +302,9 @@ After entering connection details, you'll see a modules menu:
    - **Barcode** — The Tigo optimizer barcode printed on the module (e.g., `A-1234567B`).
    - **Peak power (Wp)** — The panel's peak power rating in watts (1–1000, default 455 Wp). Used to calculate performance percentage.
 3. Repeat for each optimizer you want to monitor.
-4. Click **"Finish setup"** when done.
+4. Click **"Finish setup"** when done (with discovery off, add at least one module first).
+
+Installations set up before discovery existed keep manual mode; turn discovery on under **Configure → Change module discovery**. A diagnostic **Module discovery** sensor on the Total device shows *Waiting for modules* until the first optimizer is tracked.
 
 ### First start: what to expect
 
@@ -330,7 +337,7 @@ INFO: Discovered unconfigured Tigo optimizer barcode: A-9999999Z
       (gateway=1, node=55). Add it to your PyTap module list to start tracking.
 ```
 
-Barcodes are discovered from the node table, so they appear in the log after the first node table is seen, normally the first morning after setup (see [First start: what to expect](#first-start-what-to-expect)).
+With [module discovery](#step-2-add-modules) on, they're added automatically instead. Barcodes are discovered from the node table, so they appear in the log after the first node table is seen, normally the first morning after setup (see [First start: what to expect](#first-start-what-to-expect)).
 
 ### Managing Modules After Setup
 
@@ -340,12 +347,13 @@ Go to **Settings → Devices & Services → PyTap → Configure** to:
 - **Change reporting settings** — Toggle live reporting or set the averaged reporting interval (see [Reporting modes](#reporting-modes)).
 - **Change inverter name** — Set or clear the inverter name used in device names.
 - **Add** new optimizer modules (if the barcode was previously seen on the bus, it resolves instantly).
-- **Edit** a module's string, name or peak power. The barcode can't be edited; remove and re-add the module to replace an optimizer.
+- **Change module discovery** — Turn automatic discovery on or off.
+- **Edit** a module's string, name or peak power (0 = unknown), including discovered optimizers. The barcode can't be edited; remove and re-add the module to replace an optimizer. Naming a discovered optimizer the first time adds its position to its entity IDs; later renames keep the IDs (see [Device naming](#device-naming)).
 - **Rename a string** for all of its modules. The String device's sensors keep their history.
-- **Remove** modules you no longer want to track.
+- **Remove** modules you no longer want to track. A removed optimizer is excluded, so discovery won't add it back; add it again to track it. You can also delete an optimizer's device from its device page (same effect), or an empty string device. The Total device and strings with modules can't be deleted.
 - **Save and close** to apply changes.
 
-Connection and reporting changes are saved as soon as you submit them. Inverter name and module changes (add, edit, rename string, remove) are saved only when you select **Save and close**; closing the dialog without it discards them.
+Connection and reporting changes are saved as soon as you submit them. Inverter name, discovery and module changes (add, edit, rename string, remove) are saved only when you select **Save and close**; closing the dialog without it discards them.
 
 ### Reporting modes
 

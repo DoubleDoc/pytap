@@ -46,9 +46,11 @@ from .connection import (
     resolved_endpoint_key,
 )
 from .const import (
+    CONF_AUTO_DISCOVERY,
     CONF_BAUD_RATE,
     CONF_CONNECTION_TYPE,
     CONF_ESTIMATE_SILENT,
+    CONF_EXCLUDED_BARCODES,
     CONF_INVERTER,
     CONF_LIVE_REPORTING,
     CONF_MODULE_BARCODE,
@@ -82,6 +84,7 @@ from .const import (
     SILENT_ACTIONS,
 )
 from .coordinator import parked_coordinators
+from .naming import optimizer_object_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -236,11 +239,24 @@ def _modules_description(modules: list[dict[str, Any]]) -> str:
         parts = []
         if m.get(CONF_MODULE_STRING):
             parts.append(f"string={m[CONF_MODULE_STRING]}")
-        parts.append(m[CONF_MODULE_NAME])
+        parts.append(m.get(CONF_MODULE_NAME) or "(not named yet)")
         parts.append(m.get(CONF_MODULE_BARCODE, ""))
         peak_power = m.get(CONF_MODULE_PEAK_POWER, DEFAULT_PEAK_POWER)
-        lines.append(f"  {i}. {' / '.join(parts)} ({peak_power}Wp)")
+        rating = f"{peak_power}Wp" if peak_power else "rating unknown"
+        lines.append(f"  {i}. {' / '.join(parts)} ({rating})")
     return f"**Modules ({len(modules)}):**\n" + "\n".join(lines)
+
+
+def _module_label(module: dict[str, Any]) -> str:
+    """'P01 (4-5DB467Z)', or '(not named yet) (…)' for a discovered optimizer."""
+    return f"{module.get(CONF_MODULE_NAME) or '(not named yet)'} ({module[CONF_MODULE_BARCODE]})"
+
+
+def _discovered(entry: ConfigEntry) -> dict[str, dict[str, Any]]:
+    """Optimizers the running entry discovered (none if it isn't loaded)."""
+    if entry.state is ConfigEntryState.LOADED:
+        return entry.runtime_data.discovered_modules
+    return {}
 
 
 class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -253,6 +269,8 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
         self._user_data: dict[str, Any] = {}
         self._modules: list[dict[str, str]] = []
         self._unreachable_confirm: tuple[str, int] | None = None
+        # New setups discover optimizers by default (azebro/pytap#37).
+        self._auto_discovery = True
 
     @staticmethod
     @callback
@@ -312,11 +330,26 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
         """Show the modules menu: add another or finish."""
         return self.async_show_menu(
             step_id="modules_menu",
-            menu_options=["add_module", "finish"],
+            menu_options=["add_module", "discovery", "finish"],
             description_placeholders={
                 "modules_list": _modules_description(self._modules),
+                "discovery_mode": "Automatic" if self._auto_discovery else "Manual",
                 "error": error,
             },
+        )
+
+    async def async_step_discovery(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose automatic discovery or only the modules added here."""
+        if user_input is not None:
+            self._auto_discovery = user_input[CONF_AUTO_DISCOVERY]
+            return await self.async_step_modules_menu()
+        return self.async_show_form(
+            step_id="discovery",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_AUTO_DISCOVERY, default=self._auto_discovery): bool}
+            ),
         )
 
     async def async_step_add_module(
@@ -374,10 +407,11 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Finish the config flow — create the entry."""
-        if not self._modules:
+        if not self._modules and not self._auto_discovery:
             # Say why instead of silently showing the menu again.
             return await self.async_step_modules_menu(
-                error="**Add at least one module before finishing setup.**"
+                error="**Add at least one module, or turn on discovery, before "
+                "finishing setup.**"
             )
         # New entries start in averaged mode at DEFAULT_WRITE_INTERVAL: live
         # mode writes every reading to the recorder. Entries created before
@@ -385,6 +419,8 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
         data = {
             **self._user_data,
             CONF_MODULES: self._modules,
+            CONF_AUTO_DISCOVERY: self._auto_discovery,
+            CONF_EXCLUDED_BARCODES: [],
             CONF_LIVE_REPORTING: False,
             CONF_WRITE_INTERVAL: DEFAULT_WRITE_INTERVAL,
         }
@@ -414,6 +450,17 @@ class PyTapOptionsFlow(OptionsFlow):
         self._modules: list[dict[str, str]] = [
             dict(m) for m in config_entry.data.get(CONF_MODULES, [])
         ]
+        # Discovered optimizers can be edited here too; saving moves them
+        # into the module list (azebro/pytap#37).
+        known = {m[CONF_MODULE_BARCODE] for m in self._modules}
+        self._modules.extend(
+            m for b, m in _discovered(config_entry).items() if b not in known
+        )
+        self._initial: dict[str, dict[str, Any]] = {
+            m[CONF_MODULE_BARCODE]: dict(m) for m in self._modules
+        }
+        self._auto_discovery: bool = config_entry.data.get(CONF_AUTO_DISCOVERY, False)
+        self._excluded: set[str] = set(config_entry.data.get(CONF_EXCLUDED_BARCODES, []))
         self._inverter: str = config_entry.data.get(CONF_INVERTER, "") or ""
         self._stale: dict[str, Any] = {
             CONF_NIGHT_ACTION: config_entry.data.get(CONF_NIGHT_ACTION, DEFAULT_NIGHT_ACTION),
@@ -440,6 +487,7 @@ class PyTapOptionsFlow(OptionsFlow):
                 "change_reporting",
                 "change_inverter",
                 "change_stale",
+                "change_discovery",
                 "add_module",
                 "edit_module",
                 "rename_string",
@@ -448,22 +496,89 @@ class PyTapOptionsFlow(OptionsFlow):
             ],
             description_placeholders={
                 "modules_list": _modules_description(self._modules),
+                "discovery_mode": "Automatic" if self._auto_discovery else "Manual",
             },
+        )
+
+    async def async_step_change_discovery(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Turn automatic discovery on or off (saved with Done)."""
+        if user_input is not None:
+            self._auto_discovery = user_input[CONF_AUTO_DISCOVERY]
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="change_discovery",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_AUTO_DISCOVERY, default=self._auto_discovery): bool}
+            ),
         )
 
     async def async_step_done(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Save modules and close the options flow."""
+        # Optimizers discovered while this flow was open are kept; removals
+        # are excluded so discovery doesn't add them back.
+        selected = {m[CONF_MODULE_BARCODE] for m in self._modules}
+        self._excluded |= set(self._initial) - selected
+        self._excluded -= selected
+        modules = list(self._modules)
+        modules.extend(
+            m
+            for b, m in _discovered(self._config_entry).items()
+            if b not in selected | self._excluded
+        )
+        if not modules and not self._auto_discovery:
+            return self.async_show_form(
+                step_id="change_discovery",
+                data_schema=vol.Schema(
+                    {vol.Required(CONF_AUTO_DISCOVERY, default=False): bool}
+                ),
+                errors={"base": "no_modules"},
+            )
         self._migrate_renamed_strings()
+        self._rename_newly_named(modules)
         new_data = {
             **self._config_entry.data,
-            CONF_MODULES: self._modules,
+            CONF_MODULES: modules,
             CONF_INVERTER: self._inverter,
+            CONF_AUTO_DISCOVERY: self._auto_discovery,
+            CONF_EXCLUDED_BARCODES: sorted(self._excluded),
             **self._stale,
         }
         self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
         return self.async_create_entry(title="", data={})
+
+    def _rename_newly_named(self, modules: list[dict[str, Any]]) -> None:
+        """Give a discovered optimizer's entity IDs its position once it's named.
+
+        ``sensor.tigo_master_4_5db467z_power`` becomes
+        ``sensor.tigo_master_p01_4_5db467z_power``. Only IDs still at the
+        automatic pattern are renamed; later renames keep their IDs.
+        """
+        ent_reg = er.async_get(self.hass)
+        old_inverter = self._config_entry.data.get(CONF_INVERTER, "") or ""
+        for module in modules:
+            barcode = module[CONF_MODULE_BARCODE]
+            before = self._initial.get(barcode)
+            name = module.get(CONF_MODULE_NAME, "")
+            if before is None or before.get(CONF_MODULE_NAME) or not name:
+                continue
+            old_base = optimizer_object_id(old_inverter, "", barcode)
+            new_base = optimizer_object_id(self._inverter, name, barcode)
+            prefix = f"{DOMAIN}_{barcode}_"
+            for reg_entry in er.async_entries_for_config_entry(
+                ent_reg, self._config_entry.entry_id
+            ):
+                if not (reg_entry.unique_id or "").startswith(prefix):
+                    continue
+                key = reg_entry.unique_id[len(prefix):]
+                if reg_entry.entity_id != f"sensor.{old_base}_{key}":
+                    continue
+                new_id = f"sensor.{new_base}_{key}"
+                if ent_reg.async_get(new_id) is None:
+                    ent_reg.async_update_entity(reg_entry.entity_id, new_entity_id=new_id)
 
     def _migrate_renamed_strings(self) -> None:
         """Move string aggregate entities and devices to their new names.
@@ -577,7 +692,7 @@ class PyTapOptionsFlow(OptionsFlow):
             return await self.async_step_edit_module_details()
 
         barcode_options = {
-            m[CONF_MODULE_BARCODE]: f"{m[CONF_MODULE_NAME]} ({m[CONF_MODULE_BARCODE]})"
+            m[CONF_MODULE_BARCODE]: _module_label(m)
             for m in self._modules
             if m.get(CONF_MODULE_BARCODE)
         }
@@ -620,11 +735,14 @@ class PyTapOptionsFlow(OptionsFlow):
                 vol.Required(
                     CONF_MODULE_STRING, default=module.get(CONF_MODULE_STRING, "")
                 ): str,
-                vol.Required(CONF_MODULE_NAME, default=module[CONF_MODULE_NAME]): str,
+                vol.Required(
+                    CONF_MODULE_NAME, default=module.get(CONF_MODULE_NAME, "")
+                ): str,
+                # 0 = rating unknown (no performance figures).
                 vol.Optional(
                     CONF_MODULE_PEAK_POWER,
                     default=module.get(CONF_MODULE_PEAK_POWER, DEFAULT_PEAK_POWER),
-                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=1000)),
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=1000)),
             }
         )
         return self.async_show_form(
@@ -888,7 +1006,7 @@ class PyTapOptionsFlow(OptionsFlow):
 
         # Build selection list from current modules
         barcode_options = {
-            m[CONF_MODULE_BARCODE]: f"{m[CONF_MODULE_NAME]} ({m[CONF_MODULE_BARCODE]})"
+            m[CONF_MODULE_BARCODE]: _module_label(m)
             for m in self._modules
             if m.get(CONF_MODULE_BARCODE)
         }
