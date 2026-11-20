@@ -1,25 +1,24 @@
-"""Device naming for PyTap.
+"""Device naming and entity IDs for PyTap.
 
-Names are built from up to three levels, leaving out any that are not set:
+Device names are built from up to four levels, leaving out any that are not
+set. They're for display only and follow every edit:
 
-* inverter: optional, per config entry (one PyTap instance per CCA gateway,
-  usually one per inverter). Most installations have a single instance and
-  leave it blank.
-* string: the module's string group.
-* module: the module's own name, usually its position (``P01``).
+* inverter: the string's own inverter if set (one CCA serving several
+  inverters), otherwise the entry's inverter name (usually one PyTap entry
+  per CCA). Most installations leave it blank.
+* string: the module's string group (numbers are shown as ``S2``).
+* module: the module's own name, usually its position (``P01``); a
+  discovered optimizer that isn't named yet shows its barcode.
 
 Examples::
 
-    inverter="Master", module="P01" -> "Tigo Master P01"
-    inverter="",       module="P01" -> "Tigo P01"
+    inverter="Master", string="2", module="P01" -> "Tigo Master S2 P01"
+    inverter="",       string="East", module="P01" -> "Tigo East P01"
 
-Optimizer devices leave the string out: maintenance can move a module to
-another string, and the string is shown by the device it connects via (the
-string's device) instead. String and total devices keep their names.
-
-Optimizer entity IDs combine the position and the barcode, which never
-changes: ``sensor.tigo_master_p01_4_5db467z_power``. They're set when an
-entity is first created; existing entity IDs are never changed.
+Optimizer entity IDs are built from the barcode alone, which never changes:
+``sensor.tigo_4_5db467z_power``. Moving a module to another string or
+inverter, or renaming it, never changes them. Entity IDs that already exist
+are never changed.
 """
 
 from __future__ import annotations
@@ -45,21 +44,16 @@ def string_label(string_name: str) -> str:
     return string_name
 
 
-def optimizer_device_name(inverter: str, module_name: str, barcode: str = "") -> str:
-    """Name of an optimizer device, e.g. ``Tigo Master P01``.
+def optimizer_device_name(
+    inverter: str, string_name: str, module_name: str, barcode: str = ""
+) -> str:
+    """Name of an optimizer device, e.g. ``Tigo Master S2 P01``."""
+    return _join(PREFIX, inverter, string_label(string_name), module_name.strip() or barcode)
 
-    A discovered optimizer that isn't named yet uses its barcode instead.
-    """
-    return _join(PREFIX, inverter, module_name.strip() or barcode)
 
-
-def optimizer_object_id(inverter: str, module_name: str, barcode: str) -> str:
-    """Entity ID base of an optimizer: position plus barcode.
-
-    ``tigo_master_p01_4_5db467z``; without a name (e.g. just discovered),
-    ``tigo_master_4_5db467z``.
-    """
-    return slugify(_join(PREFIX, inverter, module_name, barcode))
+def optimizer_object_id(barcode: str) -> str:
+    """Entity ID base of an optimizer: ``tigo_4_5db467z``."""
+    return slugify(_join(PREFIX, barcode))
 
 
 def string_device_name(inverter: str, string_name: str) -> str:
@@ -68,5 +62,10 @@ def string_device_name(inverter: str, string_name: str) -> str:
 
 
 def total_device_name(inverter: str) -> str:
-    """Name of the instance total device, e.g. ``Tigo Master Total``."""
+    """Name of a total device, e.g. ``Tigo Master Total``."""
     return _join(PREFIX, inverter, "Total")
+
+
+def string_inverter(string_inverters: dict[str, str], string_name: str, default: str) -> str:
+    """The inverter a string feeds: its own if set, else the entry's."""
+    return (string_inverters.get(string_name) or "").strip() or default

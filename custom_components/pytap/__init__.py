@@ -29,6 +29,7 @@ from .const import (
     CONF_MODULE_STRING,
     CONF_MODULES,
     CONF_SERIAL_PORT,
+    CONF_STRING_INVERTERS,
     CONF_WRITE_INTERVAL,
     CONNECTION_TCP,
     DEFAULT_INVERTER,
@@ -263,7 +264,13 @@ async def async_remove_config_entry_device(
         return True
     known = entry.runtime_data.modules if entry.state is ConfigEntryState.LOADED else modules
     used_strings = {f"{prefix}string_{m.get(CONF_MODULE_STRING)}" for m in known}
-    return not identifiers & ({f"{prefix}installation"} | used_strings)
+    string_inverters = entry.data.get(CONF_STRING_INVERTERS, {})
+    used_inverters = {
+        f"{prefix}inverter_{string_inverters[m.get(CONF_MODULE_STRING)]}"
+        for m in known
+        if string_inverters.get(m.get(CONF_MODULE_STRING))
+    }
+    return not identifiers & ({f"{prefix}installation"} | used_strings | used_inverters)
 
 
 @callback

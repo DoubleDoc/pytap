@@ -47,6 +47,7 @@ from .const import (
     CONF_MODULE_NAME,
     CONF_MODULE_PEAK_POWER,
     CONF_MODULE_STRING,
+    CONF_STRING_INVERTERS,
     DEFAULT_PEAK_POWER,
     DOMAIN,
     MAPPING_COMPLETE,
@@ -65,6 +66,7 @@ from .naming import (
     optimizer_device_name,
     optimizer_object_id,
     string_device_name,
+    string_inverter,
     total_device_name,
 )
 
@@ -355,10 +357,15 @@ async def async_setup_entry(
     """
     coordinator = entry.runtime_data
     inverter: str = entry.data.get(CONF_INVERTER, "") or ""
+    string_inverters: dict[str, str] = dict(entry.data.get(CONF_STRING_INVERTERS, {}))
+
+    def inverter_of(string_name: str) -> str:
+        return string_inverter(string_inverters, string_name, inverter)
 
     known_barcodes: set[str] = set()
     string_sensors: dict[str, list[PyTapAggregateSensor]] = {}
     total_sensors: list[PyTapAggregateSensor] = []
+    inverter_sensors: dict[str, list[PyTapAggregateSensor]] = {}
     total_device_info = DeviceInfo(
         identifiers={(DOMAIN, f"{entry.entry_id}_installation")},
         name=total_device_name(inverter),
@@ -392,14 +399,14 @@ async def async_setup_entry(
                         description=description,
                         module_config=module_config,
                         entry=entry,
-                        inverter=inverter,
+                        inverter=inverter_of(module_config.get(CONF_MODULE_STRING, "")),
                     )
                 )
             entities.append(
                 PyTapDataValiditySensor(
                     coordinator=coordinator,
                     module_config=module_config,
-                    inverter=inverter,
+                    inverter=inverter_of(module_config.get(CONF_MODULE_STRING, "")),
                 )
             )
 
@@ -408,7 +415,7 @@ async def async_setup_entry(
             if string_name not in string_sensors:
                 device_info = DeviceInfo(
                     identifiers={(DOMAIN, f"{entry.entry_id}_string_{string_name}")},
-                    name=string_device_name(inverter, string_name),
+                    name=string_device_name(inverter_of(string_name), string_name),
                     manufacturer="Tigo Energy",
                     model="String Aggregate",
                 )
@@ -457,11 +464,40 @@ async def async_setup_entry(
         for sensor in total_sensors:
             sensor.set_barcodes(all_barcodes)
 
+        # A total per inverter named on a string (one CCA, several inverters).
+        inverter_to_barcodes = _inverter_members(
+            string_to_barcodes, string_inverters, inverter
+        )
+        for inv, barcodes in inverter_to_barcodes.items():
+            if inv not in inverter_sensors:
+                device_info = DeviceInfo(
+                    identifiers={(DOMAIN, f"{entry.entry_id}_inverter_{inv}")},
+                    name=total_device_name(inv),
+                    manufacturer="Tigo Energy",
+                    model="Inverter Aggregate",
+                )
+                inverter_sensors[inv] = [
+                    PyTapAggregateSensor(
+                        coordinator=coordinator,
+                        description=description,
+                        barcodes=barcodes,
+                        device_info=device_info,
+                        unique_id=(
+                            f"{DOMAIN}_{entry.entry_id}_inverter_{inv}_{description.key}"
+                        ),
+                    )
+                    for description in INSTALLATION_SENSOR_DESCRIPTIONS
+                ]
+                aggregates.extend(inverter_sensors[inv])
+            for sensor in inverter_sensors[inv]:
+                sensor.set_barcodes(barcodes)
+
         # String and total devices first: optimizer devices connect via them.
         if aggregates or entities:
             async_add_entities([*aggregates, *entities])
         _sync_performance_entities(
-            hass, entry.entry_id, coordinator, string_to_barcodes, all_barcodes
+            hass, entry.entry_id, coordinator, string_to_barcodes, all_barcodes,
+            inverter_to_barcodes,
         )
 
     # Registered first, so totals learn new members before their own update.
@@ -471,6 +507,28 @@ async def async_setup_entry(
         async_add_entities([PyTapDiscoverySensor(coordinator, entry, total_device_info)])
 
 
+def _inverter_members(
+    string_to_barcodes: dict[str, list[str]],
+    string_inverters: dict[str, str],
+    entry_inverter: str,
+) -> dict[str, list[str]]:
+    """Barcodes per inverter, for inverters named on strings.
+
+    Only inverters set on a string get their own total, and not one named like
+    the entry (its total is the entry's Total device). Strings without an
+    inverter belong to the entry's inverter.
+    """
+    named = {
+        inv.strip() for inv in string_inverters.values() if inv and inv.strip()
+    } - {entry_inverter}
+    members: dict[str, list[str]] = {}
+    for string_name, barcodes in string_to_barcodes.items():
+        inv = string_inverter(string_inverters, string_name, entry_inverter)
+        if inv in named:
+            members.setdefault(inv, []).extend(barcodes)
+    return members
+
+
 @callback
 def _sync_performance_entities(
     hass: HomeAssistant,
@@ -478,6 +536,7 @@ def _sync_performance_entities(
     coordinator: PyTapDataUpdateCoordinator,
     string_to_barcodes: dict[str, list[str]],
     all_barcodes: list[str],
+    inverter_to_barcodes: dict[str, list[str]] | None = None,
 ) -> None:
     """Disable performance entities until every panel they cover has a rating.
 
@@ -493,6 +552,8 @@ def _sync_performance_entities(
         wanted[f"{DOMAIN}_{entry_id}_string_{string_name}_performance"] = rated(barcodes)
     if all_barcodes:
         wanted[f"{DOMAIN}_{entry_id}_installation_performance"] = rated(all_barcodes)
+    for inv, barcodes in (inverter_to_barcodes or {}).items():
+        wanted[f"{DOMAIN}_{entry_id}_inverter_{inv}_performance"] = rated(barcodes)
 
     registry = er.async_get(hass)
     for unique_id, has_rating in wanted.items():
@@ -580,16 +641,15 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
 
         # Unique ID: domain + barcode + sensor key
         self._attr_unique_id = f"{DOMAIN}_{self._barcode}_{description.key}"
-        # Entity ID: position + barcode (see naming.py); used when first created.
-        self.entity_id = (
-            f"sensor.{optimizer_object_id(inverter, self._module_name, self._barcode)}"
-            f"_{description.key}"
-        )
+        # Entity ID: the barcode (see naming.py); set when first created.
+        self.entity_id = f"sensor.{optimizer_object_id(self._barcode)}_{description.key}"
 
         # Device info — groups all sensors for one optimizer under one device
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._barcode)},
-            name=optimizer_device_name(inverter, self._module_name, self._barcode),
+            name=optimizer_device_name(
+                inverter, self._module_string, self._module_name, self._barcode
+            ),
             via_device=(DOMAIN, f"{entry.entry_id}_string_{self._module_string}")
             if self._module_string
             else None,
@@ -1170,15 +1230,14 @@ class PyTapDataValiditySensor(
         super().__init__(coordinator)
         self._barcode = module_config[CONF_MODULE_BARCODE]
         self._attr_unique_id = f"{DOMAIN}_{self._barcode}_data_validity"
-        self.entity_id = (
-            "sensor."
-            f"{optimizer_object_id(inverter, module_config[CONF_MODULE_NAME], self._barcode)}"
-            "_data_validity"
-        )
+        self.entity_id = f"sensor.{optimizer_object_id(self._barcode)}_data_validity"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._barcode)},
             name=optimizer_device_name(
-                inverter, module_config[CONF_MODULE_NAME], self._barcode
+                inverter,
+                module_config.get(CONF_MODULE_STRING, ""),
+                module_config[CONF_MODULE_NAME],
+                self._barcode,
             ),
             manufacturer="Tigo Energy",
             model="TS4",

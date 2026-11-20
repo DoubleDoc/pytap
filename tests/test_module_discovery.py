@@ -138,14 +138,14 @@ async def test_discovered_entity_ids_use_the_barcode(hass) -> None:
     added: list = []
     await sensor_setup(hass, entry, added.extend)
     ids = {e.entity_id for e in added if getattr(e, "_barcode", None) == NEW}
-    assert "sensor.tigo_master_4_5db467z_power" in ids
-    assert "sensor.tigo_master_4_5db467z_data_validity" in ids
+    assert "sensor.tigo_4_5db467z_power" in ids
+    assert "sensor.tigo_4_5db467z_data_validity" in ids
     assert any(type(e).__name__ == "PyTapDiscoverySensor" for e in added)
     device_names = {e.device_info["name"] for e in added if getattr(e, "_barcode", None) == NEW}
-    assert device_names == {"Tigo Master 4-5DB467Z"}
+    assert device_names == {"Tigo Master Discovered 4-5DB467Z"}
 
 
-async def test_naming_a_discovered_optimizer_renames_its_entity_ids(
+async def test_naming_a_discovered_optimizer_keeps_its_entity_ids(
     hass: HomeAssistant,
 ) -> None:
     entry = MockConfigEntry(
@@ -159,7 +159,7 @@ async def test_naming_a_discovered_optimizer_renames_its_entity_ids(
         CONF_MODULE_PEAK_POWER: 0}})
     reg = er.async_get(hass)
     reg.async_get_or_create("sensor", DOMAIN, f"{DOMAIN}_{NEW}_power", config_entry=entry,
-                            suggested_object_id="tigo_master_4_5db467z_power")
+                            suggested_object_id="tigo_4_5db467z_power")
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(
@@ -174,7 +174,7 @@ async def test_naming_a_discovered_optimizer_renames_its_entity_ids(
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
     assert reg.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{NEW}_power") == (
-        "sensor.tigo_master_p07_4_5db467z_power"
+        "sensor.tigo_4_5db467z_power"
     )
     (module,) = entry.data[CONF_MODULES]
     assert module[CONF_MODULE_NAME] == "P07"

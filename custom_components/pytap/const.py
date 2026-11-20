@@ -50,6 +50,10 @@ CONF_SILENT_MINUTES = "silent_minutes"
 CONF_AUTO_DISCOVERY = "auto_discovery"
 CONF_EXCLUDED_BARCODES = "excluded_barcodes"
 DEFAULT_DISCOVERED_STRING = "Discovered"
+
+# Optional inverter per string ({string: inverter}), for one CCA serving
+# several inverters; strings without one use the entry's inverter name.
+CONF_STRING_INVERTERS = "string_inverters"
 STALE_ZERO = "zero"
 STALE_HOLD = "hold"
 STALE_UNAVAILABLE = "unavailable"

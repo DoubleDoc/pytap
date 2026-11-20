@@ -68,14 +68,18 @@ def test_string_label() -> None:
 
 def test_device_names_with_inverter() -> None:
     """Multi-gateway installs put the inverter first."""
-    assert optimizer_device_name("Master", "P01") == "Tigo Master P01"
+    assert optimizer_device_name("Master", "2", "P01") == "Tigo Master S2 P01"
+    assert optimizer_device_name("Master", "Discovered", "", "4-5DB467Z") == (
+        "Tigo Master Discovered 4-5DB467Z"
+    )
     assert string_device_name("Master", "2") == "Tigo Master String 2"
     assert total_device_name("Master") == "Tigo Master Total"
 
 
 def test_device_names_without_inverter() -> None:
     """Single-gateway installs leave the inverter out."""
-    assert optimizer_device_name("", "P01") == "Tigo P01"
+    assert optimizer_device_name("", "2", "P01") == "Tigo S2 P01"
+    assert optimizer_device_name("", "East", "P01") == "Tigo East P01"
     assert string_device_name("", "East") == "Tigo String East"
     assert total_device_name("") == "Tigo Total"
 
@@ -103,16 +107,16 @@ async def test_sensor_device_names_use_inverter(hass: HomeAssistant) -> None:
 
     names = {e.device_info["name"] for e in entities}
     assert names == {
-        "Tigo Master P01",
-        "Tigo Master P02",
+        "Tigo Master S2 P01",
+        "Tigo Master S2 P02",
         "Tigo Master String 2",
         "Tigo Master Total",
     }
     optimizer = next(e for e in entities if isinstance(e, PyTapSensor))
     # New optimizer entities get position + barcode entity IDs.
     assert {e.entity_id for e in entities if isinstance(e, PyTapSensor)} >= {
-        "sensor.tigo_master_p01_a_1234567b_power",
-        "sensor.tigo_master_p02_c_2345678d_daily_energy",
+        "sensor.tigo_a_1234567b_power",
+        "sensor.tigo_c_2345678d_daily_energy",
     }
     # No attribute that changes with every reading (it would force a state
     # row per reading even when the value is unchanged).
@@ -343,12 +347,10 @@ async def test_options_rename_string_rejects_existing_name(
     assert result["errors"] == {"new_string": "string_exists"}
 
 
-def test_optimizer_entity_ids_are_position_plus_barcode() -> None:
+def test_optimizer_entity_ids_are_the_barcode() -> None:
     from custom_components.pytap.naming import optimizer_object_id
 
-    assert optimizer_object_id("Master", "P01", "4-5DB467Z") == "tigo_master_p01_4_5db467z"
-    assert optimizer_object_id("", "P01", "4-5DB467Z") == "tigo_p01_4_5db467z"
-    assert optimizer_object_id("Master", "", "4-5DB467Z") == "tigo_master_4_5db467z"
+    assert optimizer_object_id("4-5DB467Z") == "tigo_4_5db467z"
 
 
 async def test_migration_keeps_settings_from_any_source(hass: HomeAssistant) -> None:

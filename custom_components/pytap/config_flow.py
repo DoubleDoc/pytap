@@ -62,6 +62,7 @@ from .const import (
     CONF_SERIAL_PORT,
     CONF_SILENT_ACTION,
     CONF_SILENT_MINUTES,
+    CONF_STRING_INVERTERS,
     CONF_WRITE_INTERVAL,
     CONNECTION_SERIAL,
     CONNECTION_TCP,
@@ -84,7 +85,6 @@ from .const import (
     SILENT_ACTIONS,
 )
 from .coordinator import parked_coordinators
-from .naming import optimizer_object_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -461,6 +461,9 @@ class PyTapOptionsFlow(OptionsFlow):
         }
         self._auto_discovery: bool = config_entry.data.get(CONF_AUTO_DISCOVERY, False)
         self._excluded: set[str] = set(config_entry.data.get(CONF_EXCLUDED_BARCODES, []))
+        self._string_inverters: dict[str, str] = dict(
+            config_entry.data.get(CONF_STRING_INVERTERS, {})
+        )
         self._inverter: str = config_entry.data.get(CONF_INVERTER, "") or ""
         self._stale: dict[str, Any] = {
             CONF_NIGHT_ACTION: config_entry.data.get(CONF_NIGHT_ACTION, DEFAULT_NIGHT_ACTION),
@@ -491,6 +494,7 @@ class PyTapOptionsFlow(OptionsFlow):
                 "add_module",
                 "edit_module",
                 "rename_string",
+                "string_inverter",
                 "remove_module",
                 "done",
             ],
@@ -538,47 +542,20 @@ class PyTapOptionsFlow(OptionsFlow):
                 errors={"base": "no_modules"},
             )
         self._migrate_renamed_strings()
-        self._rename_newly_named(modules)
+        used_strings = {m.get(CONF_MODULE_STRING, "") for m in modules}
         new_data = {
             **self._config_entry.data,
             CONF_MODULES: modules,
             CONF_INVERTER: self._inverter,
             CONF_AUTO_DISCOVERY: self._auto_discovery,
             CONF_EXCLUDED_BARCODES: sorted(self._excluded),
+            CONF_STRING_INVERTERS: {
+                s: inv for s, inv in self._string_inverters.items() if s in used_strings
+            },
             **self._stale,
         }
         self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
         return self.async_create_entry(title="", data={})
-
-    def _rename_newly_named(self, modules: list[dict[str, Any]]) -> None:
-        """Give a discovered optimizer's entity IDs its position once it's named.
-
-        ``sensor.tigo_master_4_5db467z_power`` becomes
-        ``sensor.tigo_master_p01_4_5db467z_power``. Only IDs still at the
-        automatic pattern are renamed; later renames keep their IDs.
-        """
-        ent_reg = er.async_get(self.hass)
-        old_inverter = self._config_entry.data.get(CONF_INVERTER, "") or ""
-        for module in modules:
-            barcode = module[CONF_MODULE_BARCODE]
-            before = self._initial.get(barcode)
-            name = module.get(CONF_MODULE_NAME, "")
-            if before is None or before.get(CONF_MODULE_NAME) or not name:
-                continue
-            old_base = optimizer_object_id(old_inverter, "", barcode)
-            new_base = optimizer_object_id(self._inverter, name, barcode)
-            prefix = f"{DOMAIN}_{barcode}_"
-            for reg_entry in er.async_entries_for_config_entry(
-                ent_reg, self._config_entry.entry_id
-            ):
-                if not (reg_entry.unique_id or "").startswith(prefix):
-                    continue
-                key = reg_entry.unique_id[len(prefix):]
-                if reg_entry.entity_id != f"sensor.{old_base}_{key}":
-                    continue
-                new_id = f"sensor.{new_base}_{key}"
-                if ent_reg.async_get(new_id) is None:
-                    ent_reg.async_update_entity(reg_entry.entity_id, new_entity_id=new_id)
 
     def _migrate_renamed_strings(self) -> None:
         """Move string aggregate entities and devices to their new names.
@@ -774,6 +751,8 @@ class PyTapOptionsFlow(OptionsFlow):
                 for m in self._modules:
                     if m.get(CONF_MODULE_STRING) == old:
                         m[CONF_MODULE_STRING] = new
+                if old in self._string_inverters:
+                    self._string_inverters[new] = self._string_inverters.pop(old)
                 # Track the rename from the string's original (saved) name.
                 original = next(
                     (k for k, v in self._string_renames.items() if v == old), old
@@ -790,6 +769,42 @@ class PyTapOptionsFlow(OptionsFlow):
                 }
             ),
             errors=errors,
+        )
+
+    async def async_step_string_inverter(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Set which inverter a string feeds (one CCA serving several inverters).
+
+        Blank uses the entry's inverter name. Device names follow; entity IDs
+        don't change. Each inverter named here gets its own Total device.
+        """
+        strings = sorted(
+            {m.get(CONF_MODULE_STRING, "") for m in self._modules} - {""}
+        )
+        if not strings:
+            return await self.async_step_init()
+        if user_input is not None:
+            string_name = user_input["string"]
+            value = user_input.get(CONF_INVERTER, "").strip()
+            if value and value != self._inverter:
+                self._string_inverters[string_name] = value
+            else:
+                self._string_inverters.pop(string_name, None)
+            return await self.async_step_init()
+        current = "\n".join(
+            f"- {s}: {self._string_inverters.get(s) or self._inverter or '(none)'}"
+            for s in strings
+        )
+        return self.async_show_form(
+            step_id="string_inverter",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("string"): vol.In(strings),
+                    vol.Optional(CONF_INVERTER, default=""): str,
+                }
+            ),
+            description_placeholders={"current": current},
         )
 
     async def async_step_change_connection(

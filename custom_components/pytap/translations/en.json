@@ -66,7 +66,7 @@
       },
       "discovery": {
         "title": "Module discovery",
-        "description": "With discovery on, optimizers heard on the Tigo bus are added automatically, with their barcode as their name, string \"Discovered\" and an unknown rating. Name them, set their string and rating under Edit a module; naming one gives its entity IDs its position (sensor.tigo_<inverter>_<position>_<barcode>_…). Discovery only listens; it never sends anything to the gateway.",
+        "description": "With discovery on, optimizers heard on the Tigo bus are added automatically, with their barcode as their name, string \"Discovered\" and an unknown rating. Name them, set their string and rating under Edit a module. Entity IDs use the barcode (sensor.tigo_<barcode>_…) and never change. Discovery only listens; it never sends anything to the gateway.",
         "data": {
           "auto_discovery": "Discover optimizers automatically"
         }
@@ -240,7 +240,8 @@
           "edit_module": "Edit a module",
           "rename_string": "Rename a string",
           "change_stale": "Change stale reading behaviour",
-          "change_discovery": "Change module discovery"
+          "change_discovery": "Change module discovery",
+          "string_inverter": "Set a string's inverter"
         }
       },
       "change_connection": {
@@ -317,7 +318,7 @@
         },
         "data_description": {
           "string": "String group label (e.g. A, B, East, West). Required for aggregate energy tracking.",
-          "name": "Usually the panel's position (e.g. P01). Naming a discovered optimizer adds the name to its entity IDs.",
+          "name": "Usually the panel's position (e.g. P01). Used in the device name; entity IDs don't change.",
           "peak_power": "The panel's rated power in watts (STC), used for performance percentages. 0 = unknown: performance entities stay disabled."
         }
       },
@@ -364,9 +365,17 @@
       },
       "change_discovery": {
         "title": "Module discovery",
-        "description": "With discovery on, optimizers heard on the Tigo bus are added automatically, with their barcode as their name, string \"Discovered\" and an unknown rating. Name them, set their string and rating under Edit a module; naming one gives its entity IDs its position (sensor.tigo_<inverter>_<position>_<barcode>_…). Discovery only listens; it never sends anything to the gateway.",
+        "description": "With discovery on, optimizers heard on the Tigo bus are added automatically, with their barcode as their name, string \"Discovered\" and an unknown rating. Name them, set their string and rating under Edit a module. Entity IDs use the barcode (sensor.tigo_<barcode>_…) and never change. Discovery only listens; it never sends anything to the gateway.",
         "data": {
           "auto_discovery": "Discover optimizers automatically"
+        }
+      },
+      "string_inverter": {
+        "title": "Set a string's inverter",
+        "description": "For one CCA serving several inverters: name the inverter each string is wired to. Leave it blank to use this entry's inverter name. Device names follow; entity IDs never change. Each inverter named here gets its own Total device; this entry's Total device still covers every string.\n\nCurrent:\n{current}",
+        "data": {
+          "string": "String",
+          "inverter": "Inverter"
         }
       }
     },

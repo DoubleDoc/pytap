@@ -207,27 +207,31 @@ Its attributes show the learned share of the string average (to the nearest 0.05
 
 ### Device naming
 
-Names are built from up to three levels, leaving out any that aren't set:
+**Entity IDs are the optimizer's barcode**, which never changes: `sensor.tigo_4_5db467z_power` for barcode `4-5DB467Z`. Moving a module to another string or inverter, renaming it, or changing its position never changes its entity IDs, so dashboards, automations and history keep working through maintenance. The barcode is printed on the optimizer and shown on its device page.
+
+**Device names are for reading** and follow every change. They're built from up to four levels, leaving out any that aren't set:
 
 | Level | Set in | Example |
 | --- | --- | --- |
-| Inverter | Optional per gateway: **Inverter name** | `Master` |
-| String | Each module's **String group** | `2` or `East` |
-| Module | Each module's **Name**, usually its position | `P01` |
+| Inverter | **Inverter name** (per PyTap entry), or a string's own inverter (**Set a string's inverter**) | `Master` |
+| String | Each module's **String group** | `2` (numbers are shown as `S2`) or `East` |
+| Module | Each module's **Name**, usually its position; a discovered optimizer shows its barcode until named | `P01` |
 
-| Device | One gateway (no inverter name) | Two gateways (`Master`, `Slave`) |
+| Device | One inverter (no inverter name) | Inverters named (`Master`, `Slave`) |
 | --- | --- | --- |
-| Optimizer | `Tigo P01` | `Tigo Master P01` |
+| Optimizer | `Tigo S2 P01` | `Tigo Master S2 P01` |
 | String total | `Tigo String 2` | `Tigo Master String 2` |
-| Gateway total | `Tigo Total` | `Tigo Master Total` |
+| Total | `Tigo Total` | `Tigo Master Total` |
 
-Optimizer devices leave the string out, because maintenance can move a module to another string. The device page shows its string instead: an optimizer is *connected via* its string's device.
+Entity *names* (what cards and history show, e.g. "Tigo Master S2 P01 Power") come from the device name, so they follow moves too. String and total entity IDs are named after the string or total (`sensor.tigo_master_string_2_power`).
 
-**Optimizer entity IDs combine the position with the optimizer's barcode**, which never changes: `sensor.tigo_master_p01_4_5db467z_power` (inverter `Master`, name `P01`, barcode `4-5DB467Z`). The barcode keeps them unique and tells you exactly which optimizer it is; moving a module to another string doesn't touch them. They're set when an entity is first created; if you later rename a module, its entity IDs keep the old position unless you rename them in Home Assistant (history and statistics move with the rename). String and total entities are named after the string and gateway, for example `sensor.tigo_master_string_2_power`.
+**Which setup you have:**
 
-Most installations have one CCA and one PyTap entry, and can leave the inverter name blank. With more than one CCA (for example one per inverter), add one PyTap entry per gateway and give each an inverter name so their devices don't share names.
+- **One inverter, one CCA** (most installations): one PyTap entry, inverter name blank.
+- **One CCA per inverter:** one PyTap entry per CCA, each with an inverter name (`Master`, `Slave`). Each entry's Total device is that inverter's total.
+- **One CCA serving several inverters:** one PyTap entry with the inverter name blank. Use **Configure → Set a string's inverter** to name the inverter each string is wired to. Each inverter named there gets its own Total device (`Tigo Master Total`), and the entry's `Tigo Total` covers all strings. String names must be unique within the entry (for example `1`–`4`, or `M1`, `S1`).
 
-**Upgrading:** entity IDs that already exist are never changed; the pattern above applies to entities created from now on. Rename older ones in Home Assistant if you want them to match (history and statistics move with the rename).
+**Upgrading:** entity IDs that already exist are never changed; the barcode pattern applies to entities created from now on. Rename older ones in Home Assistant if you want them to match (history and statistics move with the rename).
 
 ### Dual-module optimizers
 
@@ -290,7 +294,7 @@ PyTap is configured entirely through the Home Assistant UI — no YAML needed.
 
 After entering connection details, you'll see a modules menu. **Module discovery** is on by default for new setups, so you can select **Finish setup** without adding anything:
 
-- **Discovery on (Automatic):** every optimizer PyTap hears on the bus is added by itself, usually the first morning after setup (see [First start](#first-start-what-to-expect)). It starts with no name (its device is `Tigo [inverter] <barcode>`, its entity IDs `sensor.tigo_<inverter>_<barcode>_…`), in string **Discovered**, with an unknown rating (0 Wp). Until it has a rating, its performance entities and those of the totals it belongs to are disabled. Name it, set its string and rating under **Configure → Edit a module**; naming it adds the position to its entity IDs (`sensor.tigo_master_p01_4_5db467z_power`), keeping its history. Discovery only listens; it never sends anything to the gateway.
+- **Discovery on (Automatic):** every optimizer PyTap hears on the bus is added by itself, usually the first morning after setup (see [First start](#first-start-what-to-expect)). It starts with no name (its device is `Tigo [inverter] Discovered <barcode>`; its entity IDs are `sensor.tigo_<barcode>_…`, as for every optimizer), in string **Discovered**, with an unknown rating (0 Wp). Until it has a rating, its performance entities and those of the totals it belongs to are disabled. Name it, set its string and rating under **Configure → Edit a module**. Its entity IDs don't change. Discovery only listens; it never sends anything to the gateway.
 - **Discovery off (Manual):** only the modules you add are tracked. Turn it off under **Module discovery**.
 
 You can also add modules yourself, with or without discovery:
@@ -348,7 +352,9 @@ Go to **Settings → Devices & Services → PyTap → Configure** to:
 - **Change inverter name** — Set or clear the inverter name used in device names.
 - **Add** new optimizer modules (if the barcode was previously seen on the bus, it resolves instantly).
 - **Change module discovery** — Turn automatic discovery on or off.
-- **Edit** a module's string, name or peak power (0 = unknown), including discovered optimizers. The barcode can't be edited; remove and re-add the module to replace an optimizer. Naming a discovered optimizer the first time adds its position to its entity IDs; later renames keep the IDs (see [Device naming](#device-naming)).
+- **Edit** a module's string, name or peak power (0 = unknown), including discovered optimizers. The barcode can't be edited; remove and re-add the module to replace an optimizer.
+  Entity IDs never change (see [Device naming](#device-naming)).
+- **Set a string's inverter** — For one CCA serving several inverters: name the inverter a string is wired to (see [Device naming](#device-naming)).
 - **Rename a string** for all of its modules. The String device's sensors keep their history.
 - **Remove** modules you no longer want to track. A removed optimizer is excluded, so discovery won't add it back; add it again to track it. You can also delete an optimizer's device from its device page (same effect), or an empty string device. The Total device and strings with modules can't be deleted.
 - **Save and close** to apply changes.
