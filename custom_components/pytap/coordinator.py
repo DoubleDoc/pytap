@@ -384,6 +384,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # after a restart can close a restart gap).
         self._stopped_at: datetime | None = None
         self._seen_since_start: set[str] = set()
+        # Each optimizer's last report before the restart (wall time, from the
+        # Store), used to resume reading health at night.
+        self._saved_report_times: dict[str, datetime] = {}
         # RS-485 frame error tracking
         self._parser: Any = None
         self._bus_window: tuple[float, int, int] | None = None
@@ -860,7 +863,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     # there), but never further back than the gap that
                     # triggered estimating.
                     last = self._last_report.get(barcode, now)
-                    cursor = max(last, now - backfill_limit)
+                    # Never before PyTap started: downtime is bridged, if at
+                    # all, from the optimizer's own readings (restart gaps).
+                    cursor = max(last, now - backfill_limit, self._started_mono)
                 energy_wh += new_est[barcode] * max(0.0, now - cursor) / 3600
                 self._est_cursor[barcode] = now
             if energy_wh > 0:
@@ -893,6 +898,30 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for b in self._configured_barcodes
             if self.reading_state(b) == READING_SILENT
         )
+
+    def _resume_report_times(self) -> None:
+        """At night, carry each optimizer's last report across a restart.
+
+        Without this, quiet time counts from the restart, so after a night
+        restart every optimizer holds its last values for NIGHT_QUIET_SECONDS
+        before reading as asleep. By day the saved times aren't used: an
+        optimizer not heard from since before "daylight began" (which is the
+        restart) would otherwise read as asleep until its next report.
+        """
+        if not self._sun_low or not self._saved_report_times:
+            return
+        now_wall = dt_util.now()
+        now_mono = time.monotonic()
+        resumed = 0
+        for barcode, reported in self._saved_report_times.items():
+            if barcode in self._last_report or barcode not in self._configured_barcodes:
+                continue
+            age = (now_wall - reported).total_seconds()
+            if age < 0:
+                continue  # clock went backwards: don't guess
+            self._last_report[barcode] = now_mono - age
+            resumed += 1
+        self._log.debug("Night restart: resumed last report times of %d optimizers", resumed)
 
     def _update_sun(self) -> None:
         """Refresh the cached low-sun flag and when daylight began."""
@@ -1324,6 +1353,8 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_start_listener(self) -> None:
         """Start the background listener task."""
         await self._async_load_coordinator_state()
+        self._update_sun()
+        self._resume_report_times()
         self._stop_event.clear()
         self._listener_task = self.config_entry.async_create_background_task(
             self.hass,
@@ -1331,7 +1362,6 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name="pytap_listener",
         )
         self._schedule_midnight_reset()
-        self._update_sun()
         self._health_unsub = async_track_time_interval(
             self.hass,
             self._async_health_check,
@@ -2457,6 +2487,13 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             if isinstance(snapshot, dict):
                 self._merge_snapshot_into_node(node_payload, snapshot)
+                if isinstance(raw := snapshot.get("last_update"), str):
+                    try:
+                        reported = datetime.fromisoformat(raw)
+                    except ValueError:
+                        reported = None
+                    if reported is not None and reported.tzinfo is not None:
+                        self._saved_report_times[barcode] = reported
 
             if acc is not None:
                 self._merge_energy_into_node(node_payload, acc)

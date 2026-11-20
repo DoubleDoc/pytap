@@ -16,6 +16,8 @@ Optimizers stop reporting when it gets dark, and by day one can drop off the rad
 
 Short daytime gaps keep the last value, so a brief radio dropout doesn't zero a panel or break its history. If Home Assistant has no location set, PyTap never assumes it is night.
 
+**After a restart at night**, optimizers that were already quiet for 10 minutes read as asleep straight away: PyTap remembers when each one last reported. After a daytime restart, their last values are held until they report again, normally within seconds.
+
 **You can change what an optimizer's own live sensors show** under **Configure → Change stale reading behaviour**:
 
 | Setting | Choices | Default |

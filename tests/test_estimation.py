@@ -71,7 +71,8 @@ def _coordinator(hass: HomeAssistant, estimate: bool = True):
     }
     coordinator = PyTapDataUpdateCoordinator(hass, entry)
     coordinator._schedule_save = MagicMock()
-    # Daylight for hours, converter online.
+    # Running through hours of daylight, converter online.
+    coordinator._started_mono = time.monotonic() - 4 * 3600
     coordinator._sun_low = False
     coordinator._day_since = time.monotonic() - 4 * 3600
     return coordinator

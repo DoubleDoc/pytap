@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- **Restart at night reads asleep at once** — After a Home Assistant restart at night, every optimizer held its last values for 10 minutes (Data validity *Holding*) before reading 0 as asleep, because quiet time was counted from the restart. When the sun is low at startup, PyTap now carries each optimizer's last report time over from its saved state, so ones already quiet for 10 minutes read as asleep immediately. Daytime restarts are unchanged, and estimates never count time from before PyTap started. Checked against a copy of a live installation's state at night: all 18 optimizers *Asleep* at 0 W from the first update, where 1.6.0 showed *Holding*.
 - **No more `via_device` deprecation warning** — Home Assistant 2026.11 deprecated linking a device to its parent by identifier (it stops working in 2027.8). Optimizer devices now connect via their string's device by registry id (`via_device_id`), registering the string device first.
 
 ## [1.6.0] - 2026-11-20

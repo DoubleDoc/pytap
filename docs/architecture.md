@@ -159,7 +159,7 @@ A health check runs every `HEALTH_CHECK_INTERVAL_SECONDS` (60 s): it refreshes t
 | `silent` | Daylight and quiet for `silent_minutes` (default 30), counted from the later of the last report and the start of daylight | `silent_action`: unavailable (default), last value or 0 |
 | `offline` | No bytes from the converter for `LINK_DOWN_SECONDS` (5 min) | Unavailable |
 
-After a restart, quiet time is counted from when PyTap started (saved report times aren't used yet), so at night panels show their last values for up to 10 minutes before reading 0.
+**Restarts.** If the sun is low when PyTap starts, each optimizer's last report time is carried over from the Store (`_saved_report_times`, from the snapshots' `last_update`; `_resume_report_times()`), so an optimizer quiet for `NIGHT_QUIET_SECONDS` is asleep at once instead of holding its values for another 10 minutes. By day the saved times aren't used: the restart counts as when daylight began, so a saved time would make optimizers read as asleep until their next report. Estimates never start counting before PyTap started (downtime is only bridged from an optimizer's own readings).
 
 The daytime limit is deliberately long: optimizers can drop off the TAP's radio link for minutes and recover by themselves. Without a Home Assistant location, PyTap never assumes it's night.
 
