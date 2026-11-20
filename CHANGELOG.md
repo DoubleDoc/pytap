@@ -14,6 +14,9 @@ The changes below are ported from [Tim Laing](https://github.com/timlaing)'s ups
 
 ### Changed
 
+- **Home Assistant only sees published copies of the data** — The listener thread wrote readings straight into the data entities read, so an entity could see a half-updated panel and, in averaged mode, raw readings could show between publishes. The listener now keeps its own state; Home Assistant gets numbered copies, so an older copy queued from the listener can't undo a newer update such as the midnight reset. Silent-optimizer estimates use the latest readings rather than the last published average. (#33)
+- **Only the panels that changed are refreshed** — Each publish names the panels it changed; other panels' sensors, and strings and totals that don't include them, skip re-rendering. Health checks still refresh everything. (#33)
+- **Save requests are posted once per save cycle** instead of on every reading. (#33)
 - **Connection settings are validated** — Setup and *Change connection settings* check the host and port (1–65535). An unreachable converter is reported once; submitting the same settings again continues, for converters that are offline at the time. Invalid saved settings stop setup with a clear message instead of retrying forever, and correcting them reloads the entry. Finishing setup without any modules explains why instead of just showing the menu again. (#33)
 - The coordinator is kept in `entry.runtime_data` (Home Assistant's current pattern) instead of `hass.data`. CI lints the tests too. (#33)
 

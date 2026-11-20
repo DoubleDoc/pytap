@@ -2,7 +2,7 @@
 
 Covers:
 - Live vs. interval mode selection from entry data
-- Time-weighted averaging logic in _build_averaged_snapshot()
+- Time-weighted averaging logic in _averaged_nodes()
 - Buffer population with timestamps
 - Throttle behaviour in interval mode
 - Live mode push-per-event behaviour
@@ -232,7 +232,7 @@ def _make_entry_two_modules(hass):
 
 
 class TestTimeWeightedAveraging:
-    """Tests for coordinator._build_averaged_snapshot() with time-weighted averaging.
+    """Tests for coordinator._averaged_nodes() with time-weighted averaging.
 
     Readings are stored as (monotonic_timestamp, field_dict) tuples.
     The average for each field is weighted by the duration each reading
@@ -265,7 +265,7 @@ class TestTimeWeightedAveraging:
     ) -> None:
         """Plant a node entry and buffer timestamped readings directly."""
         _, last_fields = timestamped_readings[-1]
-        coordinator.data["nodes"][barcode] = {
+        coordinator._state["nodes"][barcode] = {
             "name": barcode,
             "peak_power": self.PEAK_POWER,
             **last_fields,
@@ -286,7 +286,7 @@ class TestTimeWeightedAveraging:
         coordinator._schedule_save = MagicMock()
         self._seed(coordinator, self.BARCODE_A, [(100.0, self._reading(100.0))])
 
-        snapshot = coordinator._build_averaged_snapshot(flush_ts=105.0)
+        snapshot = {"nodes": {**coordinator._state["nodes"], **coordinator._averaged_nodes(flush_ts=105.0)}}
 
         assert snapshot["nodes"][self.BARCODE_A]["power"] == pytest.approx(
             100.0, rel=1e-3
@@ -307,7 +307,7 @@ class TestTimeWeightedAveraging:
             ],
         )
 
-        snapshot = coordinator._build_averaged_snapshot(flush_ts=110.0)
+        snapshot = {"nodes": {**coordinator._state["nodes"], **coordinator._averaged_nodes(flush_ts=110.0)}}
 
         assert snapshot["nodes"][self.BARCODE_A]["power"] == pytest.approx(
             150.0, rel=1e-3
@@ -333,7 +333,7 @@ class TestTimeWeightedAveraging:
             ],
         )
 
-        snapshot = coordinator._build_averaged_snapshot(flush_ts=110.0)
+        snapshot = {"nodes": {**coordinator._state["nodes"], **coordinator._averaged_nodes(flush_ts=110.0)}}
 
         assert snapshot["nodes"][self.BARCODE_A]["power"] == pytest.approx(
             190.0, rel=1e-3
@@ -360,7 +360,7 @@ class TestTimeWeightedAveraging:
             ],
         )
 
-        snapshot = coordinator._build_averaged_snapshot(flush_ts=130.0)
+        snapshot = {"nodes": {**coordinator._state["nodes"], **coordinator._averaged_nodes(flush_ts=130.0)}}
 
         assert snapshot["nodes"][self.BARCODE_A]["power"] == pytest.approx(
             190.0, rel=1e-3
@@ -383,7 +383,7 @@ class TestTimeWeightedAveraging:
             ],
         )
 
-        snapshot = coordinator._build_averaged_snapshot(flush_ts=110.0)
+        snapshot = {"nodes": {**coordinator._state["nodes"], **coordinator._averaged_nodes(flush_ts=110.0)}}
 
         expected_power = self.PEAK_POWER / 2.0
         expected_perf = round((expected_power / self.PEAK_POWER) * 100.0, 2)
@@ -406,7 +406,7 @@ class TestTimeWeightedAveraging:
             (105.0, {f: None for f in _AVERAGED_FIELDS})
         )
 
-        snapshot = coordinator._build_averaged_snapshot(flush_ts=110.0)
+        snapshot = {"nodes": {**coordinator._state["nodes"], **coordinator._averaged_nodes(flush_ts=110.0)}}
 
         # Only the first reading (100W) contributes
         assert snapshot["nodes"][self.BARCODE_A]["power"] == pytest.approx(
@@ -419,7 +419,7 @@ class TestTimeWeightedAveraging:
             hass, _make_entry(hass, live_reporting=False)
         )
         coordinator._schedule_save = MagicMock()
-        coordinator.data["nodes"][self.BARCODE_A] = {
+        coordinator._state["nodes"][self.BARCODE_A] = {
             "name": self.BARCODE_A,
             "peak_power": self.PEAK_POWER,
             **{f: None for f in _AVERAGED_FIELDS},
@@ -428,7 +428,7 @@ class TestTimeWeightedAveraging:
             (100.0, {f: None for f in _AVERAGED_FIELDS})
         ]
 
-        snapshot = coordinator._build_averaged_snapshot(flush_ts=110.0)
+        snapshot = {"nodes": {**coordinator._state["nodes"], **coordinator._averaged_nodes(flush_ts=110.0)}}
 
         assert snapshot["nodes"][self.BARCODE_A]["power"] is None
         assert snapshot["nodes"][self.BARCODE_A]["performance"] is None
@@ -456,7 +456,7 @@ class TestTimeWeightedAveraging:
             ],
         )
 
-        snapshot = coordinator._build_averaged_snapshot(flush_ts=110.0)
+        snapshot = {"nodes": {**coordinator._state["nodes"], **coordinator._averaged_nodes(flush_ts=110.0)}}
 
         assert snapshot["nodes"][self.BARCODE_A]["power"] == pytest.approx(
             200.0, rel=1e-3
@@ -466,7 +466,7 @@ class TestTimeWeightedAveraging:
         )
 
     def test_self_data_nodes_not_mutated(self, hass: HomeAssistant) -> None:
-        """_build_averaged_snapshot must not mutate self.data['nodes']."""
+        """_averaged_nodes must not mutate self.data['nodes']."""
         coordinator = PyTapDataUpdateCoordinator(
             hass, _make_entry(hass, live_reporting=False)
         )
@@ -480,10 +480,10 @@ class TestTimeWeightedAveraging:
             ],
         )
 
-        coordinator._build_averaged_snapshot(flush_ts=110.0)
+        coordinator._averaged_nodes(flush_ts=110.0)
 
         # Latest raw value (200) must be preserved for persistence
-        assert coordinator.data["nodes"][self.BARCODE_A]["power"] == pytest.approx(
+        assert coordinator._state["nodes"][self.BARCODE_A]["power"] == pytest.approx(
             200.0, rel=1e-3
         )
 
@@ -535,7 +535,7 @@ class TestBufferPopulation:
         coordinator._process_event(_make_power_event(power=100.0))
         coordinator._process_event(_make_power_event(power=200.0))
 
-        assert coordinator.data["nodes"]["A-1234567B"]["power"] == pytest.approx(
+        assert coordinator._state["nodes"]["A-1234567B"]["power"] == pytest.approx(
             200.0, rel=0.01
         )
 
@@ -583,18 +583,22 @@ class TestLivePushAndIdleFlush:
         )
         coordinator._schedule_save = MagicMock()
         self._seed_node(coordinator)
+        coordinator._publish()  # the node table refreshes everything once
+        coordinator._process_event(_make_power_event(power=150.0))
         coordinator._ha_update_pending = True
 
         parser = MagicMock()
         parser.counters = {"frames_received": 1}
-        with patch.object(coordinator.hass.loop, "call_soon_threadsafe") as mock_cstf:
+        with patch.object(coordinator, "_dispatch_snapshot") as mock_cstf:
             coordinator._push_live_update(parser)
 
         assert mock_cstf.called
-        _, payload = mock_cstf.call_args.args
-        assert payload["nodes"] == coordinator.data["nodes"]
-        # Must be a distinct object so listener-thread mutation cannot alias it.
-        assert payload["nodes"] is not coordinator.data["nodes"]
+        _, payload, changed = mock_cstf.call_args.args
+        assert payload["nodes"] == coordinator._state["nodes"]
+        # Copies, so listener-thread updates can't alias what HA reads.
+        assert payload["nodes"] is not coordinator._state["nodes"]
+        assert payload["nodes"][self.BARCODE] is not coordinator._state["nodes"][self.BARCODE]
+        assert changed == {self.BARCODE}
         assert coordinator._ha_update_pending is False
 
     def test_live_push_noop_when_not_pending(self, hass: HomeAssistant) -> None:
@@ -606,7 +610,7 @@ class TestLivePushAndIdleFlush:
         coordinator._ha_update_pending = False
 
         parser = MagicMock()
-        with patch.object(coordinator.hass.loop, "call_soon_threadsafe") as mock_cstf:
+        with patch.object(coordinator, "_dispatch_snapshot") as mock_cstf:
             coordinator._push_live_update(parser)
 
         assert not mock_cstf.called
@@ -624,7 +628,7 @@ class TestLivePushAndIdleFlush:
 
         parser = MagicMock()
         parser.counters = {"frames_received": 1}
-        with patch.object(coordinator.hass.loop, "call_soon_threadsafe") as mock_cstf:
+        with patch.object(coordinator, "_dispatch_snapshot") as mock_cstf:
             coordinator._maybe_flush_interval(parser, now=100.0)
 
         assert mock_cstf.called
@@ -644,7 +648,7 @@ class TestLivePushAndIdleFlush:
 
         parser = MagicMock()
         parser.counters = {"frames_received": 1}
-        with patch.object(coordinator.hass.loop, "call_soon_threadsafe") as mock_cstf:
+        with patch.object(coordinator, "_dispatch_snapshot") as mock_cstf:
             coordinator._maybe_flush_interval(parser, now=100.0)
 
         assert not mock_cstf.called

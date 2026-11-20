@@ -94,6 +94,8 @@ def _report(coordinator, barcode: str, power: float) -> None:
             timestamp=datetime.now(),
         )
     )
+    # The listener publishes after each batch of reports (live mode).
+    coordinator._publish()
 
 
 def _quiet(coordinator, barcode: str, seconds: float) -> None:
@@ -128,7 +130,7 @@ def test_share_is_learned(hass: HomeAssistant) -> None:
 def test_silent_optimizer_estimated_from_string(hass: HomeAssistant) -> None:
     coordinator = _coordinator(hass)
     _learn_shares(coordinator)
-    own_daily = coordinator.data["nodes"][A]["daily_energy_wh"]
+    own_daily = coordinator._state["nodes"][A]["daily_energy_wh"]
 
     _quiet(coordinator, A, 200)
     _report(coordinator, B, 300.0)
@@ -154,7 +156,7 @@ def test_silent_optimizer_estimated_from_string(hass: HomeAssistant) -> None:
     assert own.native_value == own_daily
     # ...while the string includes the estimate and says how much.
     daily = _aggregate(hass, coordinator, "daily_energy")
-    measured = sum(coordinator.data["nodes"][b]["daily_energy_wh"] for b in (A, B, C))
+    measured = sum(coordinator._state["nodes"][b]["daily_energy_wh"] for b in (A, B, C))
     assert daily.native_value == pytest.approx(measured + est_today, abs=0.01)
     assert daily.extra_state_attributes["estimated_energy"] == pytest.approx(
         est_today, abs=0.1
@@ -353,12 +355,12 @@ def test_short_gap_is_bridged(
 ) -> None:
     coordinator = _coordinator(hass, estimate=estimate)
     _learn_shares(coordinator)
-    measured = coordinator.data["nodes"][A]["daily_energy_wh"]
+    measured = coordinator._state["nodes"][A]["daily_energy_wh"]
     _gap(coordinator, A, gap)
     _report(coordinator, A, 100.0)
     assert coordinator.estimated_energy(A)[0] == pytest.approx(expected_wh, abs=0.05)
     # The optimizer's own energy never includes it.
-    assert coordinator.data["nodes"][A]["daily_energy_wh"] == measured
+    assert coordinator._state["nodes"][A]["daily_energy_wh"] == measured
 
 
 def test_short_gap_not_counted_twice_when_estimating(hass: HomeAssistant) -> None:
@@ -402,11 +404,11 @@ def test_restart_gap_is_bridged(
 ) -> None:
     coordinator = _coordinator(hass, estimate=estimate)
     _learn_shares(coordinator)
-    measured = coordinator.data["nodes"][A]["daily_energy_wh"]
+    measured = coordinator._state["nodes"][A]["daily_energy_wh"]
     _restart(coordinator, A, gap, quiet_before_stop)
     _report(coordinator, A, 100.0)
     assert coordinator.estimated_energy(A)[0] == pytest.approx(expected_wh, abs=0.05)
-    assert coordinator.data["nodes"][A]["daily_energy_wh"] == measured
+    assert coordinator._state["nodes"][A]["daily_energy_wh"] == measured
 
 
 def test_restart_gap_only_for_first_reading_after_start(hass: HomeAssistant) -> None:

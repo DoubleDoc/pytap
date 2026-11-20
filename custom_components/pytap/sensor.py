@@ -529,6 +529,8 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        if not self.coordinator.affects((self._barcode,)):
+            return  # another panel's update
         node_data = self.coordinator.data.get("nodes", {}).get(self._barcode)
         if node_data:
             value = node_data.get(self.entity_description.value_key)
@@ -705,6 +707,8 @@ class PyTapAggregateSensor(
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        if not self.coordinator.affects(self._barcodes):
+            return  # none of this string's (or total's) panels changed
         nodes = self.coordinator.data.get("nodes", {})
         has_live_nodes = any(
             nodes.get(barcode) is not None for barcode in self._barcodes
@@ -907,6 +911,12 @@ class PyTapDataValiditySensor(
             model="TS4",
             serial_number=self._barcode,
         )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if self.coordinator.affects((self._barcode,)):
+            self.async_write_ha_state()
 
     @property
     def available(self) -> bool:

@@ -116,7 +116,7 @@ def test_coordinator_keeps_last_valid_temperature_and_rssi(hass) -> None:
                 timestamp=datetime.now(),
             )
         )
-        return coordinator.data["nodes"][A]
+        return coordinator._state["nodes"][A]
 
     node = feed(35.0, 120)
     assert (node["temperature"], node["rssi"]) == (35.0, 120)

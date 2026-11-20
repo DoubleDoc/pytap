@@ -118,7 +118,7 @@ class TestLoadCoordinatorState:
         await coordinator._async_load_coordinator_state()
 
         assert coordinator._discovered_barcodes == {"X-9999999Z", "B-7654321A"}
-        assert coordinator.data["discovered_barcodes"] == [
+        assert coordinator._state["discovered_barcodes"] == [
             "B-7654321A",
             "X-9999999Z",
         ]
@@ -302,7 +302,7 @@ class TestLoadCoordinatorState:
 
         await coordinator._async_load_coordinator_state()
 
-        node = coordinator.data["nodes"]["A-1234567B"]
+        node = coordinator._state["nodes"]["A-1234567B"]
         assert node["power"] == 299.2
         assert node["voltage_in"] == 35.2
         assert node["last_update"] == "2026-02-24T20:00:00"
@@ -329,7 +329,7 @@ class TestSaveCoordinatorState:
                 last_reading_ts=datetime.now(),
             )
         }
-        coordinator.data["nodes"]["A-1234567B"] = {
+        coordinator._state["nodes"]["A-1234567B"] = {
             "gateway_id": 1,
             "node_id": 10,
             "barcode": "A-1234567B",
@@ -624,7 +624,7 @@ class TestPowerReportDeferredBeforeInfra:
         # Should be deferred, not stored. The first report from a node
         # returns True so the node mapping sensor updates; later ones don't.
         assert result is True
-        assert "A-1234567B" not in coordinator.data["nodes"]
+        assert "A-1234567B" not in coordinator._state["nodes"]
         assert coordinator.mapping_status()["unidentified_nodes"] == 1
         assert coordinator._handle_power_report(event) is False
 
@@ -659,7 +659,7 @@ class TestPowerReportDeferredBeforeInfra:
         result = coordinator._handle_power_report(power_event)
 
         assert result is True
-        assert "A-1234567B" in coordinator.data["nodes"]
+        assert "A-1234567B" in coordinator._state["nodes"]
 
     def test_direct_barcode_works_before_infra(self, hass: HomeAssistant) -> None:
         """Power reports with a direct barcode should work even pre-infra."""
@@ -682,7 +682,7 @@ class TestPowerReportDeferredBeforeInfra:
         result = coordinator._handle_power_report(event)
 
         assert result is True
-        assert "A-1234567B" in coordinator.data["nodes"]
+        assert "A-1234567B" in coordinator._state["nodes"]
 
 
 class TestStopFlushesState:
@@ -734,7 +734,7 @@ class TestPowerReportPerformance:
         result = coordinator._handle_power_report(event)
 
         assert result is True
-        node = coordinator.data["nodes"]["A-1234567B"]
+        node = coordinator._state["nodes"]["A-1234567B"]
         assert "performance" in node
         assert node["peak_power"] == 455
 
@@ -757,7 +757,7 @@ class TestPowerReportPerformance:
         )
         coordinator._handle_power_report(event)
 
-        node = coordinator.data["nodes"]["A-1234567B"]
+        node = coordinator._state["nodes"]["A-1234567B"]
         assert node["performance"] == 54.95
 
     def test_power_report_default_peak_power(self, hass: HomeAssistant) -> None:
@@ -789,7 +789,7 @@ class TestPowerReportPerformance:
         )
         coordinator._handle_power_report(event)
 
-        node = coordinator.data["nodes"]["A-1234567B"]
+        node = coordinator._state["nodes"]["A-1234567B"]
         assert node["peak_power"] == DEFAULT_PEAK_POWER
 
 
@@ -862,7 +862,7 @@ class TestEnergyPrePopulation:
         await coordinator._async_load_coordinator_state()
 
         # Node data should be pre-populated with energy values
-        node = coordinator.data["nodes"].get("A-1234567B")
+        node = coordinator._state["nodes"].get("A-1234567B")
         assert node is not None
         assert node["total_energy_wh"] == 5000.0
         assert node["daily_energy_wh"] == 42.5
@@ -895,7 +895,7 @@ class TestEnergyPrePopulation:
 
         await coordinator._async_load_coordinator_state()
 
-        node = coordinator.data["nodes"]["A-1234567B"]
+        node = coordinator._state["nodes"]["A-1234567B"]
         assert node["power"] is None
         assert node["voltage_in"] is None
         assert node["voltage_out"] is None
@@ -939,8 +939,8 @@ class TestEnergyPrePopulation:
 
         await coordinator._async_load_coordinator_state()
 
-        assert "A-1234567B" in coordinator.data["nodes"]
-        assert "UNCONFIGURED-BARCODE" not in coordinator.data["nodes"]
+        assert "A-1234567B" in coordinator._state["nodes"]
+        assert "UNCONFIGURED-BARCODE" not in coordinator._state["nodes"]
 
     async def test_power_report_overwrites_prepopulated_data(
         self, hass: HomeAssistant
@@ -968,7 +968,7 @@ class TestEnergyPrePopulation:
         await coordinator._async_load_coordinator_state()
 
         # Pre-populated: power is None
-        assert coordinator.data["nodes"]["A-1234567B"]["power"] is None
+        assert coordinator._state["nodes"]["A-1234567B"]["power"] is None
 
         # Live power report arrives
         coordinator._infra_received = True
@@ -987,7 +987,7 @@ class TestEnergyPrePopulation:
         )
         coordinator._handle_power_report(event)
 
-        node = coordinator.data["nodes"]["A-1234567B"]
+        node = coordinator._state["nodes"]["A-1234567B"]
         # Live fields should now be populated
         assert node["power"] is not None
         assert node["voltage_in"] == 60.0
@@ -1018,7 +1018,7 @@ class TestMidnightReset:
             last_reading_ts=None,
             readings_today=42,
         )
-        coordinator.data["nodes"]["A-1234567B"] = {
+        coordinator._state["nodes"]["A-1234567B"] = {
             "daily_energy_wh": 150.0,
             "total_energy_wh": 5000.0,
             "readings_today": 42,
@@ -1033,7 +1033,7 @@ class TestMidnightReset:
         assert acc.daily_reset_date == today
         assert acc.total_energy_wh == 5000.0
 
-        node = coordinator.data["nodes"]["A-1234567B"]
+        node = coordinator._state["nodes"]["A-1234567B"]
         assert node["daily_energy_wh"] == 0.0
         assert node["readings_today"] == 0
         assert node["daily_reset_date"] == today
