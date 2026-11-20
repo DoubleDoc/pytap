@@ -126,6 +126,24 @@ def test_coordinator_keeps_last_valid_temperature_and_rssi(hass) -> None:
     assert (node["temperature"], node["rssi"]) == (36.0, 118)
 
 
+def test_flags_reach_published_node_data(hass) -> None:
+    """status/jstatus land in the node data diagnostics read."""
+    from custom_components.pytap.pytap.core.events import PowerReportEvent
+    from tests.test_estimation import A, _coordinator
+
+    coordinator = _coordinator(hass)
+    coordinator._handle_power_report(
+        PowerReportEvent(
+            gateway_id=1, node_id=1, barcode=A, voltage_in=32.0, voltage_out=30.0,
+            current_in=3.0, temperature=30.0, dc_dc_duty_cycle=0.9, rssi=120,
+            timestamp=datetime.now(), status=0x68, jstatus=0x82,
+        )
+    )
+    coordinator._publish()
+    node = coordinator.data["nodes"][A]
+    assert (node["status"], node["jstatus"]) == (0x68, 0x82)
+
+
 def test_flag_bytes_reach_the_event_and_decode_bit_by_bit() -> None:
     """status/jstatus are passed through and decoded as bitfields in diagnostics."""
     from custom_components.pytap.diagnostics import describe_flags
