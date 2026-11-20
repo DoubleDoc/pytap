@@ -12,7 +12,7 @@
   "requirements": [
     "serialx>=1.15.1"
   ],
-  "version": "1.4.11",
+  "version": "1.5.0",
   "dependencies": [
     "usb"
   ],

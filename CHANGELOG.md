@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.5.0] - 2026-11-20
 
 The changes below are ported from [Tim Laing](https://github.com/timlaing)'s upstream pull request series: [PR #32](https://github.com/azebro/pytap/pull/32), [PR #33](https://github.com/azebro/pytap/pull/33), [PR #34](https://github.com/azebro/pytap/pull/34), [PR #35](https://github.com/azebro/pytap/pull/35), [PR #36](https://github.com/azebro/pytap/pull/36) and [PR #37](https://github.com/azebro/pytap/pull/37) so far.
 
