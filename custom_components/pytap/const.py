@@ -153,3 +153,12 @@ READING_OK = "ok"
 READING_ASLEEP = "asleep"
 READING_SILENT = "silent"
 READING_OFFLINE = "offline"
+
+# Readings outside these bounds are treated as corrupt, not as measurements
+# (from Tim Laing's upstream PR azebro/pytap#39). TS4 optimizers only step
+# voltage down, so output above input is impossible; the tolerance covers
+# rounding. None of 99,618 reports captured here on 2026-11-20 broke them.
+MAX_PLAUSIBLE_VOLTAGE = 100.0
+MAX_OUTPUT_ABOVE_INPUT_VOLTS = 2.0
+MIN_PLAUSIBLE_TEMPERATURE = -40.0
+MAX_PLAUSIBLE_TEMPERATURE = 125.0

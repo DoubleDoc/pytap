@@ -54,7 +54,7 @@ from .naming import string_inverter
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 # Bumped from 1 → 2 when voltage/current were split into in/out variants.
 # Bumped from 2 → 3 when module string labels became mandatory.

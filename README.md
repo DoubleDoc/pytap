@@ -9,12 +9,12 @@
 >
 > - **Easier setup and maintenance.** Optimizers can be discovered automatically, so setup can finish without typing in barcodes. Panel entity IDs are the optimizer's barcode (`sensor.tigo_4_5db467z_power`), so moving panels between strings or inverters, or renaming them, never breaks dashboards or history; device names follow every change. One CCA serving several inverters can name each string's inverter and gets a total per inverter.
 > - **More ways to connect.** Besides an RS-485 to TCP converter, a serial adapter on the Home Assistant host or an ESPHome serial proxy.
-> - **Readings you can trust.** Per-panel data validity and health, estimates for silent optimizers, a bus status sensor, sun-aware night handling with a choice of what stale readings show, and energy bridged across short gaps and restarts. String and total energy never jump when modules move, and a malformed bus frame can't crash the parser.
+> - **Readings you can trust.** Per-panel data validity and health, status flags from each report and discarding of physically impossible readings, estimates for silent optimizers, a bus status sensor, sun-aware night handling with a choice of what stale readings show, and energy bridged across short gaps and restarts. String and total energy never jump when modules move, and a malformed bus frame can't crash the parser.
 > - **Robust over time.** Clean stops and reloads, saved energy that is never overwritten by unreadable state, a DST-safe midnight reset, and much lower database load.
 > - **Troubleshooting and research tools.** Record the raw bus on demand, replay it offline through PyTap's own parser, and export every report with its decoded status bits.
 > - **The single-view [PV Panels dashboard](dashboards/pv_panels.md).**
 >
-> Many of these come from [Tim Laing](https://github.com/timlaing)'s upstream pull requests [#32](https://github.com/azebro/pytap/pull/32)–[#38](https://github.com/azebro/pytap/pull/38), adopted here. See the [changelog](CHANGELOG.md) for everything that differs, and [Acknowledgements](#acknowledgements) for credits.
+> Many of these come from [Tim Laing](https://github.com/timlaing)'s upstream pull requests [#32](https://github.com/azebro/pytap/pull/32)–[#39](https://github.com/azebro/pytap/pull/39), adopted here. See the [changelog](CHANGELOG.md) for everything that differs, and [Acknowledgements](#acknowledgements) for credits.
 
 A Home Assistant custom integration for monitoring **Tigo TS4 optimizers** locally, without Tigo's cloud. PyTap listens to the RS-485 bus between a Tigo CCA and its TAP, through an RS-485 to TCP converter, a serial adapter or an ESPHome serial proxy, and exposes real-time per-optimizer sensors: power, voltage, current, temperature, energy and more.
 
@@ -125,6 +125,22 @@ Each configured Tigo TS4 optimizer exposes the following sensors:
 | Total Energy | Wh | `energy` |
 | Readings Today | — | — (diagnostic) |
 | Data validity | — | `enum` (diagnostic): see below |
+
+Each optimizer also has **flag entities** from its power reports' flag bytes, and a **Reading fault** indicator (all diagnostic; adapted from [Tim Laing](https://github.com/timlaing)'s upstream [PR #39](https://github.com/azebro/pytap/pull/39)). Tigo doesn't document the flag bytes: they're read bit by bit, and the names describe what captured data shows ([details and evidence](docs/protocol-status-bits.md)).
+
+| Entity | Type | Source | Meaning | Enabled |
+| --- | --- | --- | --- | --- |
+| Status | sensor | status byte | The whole byte, e.g. `0x64`; its bits decoded as attributes | yes |
+| Low input voltage | binary | status bit 7 | The optimizer's input voltage is low (around 15 V on average when set) | yes |
+| Producing | binary | jstatus bit 7 | Current is flowing through the optimizer | yes |
+| Reading fault | binary (problem) | — | The latest report was physically impossible (see below) | yes |
+| Idle pass-through | binary | status bit 1 | **Tentative:** an idle state passing input straight through, which only some optimizers enter | no |
+| State field | sensor | status bits 3–2 | Always 1 or 2 so far; **meaning open** | no |
+| jstatus level | sensor | jstatus bits 0–6 | **Tentative:** 1–4 while producing, following how hard the optimizer converts | no |
+
+Enable the disabled ones on the optimizer's device page if you want to follow them. Flag entities record a state only when their value changes. They show the latest report's flags while the optimizer reports and while it's asleep at night (its last report then shows its idle state); when it goes silent in daylight they become unavailable, unless the stale-reading settings hold or zero the readings, in which case they keep the last flags.
+
+**Reading fault:** a report is discarded as impossible when its output voltage is more than 2 V above its input (TS4 optimizers only step voltage down), a voltage is outside 0–100 V, or a valid temperature is outside −40…125 °C. A discarded report doesn't replace the last good values, add energy, or count as a fresh report; Reading fault turns on (attributes `fault_reasons` and `last_fault_at`) and a warning is logged, and it turns off with the next valid report. In a 99,618-report capture here, no report broke these rules.
 
 Readings are decoded the way the Tigo CCA's own firmware does it:
 
@@ -657,7 +673,7 @@ Run `./deploy/deploy.sh --help` for all options.
 
 **PyTap is the work of [Adam Zebrowski](https://github.com/azebro)** ([azebro/pytap](https://github.com/azebro/pytap)), and this fork stands entirely on it. Adam wrote the integration from the ground up: the embedded Python parser for the Tigo gateway protocol, the push-based coordinator that turns bus traffic into Home Assistant entities, node-table and barcode mapping that survives restarts, per-optimizer energy integration, the string and installation totals, the configuration flow, and the PV Production dashboard and its Grafana version. Everything this fork adds builds on that foundation, and it's a pleasure to build on: a clean design, thorough tests and careful documentation. Thank you, Adam.
 
-**[Tim Laing](https://github.com/timlaing)** wrote a careful series of upstream pull requests that this fork has adopted, fitting each to the fork's design: parser hardening against invalid slot counters ([#32](https://github.com/azebro/pytap/pull/32)); the reliability work that separates the listener's state from Home Assistant's, bounds shutdown and fixes lifecycle edge cases ([#33](https://github.com/azebro/pytap/pull/33)); configurable stale-reading behaviour ([#34](https://github.com/azebro/pytap/pull/34)); aggregate energy that survives membership changes ([#35](https://github.com/azebro/pytap/pull/35)); serial and ESPHome serial-proxy connections ([#36](https://github.com/azebro/pytap/pull/36)); passive module discovery with module editing ([#37](https://github.com/azebro/pytap/pull/37)); and opt-in raw packet capture with offline replay ([#38](https://github.com/azebro/pytap/pull/38)), whose durable, checksummed capture format is the basis of the fork's research tools. The series is thoughtfully designed and thoroughly tested, and it made PyTap sturdier, easier to set up and easier to maintain. Thank you, Tim.
+**[Tim Laing](https://github.com/timlaing)** wrote a careful series of upstream pull requests that this fork has adopted, fitting each to the fork's design: parser hardening against invalid slot counters ([#32](https://github.com/azebro/pytap/pull/32)); the reliability work that separates the listener's state from Home Assistant's, bounds shutdown and fixes lifecycle edge cases ([#33](https://github.com/azebro/pytap/pull/33)); configurable stale-reading behaviour ([#34](https://github.com/azebro/pytap/pull/34)); aggregate energy that survives membership changes ([#35](https://github.com/azebro/pytap/pull/35)); serial and ESPHome serial-proxy connections ([#36](https://github.com/azebro/pytap/pull/36)); passive module discovery with module editing ([#37](https://github.com/azebro/pytap/pull/37)); and opt-in raw packet capture with offline replay ([#38](https://github.com/azebro/pytap/pull/38)), whose durable, checksummed capture format is the basis of the fork's research tools; and per-optimizer status entities with detection of impossible readings ([#39](https://github.com/azebro/pytap/pull/39)). The series is thoughtfully designed and thoroughly tested, and it made PyTap sturdier, easier to set up and easier to maintain. Thank you, Tim.
 
 [Kyrill](https://github.com/poolski) contributed the averaged reporting interval upstream: the configurable write interval and the time-weighted averaging of readings across it, which this fork now uses by default.
 

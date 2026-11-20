@@ -167,7 +167,8 @@ async def test_sensor_entities_created(hass: HomeAssistant) -> None:
     await async_setup_entry(hass, entry, capture_entities)
 
     # 2 modules × 12 + 2 strings × 4 + installation 4 = 36 entities
-    assert len(entities) == 40  # + data validity per module, node mapping, bus status
+    # + data validity and 3 flag sensors per module, node mapping, bus status
+    assert len(entities) == 46
 
 
 async def test_sensor_unique_ids(hass: HomeAssistant) -> None:
@@ -264,7 +265,8 @@ async def test_sensor_skips_modules_without_barcode(hass: HomeAssistant) -> None
     await async_setup_entry(hass, entry, lambda e: entities.extend(e))
 
     # Only the 2 valid modules should contribute to entities: 2*12 + 2*4 + 4 = 36
-    assert len(entities) == 40  # + data validity per module, node mapping, bus status
+    # + data validity and 3 flag sensors per module, node mapping, bus status
+    assert len(entities) == 46
 
 
 async def test_sensor_device_info(hass: HomeAssistant) -> None:
@@ -354,7 +356,8 @@ async def test_aggregate_entity_count_single_string(hass: HomeAssistant) -> None
     entities = []
     await async_setup_entry(hass, entry, lambda e: entities.extend(e))
 
-    assert len(entities) == 36  # + data validity per module, node mapping, bus status
+    # + data validity and 3 flag sensors per module, node mapping, bus status
+    assert len(entities) == 42
 
 
 async def test_readings_today_sensor_metadata(hass: HomeAssistant) -> None:

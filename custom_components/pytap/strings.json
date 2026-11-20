@@ -222,6 +222,29 @@
           "waiting_for_modules": "Waiting for modules",
           "modules_discovered": "Modules discovered"
         }
+      },
+      "status": {
+        "name": "Status"
+      },
+      "state_field": {
+        "name": "State field"
+      },
+      "jstatus_level": {
+        "name": "jstatus level"
+      }
+    },
+    "binary_sensor": {
+      "low_input_voltage": {
+        "name": "Low input voltage"
+      },
+      "producing": {
+        "name": "Producing"
+      },
+      "idle_pass_through": {
+        "name": "Idle pass-through"
+      },
+      "reading_fault": {
+        "name": "Reading fault"
       }
     }
   },

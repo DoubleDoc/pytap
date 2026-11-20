@@ -7,6 +7,7 @@ from the configured module list — no auto-discovery.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, time, tzinfo
 import logging
@@ -62,6 +63,7 @@ from .const import (
     VALIDITY_STATES,
 )
 from .coordinator import PyTapConfigEntry, PyTapDataUpdateCoordinator
+from .entity import PyTapFlagEntity, optimizer_device_info
 from .naming import (
     cca_total_device_name,
     has_inverter_totals,
@@ -72,6 +74,7 @@ from .naming import (
     string_inverter,
     total_device_name,
 )
+from .pytap.core.flags import describe_flags
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -417,6 +420,15 @@ async def async_setup_entry(
                     inverter=inverter_of(module_config.get(CONF_MODULE_STRING, "")),
                 )
             )
+            entities.extend(
+                PyTapFlagSensor(
+                    coordinator,
+                    description,
+                    module_config,
+                    inverter_of(module_config.get(CONF_MODULE_STRING, "")),
+                )
+                for description in FLAG_SENSOR_DESCRIPTIONS
+            )
 
         aggregates: list[SensorEntity] = []
         for string_name, barcodes in string_to_barcodes.items():
@@ -616,6 +628,91 @@ class PyTapDiscoverySensor(CoordinatorEntity[PyTapDataUpdateCoordinator], Sensor
     def _handle_coordinator_update(self) -> None:
         if self.coordinator.affects(()):
             self.async_write_ha_state()
+
+
+@dataclass(frozen=True, kw_only=True)
+class PyTapFlagSensorDescription(SensorEntityDescription):
+    """Describes a sensor showing part of a power report's flag bytes."""
+
+    value_fn: Callable[[dict[str, Any]], Any]
+
+
+def _status_hex(node: dict[str, Any]) -> str | None:
+    status = node.get("status")
+    return None if status is None else f"0x{status:02X}"
+
+
+FLAG_SENSOR_DESCRIPTIONS: tuple[PyTapFlagSensorDescription, ...] = (
+    PyTapFlagSensorDescription(
+        # The whole status byte, e.g. 0x64; its bits are in the attributes.
+        key="status",
+        translation_key="status",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_status_hex,
+    ),
+    PyTapFlagSensorDescription(
+        # Status bits 3-2: exactly one is set in every report seen (1 or 2).
+        # What the two values mean is open, so it's disabled by default.
+        key="state_field",
+        translation_key="state_field",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda node: None
+        if node.get("status") is None
+        else (node["status"] >> 2) & 0b11,
+    ),
+    PyTapFlagSensorDescription(
+        # jstatus bits 0-6, tentative: 1-4 while producing, following how hard
+        # the optimizer converts.
+        key="jstatus_level",
+        translation_key="jstatus_level",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda node: None if node.get("jstatus") is None else node["jstatus"] & 0x7F,
+    ),
+)
+
+
+class PyTapFlagSensor(PyTapFlagEntity, SensorEntity):
+    """Part of an optimizer's latest flag bytes (see docs/protocol-status-bits.md)."""
+
+    entity_description: PyTapFlagSensorDescription
+
+    def __init__(
+        self,
+        coordinator: PyTapDataUpdateCoordinator,
+        description: PyTapFlagSensorDescription,
+        module_config: dict[str, Any],
+        inverter: str,
+    ) -> None:
+        super().__init__(coordinator, description.key, module_config, inverter, "sensor")
+        self.entity_description = description
+
+    def _value(self, node: dict[str, Any]) -> Any:
+        return self.entity_description.value_fn(node)
+
+    @property
+    def native_value(self) -> Any:
+        return self._current()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """The status byte's bits, decoded (only on the Status sensor)."""
+        if self.entity_description.key != "status" or (node := self._node()) is None:
+            return None
+        flags = describe_flags(node.get("status"), None)
+        if flags is None:
+            return None
+        return {
+            key: flags[key]
+            for key in (
+                "status_bits",
+                "low_input_voltage",
+                "state_field",
+                "idle_pass_through",
+                "temperature_valid",
+            )
+        }
 
 
 class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
@@ -1240,18 +1337,7 @@ class PyTapDataValiditySensor(
         self._barcode = module_config[CONF_MODULE_BARCODE]
         self._attr_unique_id = f"{DOMAIN}_{self._barcode}_data_validity"
         self.entity_id = f"sensor.{optimizer_object_id(self._barcode)}_data_validity"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._barcode)},
-            name=optimizer_device_name(
-                inverter,
-                module_config.get(CONF_MODULE_STRING, ""),
-                module_config[CONF_MODULE_NAME],
-                self._barcode,
-            ),
-            manufacturer="Tigo Energy",
-            model="TS4",
-            serial_number=self._barcode,
-        )
+        self._attr_device_info = optimizer_device_info(inverter, module_config)
 
     @callback
     def _handle_coordinator_update(self) -> None:

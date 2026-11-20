@@ -79,6 +79,10 @@ from .const import (
     MAPPING_COMPLETE,
     MAPPING_PARTIAL,
     MAPPING_WAITING,
+    MAX_OUTPUT_ABOVE_INPUT_VOLTS,
+    MAX_PLAUSIBLE_TEMPERATURE,
+    MAX_PLAUSIBLE_VOLTAGE,
+    MIN_PLAUSIBLE_TEMPERATURE,
     NIGHT_QUIET_SECONDS,
     PENDING_LOG_INTERVAL_SECONDS,
     READING_ASLEEP,
@@ -199,6 +203,27 @@ def parked_coordinators(hass: HomeAssistant) -> dict[str, PyTapDataUpdateCoordin
     Setup of the same entry waits for them (adapted from azebro/pytap#33).
     """
     return hass.data.setdefault(f"{DOMAIN}_parked", {})
+
+
+def reading_faults(event: PowerReportEvent) -> list[str]:
+    """Why a power report is physically impossible (empty if plausible).
+
+    From Tim Laing's upstream PR azebro/pytap#39. A report without a valid
+    temperature (status bit 5 clear) isn't a fault.
+    """
+    faults: list[str] = []
+    if not 0 <= event.voltage_in <= MAX_PLAUSIBLE_VOLTAGE:
+        faults.append("voltage_in_out_of_range")
+    if not 0 <= event.voltage_out <= MAX_PLAUSIBLE_VOLTAGE:
+        faults.append("voltage_out_out_of_range")
+    if event.voltage_out > event.voltage_in + MAX_OUTPUT_ABOVE_INPUT_VOLTS:
+        faults.append("voltage_out_above_input")
+    temperature = event.temperature
+    if temperature is not None and not (
+        MIN_PLAUSIBLE_TEMPERATURE <= temperature <= MAX_PLAUSIBLE_TEMPERATURE
+    ):
+        faults.append("temperature_out_of_range")
+    return faults
 
 
 class BarcodeClaims:
@@ -1864,6 +1889,36 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return True
             # Newly discovered: process this first reading right away.
 
+        if faults := reading_faults(event):
+            # Impossible reading: keep the last good values, energy and
+            # freshness; only flag the fault (azebro/pytap#39).
+            previous = self._state["nodes"].get(barcode)
+            node = (
+                dict(previous)
+                if previous is not None
+                else self._build_node_payload(
+                    barcode, self._module_lookup.get(barcode, {}), event.node_id
+                )
+            )
+            if not (node.get("reading_fault") and node.get("fault_reasons") == faults):
+                self._log.warning(
+                    "Discarded impossible reading from %s (%s): %.2f V in, %.2f V out, %s °C",
+                    self._module_label(barcode),
+                    ", ".join(faults),
+                    event.voltage_in,
+                    event.voltage_out,
+                    event.temperature,
+                )
+            node.update(
+                reading_fault=True,
+                fault_reasons=faults,
+                last_fault_at=dt_util.now().isoformat(),
+            )
+            self._state["nodes"][barcode] = node
+            self._mark_changed(barcode)
+            self._schedule_save()
+            return True
+
         mono = time.monotonic()
         if barcode in self._est_cursor and barcode not in self._est_close:
             self._est_close[barcode] = mono
@@ -1965,6 +2020,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # docs/protocol-status-bits.md).
             "status": getattr(event, "status", None),
             "jstatus": getattr(event, "jstatus", None),
+            "reading_fault": False,
+            "fault_reasons": [],
+            "last_fault_at": previous.get("last_fault_at"),
             "daily_energy_wh": round(acc.daily_energy_wh, 2),
             "total_energy_wh": round(acc.total_energy_wh, 2),
             "readings_today": acc.readings_today,
@@ -2232,6 +2290,12 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "temperature": None,
             "dc_dc_duty_cycle": None,
             "rssi": None,
+            "status": None,
+            "jstatus": None,
+            # Unknown until the first report: no reading yet isn't "no fault".
+            "reading_fault": None,
+            "fault_reasons": [],
+            "last_fault_at": None,
             "daily_energy_wh": 0.0,
             "total_energy_wh": 0.0,
             "readings_today": 0,
@@ -2263,6 +2327,11 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "daily_reset_date",
             "last_update",
             "topology",
+            "status",
+            "jstatus",
+            "reading_fault",
+            "fault_reasons",
+            "last_fault_at",
         ):
             if key in snapshot:
                 node_payload[key] = snapshot[key]
@@ -2460,6 +2529,11 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "daily_reset_date",
                         "last_update",
                         "topology",
+                        "status",
+                        "jstatus",
+                        "reading_fault",
+                        "fault_reasons",
+                        "last_fault_at",
                     }
                 }
                 for barcode, node in self._state["nodes"].items()
