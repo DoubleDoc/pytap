@@ -25,7 +25,6 @@ from .const import (
     CONF_INVERTER,
     CONF_LIVE_REPORTING,
     CONF_MODULE_BARCODE,
-    CONF_MODULE_NAME,
     CONF_MODULE_PEAK_POWER,
     CONF_MODULE_STRING,
     CONF_MODULES,
@@ -47,7 +46,6 @@ from .coordinator import (
     coordinator_store,
     parked_coordinators,
 )
-from .naming import legacy_optimizer_object_id, optimizer_object_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,7 +57,8 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 # Bumped from 4 → 5 when live_reporting toggle was added.
 # Bumped from 5 → 6 when the optional inverter name was added.
 # Bumped from 6 → 7 when serial and serial-proxy connections were added.
-# Bumped from 7 → 8 when optimizer entity IDs became position + barcode.
+# Bumped to 8 for discovery (azebro/pytap#37); versions 6-7 mean different
+# things in this fork and in Tim Laing's PR stack, so 5-7 all migrate to 8.
 CONFIG_ENTRY_VERSION = 8
 
 # Old unique IDs that were replaced by the _in/_out split.
@@ -307,12 +306,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     v2 → v3: module string labels are mandatory.
     v3 → v4: module peak power is added with default value.
     v4 → v5: live_reporting toggle added (default True).
-    v5 → v6: optional inverter name added (default blank).
-    v6 → v7: existing connections explicitly marked as TCP (azebro/pytap#36).
-    v7 → v8: discovery off for existing entries (azebro/pytap#37), and
-             optimizer entity IDs renamed from string-based
-             (sensor.tigo_master_s2_p01_power) to position + barcode
-             (sensor.tigo_master_p01_4_5db467z_power); customised IDs are kept.
+    v5..v7 → v8: missing settings added (inverter name blank, TCP
+             connection, discovery off, no exclusions); existing values,
+             including a serial connection from Tim Laing's PR stack, are kept.
+             Entity IDs are never changed.
     """
     if entry.version > CONFIG_ENTRY_VERSION:
         # Saved by a newer PyTap (downgrade): don't guess at its data.
@@ -385,81 +382,29 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
         hass.config_entries.async_update_entry(entry, data=new_data, version=5)
 
-    if entry.version == 5:
+    if 5 <= entry.version < CONFIG_ENTRY_VERSION:
+        # From here on, version numbers differ between sources: upstream main
+        # stops at 5, Tim Laing's PR stack uses 6 (serial) and 7 (discovery),
+        # this fork 6 (inverter), 7 (connection type) and 8. Every step only
+        # adds missing settings, never overwrites them, so an entry from any
+        # of them (e.g. a serial one) comes through intact.
         _LOGGER.info(
-            "Migrating PyTap config entry %s from version 5 to 6",
+            "Migrating PyTap config entry %s from version %d to %d",
             entry.entry_id,
+            entry.version,
+            CONFIG_ENTRY_VERSION,
         )
         new_data = {**entry.data}
         new_data.setdefault(CONF_INVERTER, DEFAULT_INVERTER)
-        hass.config_entries.async_update_entry(entry, data=new_data, version=6)
-
-    if entry.version == 6:
-        _LOGGER.info(
-            "Migrating PyTap config entry %s from version 6 to 7",
-            entry.entry_id,
-        )
-        hass.config_entries.async_update_entry(
-            entry,
-            data={**entry.data, CONF_CONNECTION_TYPE: CONNECTION_TCP},
-            version=7,
-        )
-
-    if entry.version == 7:
-        renamed = _async_rename_optimizer_entities(hass, entry)
-        _LOGGER.info(
-            "Migrating PyTap config entry %s from version 7 to 8: renamed %d "
-            "optimizer entity IDs to position + barcode",
-            entry.entry_id,
-            renamed,
-        )
+        new_data.setdefault(CONF_CONNECTION_TYPE, CONNECTION_TCP)
         # Existing entries keep manual module selection (discovery off).
+        new_data.setdefault(CONF_AUTO_DISCOVERY, False)
+        new_data.setdefault(CONF_EXCLUDED_BARCODES, [])
         hass.config_entries.async_update_entry(
-            entry,
-            data={
-                **entry.data,
-                CONF_AUTO_DISCOVERY: entry.data.get(CONF_AUTO_DISCOVERY, False),
-                CONF_EXCLUDED_BARCODES: entry.data.get(CONF_EXCLUDED_BARCODES, []),
-            },
-            version=8,
+            entry, data=new_data, version=CONFIG_ENTRY_VERSION
         )
 
     return True
-
-
-@callback
-def _async_rename_optimizer_entities(hass: HomeAssistant, entry: ConfigEntry) -> int:
-    """Rename optimizer entities from the string-based pattern to position + barcode.
-
-    Only entity IDs still at the old automatic pattern are renamed, and only
-    when the new ID is free; Home Assistant keeps their history.
-    """
-    ent_reg = er.async_get(hass)
-    inverter = entry.data.get(CONF_INVERTER, DEFAULT_INVERTER) or ""
-    renamed = 0
-    for module in entry.data.get(CONF_MODULES, []):
-        barcode = module.get(CONF_MODULE_BARCODE)
-        name = module.get(CONF_MODULE_NAME, "")
-        if not barcode:
-            continue
-        old_base = legacy_optimizer_object_id(
-            inverter, module.get(CONF_MODULE_STRING, ""), name
-        )
-        new_base = optimizer_object_id(inverter, name, barcode)
-        prefix = f"{DOMAIN}_{barcode}_"
-        for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
-            if not (reg_entry.unique_id or "").startswith(prefix):
-                continue
-            key = reg_entry.unique_id[len(prefix):]
-            domain = reg_entry.entity_id.split(".", 1)[0]
-            if reg_entry.entity_id != f"{domain}.{old_base}_{key}":
-                continue  # customised by the user: leave it
-            new_id = f"{domain}.{new_base}_{key}"
-            if ent_reg.async_get(new_id) is not None:
-                continue
-            ent_reg.async_update_entity(reg_entry.entity_id, new_entity_id=new_id)
-            renamed += 1
-    return renamed
 
 
 async def _async_cleanup_legacy_entities(

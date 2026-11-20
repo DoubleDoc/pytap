@@ -19,8 +19,7 @@ string's device) instead. String and total devices keep their names.
 
 Optimizer entity IDs combine the position and the barcode, which never
 changes: ``sensor.tigo_master_p01_4_5db467z_power``. They're set when an
-entity is first created; existing IDs from the older string-based pattern
-(``sensor.tigo_master_s2_p01_power``) are migrated once (config entry v8).
+entity is first created; existing entity IDs are never changed.
 """
 
 from __future__ import annotations
@@ -61,11 +60,6 @@ def optimizer_object_id(inverter: str, module_name: str, barcode: str) -> str:
     ``tigo_master_4_5db467z``.
     """
     return slugify(_join(PREFIX, inverter, module_name, barcode))
-
-
-def legacy_optimizer_object_id(inverter: str, string_name: str, module_name: str) -> str:
-    """Entity ID base from before v8: ``tigo_master_s2_p01`` (string, no barcode)."""
-    return slugify(_join(PREFIX, inverter, string_label(string_name), module_name))
 
 
 def string_device_name(inverter: str, string_name: str) -> str:

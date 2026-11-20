@@ -227,7 +227,7 @@ Optimizer devices leave the string out, because maintenance can move a module to
 
 Most installations have one CCA and one PyTap entry, and can leave the inverter name blank. With more than one CCA (for example one per inverter), add one PyTap entry per gateway and give each an inverter name so their devices don't share names.
 
-**Upgrading from 1.4.x:** optimizer entity IDs change once from the older string-based pattern (`sensor.tigo_master_s2_p01_power`) to position + barcode. Only IDs still at the old automatic pattern are renamed; IDs you customised are kept. History and statistics move with them, but dashboards, automations, scripts and templates that name optimizer entities must be updated to the new IDs (string and total entities don't change).
+**Upgrading:** entity IDs that already exist are never changed; the pattern above applies to entities created from now on. Rename older ones in Home Assistant if you want them to match (history and statistics move with the rename).
 
 ### Dual-module optimizers
 

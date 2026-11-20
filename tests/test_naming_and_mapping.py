@@ -344,47 +344,47 @@ async def test_options_rename_string_rejects_existing_name(
 
 
 def test_optimizer_entity_ids_are_position_plus_barcode() -> None:
-    from custom_components.pytap.naming import (
-        legacy_optimizer_object_id,
-        optimizer_object_id,
-    )
+    from custom_components.pytap.naming import optimizer_object_id
 
     assert optimizer_object_id("Master", "P01", "4-5DB467Z") == "tigo_master_p01_4_5db467z"
     assert optimizer_object_id("", "P01", "4-5DB467Z") == "tigo_p01_4_5db467z"
     assert optimizer_object_id("Master", "", "4-5DB467Z") == "tigo_master_4_5db467z"
-    assert legacy_optimizer_object_id("Master", "2", "P01") == "tigo_master_s2_p01"
 
 
-async def test_migration_v7_to_v8_renames_optimizer_entities(hass: HomeAssistant) -> None:
-    """Old string-based IDs move to position + barcode; customised ones stay."""
+async def test_migration_keeps_settings_from_any_source(hass: HomeAssistant) -> None:
+    """Versions 6-7 differ between this fork and Tim Laing's PR stack.
+
+    A serial entry from his stack (v6) stays serial, his discovery choice (v7)
+    is kept, upstream's v5 gets defaults, and no entity ID is changed.
+    """
     from homeassistant.helpers import entity_registry as er
 
-    entry = MockConfigEntry(
-        domain=DOMAIN,
-        version=7,
-        data={CONF_HOST: "h", CONF_MODULES: MODULES, CONF_INVERTER: "Master",
-              "connection_type": "tcp"},
-    )
-    entry.add_to_hass(hass)
+    tim_serial = MockConfigEntry(domain=DOMAIN, version=6, data={
+        CONF_MODULES: MODULES, "connection_type": "serial",
+        "serial_port": "/dev/ttyUSB0", "baud_rate": 38400})
+    tim_discovery = MockConfigEntry(domain=DOMAIN, version=7, data={
+        CONF_HOST: "h", CONF_MODULES: [], "connection_type": "tcp",
+        "auto_discovery": True, "excluded_barcodes": ["X-1"]})
+    upstream = MockConfigEntry(domain=DOMAIN, version=5, data={
+        CONF_HOST: "h", CONF_MODULES: MODULES})
+    for entry in (tim_serial, tim_discovery, upstream):
+        entry.add_to_hass(hass)
     reg = er.async_get(hass)
-    a, b = MODULES[0][CONF_MODULE_BARCODE], MODULES[1][CONF_MODULE_BARCODE]
-    reg.async_get_or_create("sensor", DOMAIN, f"{DOMAIN}_{a}_power", config_entry=entry,
-                            suggested_object_id="tigo_master_s2_p01_power")
-    reg.async_get_or_create("sensor", DOMAIN, f"{DOMAIN}_{a}_data_validity",
-                            config_entry=entry,
-                            suggested_object_id="tigo_master_s2_p01_data_validity")
-    reg.async_get_or_create("sensor", DOMAIN, f"{DOMAIN}_{b}_power", config_entry=entry,
-                            suggested_object_id="my_custom_name")
+    a = MODULES[0][CONF_MODULE_BARCODE]
+    reg.async_get_or_create("sensor", DOMAIN, f"{DOMAIN}_{a}_power",
+                            config_entry=upstream, suggested_object_id="tigo_s2_p01_power")
 
-    assert await async_migrate_entry(hass, entry)
-    assert entry.version == 8
-    slug_a = a.lower().replace("-", "_")
+    for entry in (tim_serial, tim_discovery, upstream):
+        assert await async_migrate_entry(hass, entry)
+        assert entry.version == 8
+    assert tim_serial.data["connection_type"] == "serial"
+    assert tim_serial.data["serial_port"] == "/dev/ttyUSB0"
+    assert tim_serial.data["auto_discovery"] is False
+    assert tim_discovery.data["auto_discovery"] is True
+    assert tim_discovery.data["excluded_barcodes"] == ["X-1"]
+    assert upstream.data == {**upstream.data, CONF_INVERTER: "",
+                             "connection_type": "tcp", "auto_discovery": False,
+                             "excluded_barcodes": []}
     assert reg.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{a}_power") == (
-        f"sensor.tigo_master_p01_{slug_a}_power"
-    )
-    assert reg.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{a}_data_validity") == (
-        f"sensor.tigo_master_p01_{slug_a}_data_validity"
-    )
-    assert reg.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{b}_power") == (
-        "sensor.my_custom_name"
+        "sensor.tigo_s2_p01_power"
     )
