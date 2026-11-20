@@ -30,7 +30,7 @@ Each optimizer also has **flag entities** from its power reports' flag bytes, an
 | --- | --- | --- | --- | --- |
 | Status | sensor | status byte | The whole byte, e.g. `0x64`; its bits decoded as attributes | yes |
 | Low input voltage | binary | status bit 7 | The optimizer's input voltage is low (around 15 V on average when set) | yes |
-| Producing | binary | jstatus bit 7 | Current is flowing through the optimizer | yes |
+| High output mode | binary | jstatus bit 7 | **Tentative:** set in nearly every report above about 0.5 A input current, rarely below 0.25 A (name from Tim Laing's PR #39) | yes |
 | Reading fault | binary (problem) | — | The latest report was physically impossible (see below) | yes |
 | Idle pass-through | binary | status bit 1 | **Tentative:** an idle state passing input straight through, which only some optimizers enter | no |
 | State field | sensor | status bits 3–2 | Always 1 or 2 so far; **meaning open** | no |

@@ -52,7 +52,10 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[PyTapBinarySensorEntityDescription, ...] = (
         value_fn=_bit("status", 0x80),
     ),
     PyTapBinarySensorEntityDescription(
-        # jstatus (byte 7) bit 7: set in every report with current flowing.
+        # jstatus (byte 7) bit 7, "high output mode" (Tim Laing's name,
+        # azebro/pytap#39), tentative: set in nearly every report above about
+        # 0.5 A input current, rarely below 0.25 A. The key stays "producing",
+        # an earlier name, so entity IDs don't change.
         key="producing",
         translation_key="producing",
         entity_category=EntityCategory.DIAGNOSTIC,

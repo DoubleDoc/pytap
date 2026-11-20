@@ -238,7 +238,7 @@
         "name": "Low input voltage"
       },
       "producing": {
-        "name": "Producing"
+        "name": "High output mode"
       },
       "idle_pass_through": {
         "name": "Idle pass-through"

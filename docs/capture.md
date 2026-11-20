@@ -24,7 +24,7 @@ All actions are admin-only. Run them from the **Actions** tab of Home Assistant'
 4. **`pytap.list_captures`**: the latest 20 captures of an instance, with their `capture_id`.
 5. **`pytap.export_capture`** (optional): checks a stopped capture and writes a private ZIP next to it, to copy off with Samba or a file manager add-on. It isn't offered for download over the web on purpose.
 
-**Size:** measured on two gateways (6 and 12 optimizers), the raw bus runs about **10–12 MB an hour**, and the timing index adds 17–76% more depending on how the converter delivers bytes (many small reads make a bigger index): about **14–17 MB an hour** in all, so 330–420 MB a day per gateway. A 24-hour capture fits the default 1 GiB budget. Check `pytap.capture_status` rather than assuming a long capture fits: a capture that reaches its budget stops.
+**Size:** measured on two gateways (6 and 12 optimizers), the raw bus runs about **10–12 MB an hour**, and the timing index adds 17–76% more depending on how the converter delivers bytes (many small reads make a bigger index): about **14–17 MB an hour** in all, so 330–420 MB a day per gateway. It doesn't drop at night: the CCA keeps polling the bus after the optimizers go to sleep. A 24-hour capture fits the default 1 GiB budget. Check `pytap.capture_status` rather than assuming a long capture fits: a capture that reaches its budget stops.
 
 **Privacy:** captures contain your optimizers' barcodes and everything on the bus. Files are readable only by Home Assistant, and contain no host names, IP addresses or credentials, but share a capture only deliberately. Never move captures into `/config/www` (anything there is served over the web) or have them uploaded automatically.
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.6.1] - 2026-11-20
 
 ### Changed
 
@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- **Flag documentation corrected with a dusk capture** — jstatus bit 7 is set in nearly every report above about 0.5 A and rarely below 0.25 A; it is not, as documented, set in every report with current flowing. Its entity is renamed from *Producing* to **High output mode**, Tim Laing's name for it, which this data confirms; its entity ID (`…_producing`) doesn't change. Bit 3 and bit 1 appear only in the morning. The jstatus levels follow the same order at dawn and dusk. Bus traffic is the same day and night. See [protocol-status-bits.md](docs/protocol-status-bits.md).
 - **Restart at night reads asleep at once** — After a Home Assistant restart at night, every optimizer held its last values for 10 minutes (Data validity *Holding*) before reading 0 as asleep, because quiet time was counted from the restart. When the sun is low at startup, PyTap now carries each optimizer's last report time over from its saved state, so ones already quiet for 10 minutes read as asleep immediately. Daytime restarts are unchanged, and estimates never count time from before PyTap started. Checked against a copy of a live installation's state at night: all 18 optimizers *Asleep* at 0 W from the first update, where 1.6.0 showed *Holding*.
 - **No more `via_device` deprecation warning** — Home Assistant 2026.11 deprecated linking a device to its parent by identifier (it stops working in 2027.8). Optimizer devices now connect via their string's device by registry id (`via_device_id`), registering the string device first.
 
