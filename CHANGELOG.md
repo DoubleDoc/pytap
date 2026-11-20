@@ -2,10 +2,11 @@
 
 ## [Unreleased]
 
-The changes below are ported from [Tim Laing](https://github.com/timlaing)'s upstream pull request series: [PR #32](https://github.com/azebro/pytap/pull/32), [PR #33](https://github.com/azebro/pytap/pull/33) and [PR #34](https://github.com/azebro/pytap/pull/34) so far.
+The changes below are ported from [Tim Laing](https://github.com/timlaing)'s upstream pull request series: [PR #32](https://github.com/azebro/pytap/pull/32), [PR #33](https://github.com/azebro/pytap/pull/33), [PR #34](https://github.com/azebro/pytap/pull/34) and [PR #35](https://github.com/azebro/pytap/pull/35) so far.
 
 ### Fixed
 
+- **String and total energy survive membership changes** — They summed their members' lifetime totals, so moving a module to another string (*Edit a module*), adding one or removing one made a string's or total's energy jump by that module's whole history (recorded as new production) and the old one drop (seen as a meter reset). Each now keeps its own running count of members' increases (measured plus estimated), restored after a restart; existing installations continue from their current value with no jump. The daily sensors reset at local midnight with `last_reset` at the start of their own day. (#35)
 - **Saved state that can't be read is never overwritten** — If PyTap couldn't read its saved state, it started empty and its next save replaced the file, losing lifetime energy totals. It now leaves the file alone until the next reload. (#33)
 - **Midnight reset is DST-safe** — It used a timer for "seconds until midnight", which fired an hour off on the nights the clocks change; it now uses Home Assistant's local-time scheduling. (#33)
 - **Stopping interrupts the connection** — A stop wakes the listener's blocked read at once instead of waiting for its timeout. A listener that doesn't stop within 15 s is set aside and the entry isn't set up again until it has released the connection, instead of the entry getting stuck. A setup that fails part-way stops its listener again. (#33)

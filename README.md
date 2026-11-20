@@ -370,6 +370,8 @@ the node mapping status, discovered barcodes, connection state, and per-node sum
 
 Each optimizer, string and gateway total has a **Total energy** sensor (Wh, `total_increasing`). Add the gateway totals under **Settings → Dashboards → Energy → Solar production** to see PyTap's production there. If your inverter also reports production, add only one of them to avoid counting it twice.
 
+The String and Total devices' energy sensors keep their own running count: they add up each member's increase since it was last seen, rather than summing the members' lifetime totals. So moving a module to another string, or adding or removing one, never adds its whole history to a total or looks like a meter reset in long-term statistics; only energy produced afterwards counts. (From [Tim Laing](https://github.com/timlaing)'s upstream [PR #35](https://github.com/azebro/pytap/pull/35).)
+
 ### Example dashboards
 
 - **[PV Panels](dashboards/pv_panels.md)** (recommended): one view with power, today's energy, readings and data validity on every panel tile, and a switch to colour the tiles by power or energy. See [See every panel at once](#see-every-panel-at-once).

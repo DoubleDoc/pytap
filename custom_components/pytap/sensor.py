@@ -8,7 +8,7 @@ from the configured module list — no auto-discovery.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, tzinfo
 import logging
 from typing import Any
 
@@ -34,6 +34,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import ExtraStoredData
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
@@ -600,10 +601,36 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
         return datetime.combine(reset_day, time.min, tzinfo=timezone)
 
 
+@dataclass
+class _AggregateEnergyData(ExtraStoredData):
+    """Restorable aggregate energy: own total plus each member's last seen value."""
+
+    native_value: float | None
+    native_unit_of_measurement: str | None
+    baselines: dict[str, float]
+    cycle_date: str | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "native_value": self.native_value,
+            "native_unit_of_measurement": self.native_unit_of_measurement,
+            "baselines": dict(self.baselines),
+            "cycle_date": self.cycle_date,
+        }
+
+
 class PyTapAggregateSensor(
     CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor
 ):
-    """Aggregate sensor that sums values across multiple optimizers."""
+    """Aggregate across optimizers.
+
+    Live values sum current member readings. Energy instead adds up each
+    member's *increase* since it was last seen (measured plus estimated), in
+    the aggregate's own restored counter, so a module moved between strings,
+    added or removed never adds its lifetime energy or looks like a meter
+    reset in long-term statistics. Adapted from Tim Laing's upstream PR
+    azebro/pytap#35.
+    """
 
     _attr_has_entity_name = True
     entity_description: PyTapAggregateSensorDescription
@@ -623,10 +650,26 @@ class PyTapAggregateSensor(
         self._attr_unique_id = unique_id
         self._attr_device_info = device_info
         self._restored_native_value = False
+        self._energy_total: float | None = None
+        self._baselines: dict[str, float] = {}
+        self._cycle_date: str | None = None
+
+    @property
+    def _is_energy(self) -> bool:
+        return self.entity_description.key in ("daily_energy", "total_energy")
+
+    @property
+    def _is_daily(self) -> bool:
+        return self.entity_description.key == "daily_energy"
 
     async def async_added_to_hass(self) -> None:
         """Restore last known aggregate value from Home Assistant state cache."""
         await super().async_added_to_hass()
+
+        if self._is_energy:
+            await self._async_restore_energy()
+            self._handle_coordinator_update()
+            return
 
         nodes = self.coordinator.data.get("nodes", {})
         # Only short-circuit to live data if at least one node already has
@@ -669,6 +712,104 @@ class PyTapAggregateSensor(
         if native_value is not None:
             self._attr_native_value = native_value
             self._restored_native_value = True
+
+    async def _async_restored_value(self) -> float | None:
+        if (restored := await self.async_get_last_sensor_data()) is not None:
+            if isinstance(restored.native_value, (int, float)):
+                return float(restored.native_value)
+        if (restored_state := await self.async_get_last_state()) is not None:
+            return _coerce_restored_state_value(
+                restored_state.state, self.entity_description.key
+            )
+        return None
+
+    async def _async_restore_energy(self) -> None:
+        """Restore the own total and member baselines; upgrade from a plain sum."""
+        extra = await self.async_get_last_extra_data()
+        data = extra.as_dict() if extra is not None else {}
+        baselines = data.get("baselines")
+        if isinstance(baselines, dict) and isinstance(
+            data.get("native_value"), (int, float)
+        ):
+            self._energy_total = float(data["native_value"])
+            self._baselines = {
+                str(barcode): float(value)
+                for barcode, value in baselines.items()
+                if isinstance(value, (int, float))
+            }
+            cycle_date = data.get("cycle_date")
+            self._cycle_date = cycle_date if isinstance(cycle_date, str) else None
+        else:
+            # Earlier versions summed the members; continue from that value
+            # and treat every member as newly joined (no double counting).
+            self._energy_total = await self._async_restored_value()
+            if self._is_daily and self._energy_total is not None:
+                restored_state = await self.async_get_last_state()
+                if restored_state is not None:
+                    self._cycle_date = (
+                        dt_util.as_local(restored_state.last_updated).date().isoformat()
+                    )
+        if self._energy_total is not None:
+            self._attr_native_value = round(self._energy_total, 2)
+            self._restored_native_value = True
+
+    @property
+    def extra_restore_state_data(self) -> ExtraStoredData:
+        if not self._is_energy:
+            return super().extra_restore_state_data
+        return _AggregateEnergyData(
+            self._energy_total,
+            self.native_unit_of_measurement,
+            self._baselines,
+            self._cycle_date,
+        )
+
+    def _timezone(self) -> tzinfo:
+        if self.hass is not None:
+            return dt_util.get_time_zone(self.hass.config.time_zone) or dt_util.UTC
+        return dt_util.UTC
+
+    def _today(self) -> str:
+        return dt_util.now(self._timezone()).date().isoformat()
+
+    def _member_energy(self, barcode: str, node_data: dict[str, Any]) -> float | None:
+        """A member's energy as this aggregate counts it: measured plus estimated."""
+        value = node_data.get(self.entity_description.value_key)
+        # String and total energy include energy estimated while an optimizer
+        # was silent; its own sensors never do.
+        est_today, est_total = self.coordinator.estimated_energy(barcode)
+        estimate = est_today if self._is_daily else est_total
+        if value is None and not estimate:
+            return None
+        return float(value or 0.0) + float(estimate or 0.0)
+
+    def _accumulate_energy(self, nodes: dict[str, Any]) -> None:
+        """Add each member's increase since it was last seen."""
+        if self._is_daily and self._cycle_date != (today := self._today()):
+            self._cycle_date = today
+            if self._energy_total is not None:
+                self._energy_total = 0.0
+        values = {
+            barcode: value
+            for barcode in self._barcodes
+            if (node := nodes.get(barcode)) is not None
+            and (value := self._member_energy(barcode, node)) is not None
+        }
+        if self._energy_total is None:
+            # First value ever: start from the members' current totals.
+            self._energy_total = sum(values.values()) if values else None
+        else:
+            for barcode, value in values.items():
+                previous = self._baselines.get(barcode)
+                # New members and member resets (e.g. midnight) only rebase.
+                if previous is not None and value > previous:
+                    self._energy_total += value - previous
+        # Keep the baselines of members that sent nothing this time.
+        self._baselines = {
+            barcode: value
+            for barcode, value in {**self._baselines, **values}.items()
+            if barcode in self._barcodes
+        }
 
     @property
     def available(self) -> bool:
@@ -767,6 +908,14 @@ class PyTapAggregateSensor(
             self.async_write_ha_state()
             return
 
+        if self._is_energy:
+            self._accumulate_energy(nodes)
+            if self._energy_total is not None:
+                self._attr_native_value = round(self._energy_total, 2)
+                self._restored_native_value = False
+            self.async_write_ha_state()
+            return
+
         total: float | None = None
 
         for barcode in self._barcodes:
@@ -777,13 +926,6 @@ class PyTapAggregateSensor(
                 value = self._live_power(barcode, node_data)
             else:
                 value = node_data.get(self.entity_description.value_key)
-                # String and total energy include energy estimated while an
-                # optimizer was silent; its own sensors never do.
-                est_today, est_total = self.coordinator.estimated_energy(barcode)
-                if self.entity_description.key == "daily_energy":
-                    value = (value or 0.0) + est_today
-                elif self.entity_description.key == "total_energy":
-                    value = (value or 0.0) + est_total
             if value is not None:
                 total = (total or 0.0) + value
 
@@ -793,15 +935,15 @@ class PyTapAggregateSensor(
 
     @property
     def last_reset(self) -> datetime | None:
-        """Return last reset for aggregate daily energy."""
-        if self.entity_description.key != "daily_energy":
+        """Return last reset for aggregate daily energy (start of its own cycle)."""
+        if not self._is_daily:
             return None
-
-        timezone = dt_util.UTC
-        if self.hass is not None:
-            timezone = dt_util.get_time_zone(self.hass.config.time_zone) or dt_util.UTC
-
-        return datetime.combine(dt_util.now(timezone).date(), time.min, tzinfo=timezone)
+        cycle = self._cycle_date or self._today()
+        try:
+            cycle_day = date.fromisoformat(cycle)
+        except ValueError:
+            cycle_day = date.fromisoformat(self._today())
+        return datetime.combine(cycle_day, time.min, tzinfo=self._timezone())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
