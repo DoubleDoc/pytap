@@ -28,6 +28,21 @@ DEFAULT_LIVE_REPORTING = True
 DEFAULT_WRITE_INTERVAL = 60
 DEFAULT_INVERTER = ""
 CONF_ESTIMATE_SILENT = "estimate_silent"
+
+# What a quiet optimizer's own live sensors show (adapted from Tim Laing's
+# upstream PR azebro/pytap#34, fitted to the fork's sun-aware rules).
+CONF_NIGHT_ACTION = "night_action"  # asleep: "zero" or "hold"
+CONF_SILENT_ACTION = "silent_action"  # silent by day: "unavailable", "hold", "zero"
+CONF_SILENT_MINUTES = "silent_minutes"
+STALE_ZERO = "zero"
+STALE_HOLD = "hold"
+STALE_UNAVAILABLE = "unavailable"
+NIGHT_ACTIONS = (STALE_ZERO, STALE_HOLD)
+SILENT_ACTIONS = (STALE_UNAVAILABLE, STALE_HOLD, STALE_ZERO)
+DEFAULT_NIGHT_ACTION = STALE_ZERO
+DEFAULT_SILENT_ACTION = STALE_UNAVAILABLE
+MIN_SILENT_MINUTES = 5
+MAX_SILENT_MINUTES = 240
 DEFAULT_ESTIMATE_SILENT = True
 MIN_WRITE_INTERVAL = 5
 MAX_WRITE_INTERVAL = 300
@@ -56,6 +71,7 @@ HEALTH_CHECK_INTERVAL_SECONDS = 60
 LOW_SUN_ELEVATION = 10.0
 NIGHT_QUIET_SECONDS = 10 * 60
 SILENT_UNAVAILABLE_SECONDS = 30 * 60
+DEFAULT_SILENT_MINUTES = SILENT_UNAVAILABLE_SECONDS // 60
 # No bytes at all from the converter for this long: live readings unavailable.
 LINK_DOWN_SECONDS = 5 * 60
 # Pending node table: how often to repeat the INFO reminder.

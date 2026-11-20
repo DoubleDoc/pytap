@@ -28,6 +28,11 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+)
 import voluptuous as vol
 
 from .connection import InvalidConnectionSettings, normalize_connection
@@ -40,16 +45,26 @@ from .const import (
     CONF_MODULE_PEAK_POWER,
     CONF_MODULE_STRING,
     CONF_MODULES,
+    CONF_NIGHT_ACTION,
+    CONF_SILENT_ACTION,
+    CONF_SILENT_MINUTES,
     CONF_WRITE_INTERVAL,
     DEFAULT_ESTIMATE_SILENT,
     DEFAULT_INVERTER,
     DEFAULT_LIVE_REPORTING,
+    DEFAULT_NIGHT_ACTION,
     DEFAULT_PEAK_POWER,
     DEFAULT_PORT,
+    DEFAULT_SILENT_ACTION,
+    DEFAULT_SILENT_MINUTES,
     DEFAULT_WRITE_INTERVAL,
     DOMAIN,
+    MAX_SILENT_MINUTES,
     MAX_WRITE_INTERVAL,
+    MIN_SILENT_MINUTES,
     MIN_WRITE_INTERVAL,
+    NIGHT_ACTIONS,
+    SILENT_ACTIONS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -291,6 +306,15 @@ class PyTapOptionsFlow(OptionsFlow):
             dict(m) for m in config_entry.data.get(CONF_MODULES, [])
         ]
         self._inverter: str = config_entry.data.get(CONF_INVERTER, "") or ""
+        self._stale: dict[str, Any] = {
+            CONF_NIGHT_ACTION: config_entry.data.get(CONF_NIGHT_ACTION, DEFAULT_NIGHT_ACTION),
+            CONF_SILENT_ACTION: config_entry.data.get(
+                CONF_SILENT_ACTION, DEFAULT_SILENT_ACTION
+            ),
+            CONF_SILENT_MINUTES: config_entry.data.get(
+                CONF_SILENT_MINUTES, DEFAULT_SILENT_MINUTES
+            ),
+        }
         # Original string name -> new name, applied to the registries on save.
         self._string_renames: dict[str, str] = {}
         self._edit_barcode: str | None = None
@@ -306,6 +330,7 @@ class PyTapOptionsFlow(OptionsFlow):
                 "change_connection",
                 "change_reporting",
                 "change_inverter",
+                "change_stale",
                 "add_module",
                 "edit_module",
                 "rename_string",
@@ -326,6 +351,7 @@ class PyTapOptionsFlow(OptionsFlow):
             **self._config_entry.data,
             CONF_MODULES: self._modules,
             CONF_INVERTER: self._inverter,
+            **self._stale,
         }
         self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
         return self.async_create_entry(title="", data={})
@@ -379,6 +405,54 @@ class PyTapOptionsFlow(OptionsFlow):
             step_id="change_inverter",
             data_schema=vol.Schema(
                 {vol.Optional(CONF_INVERTER, default=self._inverter): str}
+            ),
+        )
+
+    async def async_step_change_stale(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """What a quiet optimizer's own live sensors show.
+
+        Adapted from Tim Laing's upstream PR azebro/pytap#34, fitted to the
+        fork's sun-aware rules: at night (asleep) and when silent by day.
+        """
+        if user_input is not None:
+            self._stale = {
+                CONF_NIGHT_ACTION: user_input[CONF_NIGHT_ACTION],
+                CONF_SILENT_ACTION: user_input[CONF_SILENT_ACTION],
+                CONF_SILENT_MINUTES: int(user_input[CONF_SILENT_MINUTES]),
+            }
+            return await self.async_step_init()
+
+        return self.async_show_form(
+            step_id="change_stale",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_NIGHT_ACTION, default=self._stale[CONF_NIGHT_ACTION]
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=list(NIGHT_ACTIONS),
+                            translation_key=CONF_NIGHT_ACTION,
+                            mode=SelectSelectorMode.LIST,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_SILENT_ACTION, default=self._stale[CONF_SILENT_ACTION]
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=list(SILENT_ACTIONS),
+                            translation_key=CONF_SILENT_ACTION,
+                            mode=SelectSelectorMode.LIST,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_SILENT_MINUTES, default=self._stale[CONF_SILENT_MINUTES]
+                    ): vol.All(
+                        vol.Coerce(int),
+                        vol.Range(min=MIN_SILENT_MINUTES, max=MAX_SILENT_MINUTES),
+                    ),
+                }
             ),
         )
 

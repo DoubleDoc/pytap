@@ -153,6 +153,16 @@ Optimizers stop reporting when it gets dark, and by day one can drop off the rad
 
 Short daytime gaps keep the last value, so a brief radio dropout doesn't zero a panel or break its history. If Home Assistant has no location set, PyTap never assumes it is night.
 
+**You can change what an optimizer's own live sensors show** under **Configure → Change stale reading behaviour**:
+
+| Setting | Choices | Default |
+| --- | --- | --- |
+| At night (asleep) | **Zero** as above, or **Hold last value** | Zero |
+| When silent in daylight | **Unavailable** as above, **Hold last value**, or **Zero** (as at night) | Unavailable |
+| Silent after | 5–240 minutes | 30 |
+
+Energy and Readings Today are never affected, and the String and Total devices keep their rules whatever you choose: sleeping optimizers count as 0 W, and silent ones as their estimate. Short dropouts are normal: on one 19-panel installation, gaps between reports reached about 76 s during production and 171 s at dawn, so keep *Silent after* well above a few minutes. These settings and the measurements come from [Tim Laing](https://github.com/timlaing)'s upstream [PR #34](https://github.com/azebro/pytap/pull/34).
+
 These rules apply to each optimizer's own sensors. For the String and Total devices, see the next section.
 
 ### Estimating silent optimizers

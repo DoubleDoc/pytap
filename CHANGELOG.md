@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-The changes below are ported from [Tim Laing](https://github.com/timlaing)'s upstream pull request series: [PR #32](https://github.com/azebro/pytap/pull/32) and [PR #33](https://github.com/azebro/pytap/pull/33) so far.
+The changes below are ported from [Tim Laing](https://github.com/timlaing)'s upstream pull request series: [PR #32](https://github.com/azebro/pytap/pull/32), [PR #33](https://github.com/azebro/pytap/pull/33) and [PR #34](https://github.com/azebro/pytap/pull/34) so far.
 
 ### Fixed
 
@@ -12,8 +12,13 @@ The changes below are ported from [Tim Laing](https://github.com/timlaing)'s ups
 - **Removing an entry deletes its saved state.** (#33)
 - **Diagnostics hide the entry title**, which contains the converter's address (the host itself was already hidden). (#33)
 
+### Added
+
+- **Stale reading behaviour** — **Configure → Change stale reading behaviour** sets what an optimizer's own live sensors show when it stops reporting: at night *Zero* (default) or *Hold last value*; when silent in daylight *Unavailable* (default), *Hold last value* or *Zero*; and after how many minutes a daylight dropout counts as silent (5–240, default 30). Energy sensors and the String and Total devices' rules don't change. Fitted to the fork's sun-aware rules rather than replacing them. (#34)
+
 ### Changed
 
+- **Health checks re-render only what changed** — When an optimizer goes quiet or comes back, only its entities and the strings and totals containing it are refreshed, instead of every entity. (#34)
 - **Home Assistant only sees published copies of the data** — The listener thread wrote readings straight into the data entities read, so an entity could see a half-updated panel and, in averaged mode, raw readings could show between publishes. The listener now keeps its own state; Home Assistant gets numbered copies, so an older copy queued from the listener can't undo a newer update such as the midnight reset. Silent-optimizer estimates use the latest readings rather than the last published average. (#33)
 - **Only the panels that changed are refreshed** — Each publish names the panels it changed; other panels' sensors, and strings and totals that don't include them, skip re-rendering. Health checks still refresh everything. (#33)
 - **Save requests are posted once per save cycle** instead of on every reading. (#33)

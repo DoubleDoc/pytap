@@ -138,6 +138,8 @@ def _make_mock_coordinator(hass, entry, node_data=None):
     # Reading health: everything reporting, nothing estimated.
     coordinator.link_up = True
     coordinator.estimate_enabled = True
+    coordinator.night_action = "zero"
+    coordinator.silent_action = "unavailable"
     coordinator.reading_state.return_value = "ok"
     coordinator.estimated_power.return_value = None
     coordinator.estimated_energy.return_value = (0.0, 0.0)

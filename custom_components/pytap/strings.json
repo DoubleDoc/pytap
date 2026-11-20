@@ -197,7 +197,8 @@
           "change_reporting": "Change reporting settings",
           "change_inverter": "Change inverter name",
           "edit_module": "Edit a module",
-          "rename_string": "Rename a string"
+          "rename_string": "Rename a string",
+          "change_stale": "Change stale reading behaviour"
         }
       },
       "change_connection": {
@@ -290,6 +291,20 @@
           "old_string": "String",
           "new_string": "New name"
         }
+      },
+      "change_stale": {
+        "title": "Stale reading behaviour",
+        "description": "What an optimizer's own live sensors (power, voltages, currents, performance, duty cycle) show when it stops reporting. Energy sensors are never affected, and string and total power always count sleeping optimizers as 0 W and use estimates for silent ones.",
+        "data": {
+          "night_action": "At night (asleep)",
+          "silent_action": "When silent in daylight",
+          "silent_minutes": "Silent after (minutes)"
+        },
+        "data_description": {
+          "night_action": "An optimizer is asleep once the sun is below 10° and it has been quiet for 10 minutes. Zero: live readings read 0, temperature and RSSI keep their last values. Hold: keep the last values.",
+          "silent_action": "An optimizer that stays quiet in daylight (usually a weak radio link to the TAP). Unavailable: live readings become unavailable. Hold: keep the last values. Zero: read 0 like at night.",
+          "silent_minutes": "How long a daylight dropout lasts before the optimizer counts as silent (5–240). Short dropouts are normal; on one 19-panel installation gaps reached 76 s in production and 171 s at dawn."
+        }
       }
     },
     "error": {
@@ -307,6 +322,21 @@
     },
     "previous_listener_stopping": {
       "message": "The previous PyTap listener is still stopping; setup will retry."
+    }
+  },
+  "selector": {
+    "night_action": {
+      "options": {
+        "zero": "Zero",
+        "hold": "Hold last value"
+      }
+    },
+    "silent_action": {
+      "options": {
+        "unavailable": "Unavailable",
+        "hold": "Hold last value",
+        "zero": "Zero"
+      }
     }
   }
 }

@@ -54,6 +54,8 @@ from .const import (
     READING_ASLEEP,
     READING_OFFLINE,
     READING_SILENT,
+    STALE_UNAVAILABLE,
+    STALE_ZERO,
     VALIDITY_REPORTING,
     VALIDITY_STATES,
 )
@@ -518,11 +520,15 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
         """Return True if the sensor has data that can still be trusted."""
         if not self.coordinator.data:
             return False
-        if self.entity_description.key in LIVE_KEYS and (
-            self.coordinator.reading_state(self._barcode)
-            in (READING_SILENT, READING_OFFLINE)
-        ):
-            return False
+        if self.entity_description.key in LIVE_KEYS:
+            state = self.coordinator.reading_state(self._barcode)
+            if state == READING_OFFLINE:
+                return False
+            if (
+                state == READING_SILENT
+                and self.coordinator.silent_action == STALE_UNAVAILABLE
+            ):
+                return False
         node_data = self.coordinator.data.get("nodes", {}).get(self._barcode)
         return node_data is not None or self._restored_native_value
 
@@ -542,11 +548,16 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
         else:
             if not self._restored_native_value:
                 self._attr_native_value = None
-        if (
-            self.entity_description.key in ZERO_WHEN_ASLEEP_KEYS
-            and self.coordinator.reading_state(self._barcode) == READING_ASLEEP
-        ):
-            self._attr_native_value = 0.0
+        if self.entity_description.key in ZERO_WHEN_ASLEEP_KEYS:
+            # Asleep (night) and silent (daylight) panels read 0 when their
+            # action is "zero"; with "hold" they keep their last values.
+            state = self.coordinator.reading_state(self._barcode)
+            if (
+                state == READING_ASLEEP and self.coordinator.night_action == STALE_ZERO
+            ) or (
+                state == READING_SILENT and self.coordinator.silent_action == STALE_ZERO
+            ):
+                self._attr_native_value = 0.0
         self.async_write_ha_state()
 
     @property

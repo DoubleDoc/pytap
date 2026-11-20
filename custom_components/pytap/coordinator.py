@@ -45,10 +45,16 @@ from .const import (
     CONF_MODULE_PEAK_POWER,
     CONF_MODULE_STRING,
     CONF_MODULES,
+    CONF_NIGHT_ACTION,
+    CONF_SILENT_ACTION,
+    CONF_SILENT_MINUTES,
     CONF_WRITE_INTERVAL,
     DEFAULT_ESTIMATE_SILENT,
     DEFAULT_LIVE_REPORTING,
+    DEFAULT_NIGHT_ACTION,
     DEFAULT_PEAK_POWER,
+    DEFAULT_SILENT_ACTION,
+    DEFAULT_SILENT_MINUTES,
     DEFAULT_WRITE_INTERVAL,
     DOMAIN,
     ENERGY_GAP_THRESHOLD_SECONDS,
@@ -75,7 +81,6 @@ from .const import (
     SHARE_MAX,
     SHARE_MIN_PEER_POWER_W,
     SHARE_SMOOTHING,
-    SILENT_UNAVAILABLE_SECONDS,
     VALIDITY_ASLEEP,
     VALIDITY_ESTIMATED,
     VALIDITY_HOLDING,
@@ -214,6 +219,12 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._write_interval = max(0.0, self._write_interval)
         self._estimate_enabled: bool = bool(
             entry.data.get(CONF_ESTIMATE_SILENT, DEFAULT_ESTIMATE_SILENT)
+        )
+        # What a quiet optimizer's own sensors show (see sensor.py).
+        self.night_action: str = entry.data.get(CONF_NIGHT_ACTION, DEFAULT_NIGHT_ACTION)
+        self.silent_action: str = entry.data.get(CONF_SILENT_ACTION, DEFAULT_SILENT_ACTION)
+        self._silent_seconds: float = 60.0 * entry.data.get(
+            CONF_SILENT_MINUTES, DEFAULT_SILENT_MINUTES
         )
 
         # Build barcode allowlist from configured modules
@@ -485,8 +496,8 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ok:      reporting, or quiet for less than the thresholds below.
         asleep:  low sun and quiet for NIGHT_QUIET_SECONDS, or not yet heard
                  from since daylight began; live readings read 0.
-        silent:  daylight and quiet for SILENT_UNAVAILABLE_SECONDS; live
-                 readings are unavailable. Optimizers can drop off the radio
+        silent:  daylight and quiet for the configured silent time (30 min by
+                 default); what live sensors show then is configurable. Optimizers can drop off the radio
                  link for a while, so this waits a long time.
         offline: no bytes from the converter for LINK_DOWN_SECONDS.
         """
@@ -499,7 +510,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return READING_ASLEEP
             return READING_OK
         quiet_in_daylight = now - max(last, self._day_since)
-        if quiet_in_daylight >= SILENT_UNAVAILABLE_SECONDS:
+        if quiet_in_daylight >= self._silent_seconds:
             return READING_SILENT
         if last < self._day_since and now - last >= NIGHT_QUIET_SECONDS:
             # Not heard from since before daylight: still asleep.
@@ -565,7 +576,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # (at 0 W) until half its string sleeps. Asleep is what it is.
             return VALIDITY_ASLEEP
         if self.estimated_power(barcode) is not None:
-            # After SILENT_UNAVAILABLE_SECONDS its own live sensors are
+            # Once silent, its own live sensors follow silent_action even
             # unavailable even though the string still estimates it.
             if state == READING_SILENT:
                 return VALIDITY_SILENT_ESTIMATED
@@ -736,17 +747,31 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         states = {b: self.reading_state(b) for b in self._configured_barcodes}
         if link_up:
             self._log_state_changes(states, now)
-        if self._update_estimates(now):
-            changed = True
+        estimating = self._update_estimates(now)
         validity = {b: self.data_validity(b) for b in self._configured_barcodes}
-        if states != self._health_states or validity != self._validity_states:
-            changed = True
+        # Only panels whose state changed, and those being estimated (their
+        # estimates move every check), need re-rendering; strings and totals
+        # follow their members (adapted from azebro/pytap#34).
+        panels = {
+            b
+            for b in self._configured_barcodes
+            if states.get(b) != self._health_states.get(b)
+            or validity.get(b) != self._validity_states.get(b)
+        }
+        if estimating:
+            panels |= set(self._est_power)
         self._health_states = states
         self._validity_states = validity
 
         self._check_bus_errors(now)
         if changed:
-            self.async_update_listeners()
+            self.async_update_listeners()  # the bus link changed: everything
+        elif panels:
+            self._changed_barcodes = frozenset(panels)
+            try:
+                self.async_update_listeners()
+            finally:
+                self._changed_barcodes = None
 
     def _log_state_changes(self, states: dict[str, str], now: float) -> None:
         """Log optimizers going silent or coming back."""
@@ -762,7 +787,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     "No optimizer has reported for %s although the converter "
                     "is sending data; live readings are unavailable. Check "
                     "the Tigo CCA if this persists",
-                    _format_duration(SILENT_UNAVAILABLE_SECONDS),
+                    _format_duration(self._silent_seconds),
                 )
             else:
                 for b in sorted(went_silent):
@@ -772,7 +797,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         "can drop out for a while on radio interference; "
                         "check it if this persists",
                         self._module_label(b),
-                        _format_duration(SILENT_UNAVAILABLE_SECONDS),
+                        _format_duration(self._silent_seconds),
                     )
         for b, st in states.items():
             prev = old.get(b)
