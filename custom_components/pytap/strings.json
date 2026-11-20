@@ -66,7 +66,7 @@
       },
       "discovery": {
         "title": "Module discovery",
-        "description": "With discovery on, optimizers heard on the Tigo bus are added automatically, with their barcode as their name, string \"Discovered\" and an unknown rating. Name them, set their string and rating under Edit a module. Entity IDs use the barcode (sensor.tigo_<barcode>_…) and never change. Discovery only listens; it never sends anything to the gateway.",
+        "description": "With discovery on, optimizers heard on the Tigo bus are added automatically, with their barcode as their name, string \"Discovered\" and an unknown rating. Name them, set their string and rating under Edit a module. Entity IDs use the barcode (sensor.tigo_BARCODE_…) and never change. Discovery only listens; it never sends anything to the gateway.",
         "data": {
           "auto_discovery": "Discover optimizers automatically"
         }
@@ -365,7 +365,7 @@
       },
       "change_discovery": {
         "title": "Module discovery",
-        "description": "With discovery on, optimizers heard on the Tigo bus are added automatically, with their barcode as their name, string \"Discovered\" and an unknown rating. Name them, set their string and rating under Edit a module. Entity IDs use the barcode (sensor.tigo_<barcode>_…) and never change. Discovery only listens; it never sends anything to the gateway.",
+        "description": "With discovery on, optimizers heard on the Tigo bus are added automatically, with their barcode as their name, string \"Discovered\" and an unknown rating. Name them, set their string and rating under Edit a module. Entity IDs use the barcode (sensor.tigo_BARCODE_…) and never change. Discovery only listens; it never sends anything to the gateway.",
         "data": {
           "auto_discovery": "Discover optimizers automatically"
         }
