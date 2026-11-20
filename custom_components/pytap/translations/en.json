@@ -372,7 +372,7 @@
       },
       "string_inverter": {
         "title": "Set a string's inverter",
-        "description": "For one CCA serving several inverters: name the inverter each string is wired to. Leave it blank to use this entry's inverter name. Device names follow; entity IDs never change. Each inverter named here gets its own Total device; this entry's Total device still covers every string.\n\nCurrent:\n{current}",
+        "description": "For one CCA serving several inverters: name the inverter each string is wired to. Leave it blank for the entry's inverter name. Device names follow; entity IDs never change. Once strings feed more than one inverter, each inverter gets its own Total device and this entry's Total becomes the CCA total.\n\nCurrent:\n{current}",
         "data": {
           "string": "String",
           "inverter": "Inverter"

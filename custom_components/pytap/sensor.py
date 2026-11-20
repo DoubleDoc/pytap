@@ -63,6 +63,9 @@ from .const import (
 )
 from .coordinator import PyTapConfigEntry, PyTapDataUpdateCoordinator
 from .naming import (
+    cca_total_device_name,
+    has_inverter_totals,
+    inverter_total_object_id,
     optimizer_device_name,
     optimizer_object_id,
     string_device_name,
@@ -366,9 +369,14 @@ async def async_setup_entry(
     string_sensors: dict[str, list[PyTapAggregateSensor]] = {}
     total_sensors: list[PyTapAggregateSensor] = []
     inverter_sensors: dict[str, list[PyTapAggregateSensor]] = {}
+    split_by_inverter = has_inverter_totals(string_inverters, inverter)
     total_device_info = DeviceInfo(
         identifiers={(DOMAIN, f"{entry.entry_id}_installation")},
-        name=total_device_name(inverter),
+        name=(
+            cca_total_device_name(inverter)
+            if split_by_inverter
+            else total_device_name(inverter)
+        ),
         manufacturer="Tigo Energy",
         model="Installation Aggregate",
     )
@@ -465,8 +473,10 @@ async def async_setup_entry(
             sensor.set_barcodes(all_barcodes)
 
         # A total per inverter named on a string (one CCA, several inverters).
-        inverter_to_barcodes = _inverter_members(
-            string_to_barcodes, string_inverters, inverter
+        inverter_to_barcodes = (
+            _inverter_members(string_to_barcodes, string_inverters, inverter)
+            if split_by_inverter
+            else {}
         )
         for inv, barcodes in inverter_to_barcodes.items():
             if inv not in inverter_sensors:
@@ -476,8 +486,9 @@ async def async_setup_entry(
                     manufacturer="Tigo Energy",
                     model="Inverter Aggregate",
                 )
-                inverter_sensors[inv] = [
-                    PyTapAggregateSensor(
+                inverter_sensors[inv] = []
+                for description in INSTALLATION_SENSOR_DESCRIPTIONS:
+                    sensor = PyTapAggregateSensor(
                         coordinator=coordinator,
                         description=description,
                         barcodes=barcodes,
@@ -486,8 +497,11 @@ async def async_setup_entry(
                             f"{DOMAIN}_{entry.entry_id}_inverter_{inv}_{description.key}"
                         ),
                     )
-                    for description in INSTALLATION_SENSOR_DESCRIPTIONS
-                ]
+                    # Own IDs, so they never clash with the entry total's.
+                    sensor.entity_id = (
+                        f"sensor.{inverter_total_object_id(inv)}_{description.key}"
+                    )
+                    inverter_sensors[inv].append(sensor)
                 aggregates.extend(inverter_sensors[inv])
             for sensor in inverter_sensors[inv]:
                 sensor.set_barcodes(barcodes)
@@ -512,19 +526,14 @@ def _inverter_members(
     string_inverters: dict[str, str],
     entry_inverter: str,
 ) -> dict[str, list[str]]:
-    """Barcodes per inverter, for inverters named on strings.
+    """Barcodes per inverter (strings without one feed the entry's inverter).
 
-    Only inverters set on a string get their own total, and not one named like
-    the entry (its total is the entry's Total device). Strings without an
-    inverter belong to the entry's inverter.
+    Strings with no inverter at all (entry name blank, none set) aren't in
+    any inverter's total; the CCA total still counts them.
     """
-    named = {
-        inv.strip() for inv in string_inverters.values() if inv and inv.strip()
-    } - {entry_inverter}
     members: dict[str, list[str]] = {}
     for string_name, barcodes in string_to_barcodes.items():
-        inv = string_inverter(string_inverters, string_name, entry_inverter)
-        if inv in named:
+        if inv := string_inverter(string_inverters, string_name, entry_inverter):
             members.setdefault(inv, []).extend(barcodes)
     return members
 

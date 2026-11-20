@@ -69,3 +69,24 @@ def total_device_name(inverter: str) -> str:
 def string_inverter(string_inverters: dict[str, str], string_name: str, default: str) -> str:
     """The inverter a string feeds: its own if set, else the entry's."""
     return (string_inverters.get(string_name) or "").strip() or default
+
+
+def has_inverter_totals(string_inverters: dict[str, str], default: str) -> bool:
+    """Whether strings feed more than the entry's own inverter.
+
+    Then every inverter gets its own Total device and the entry's Total
+    becomes the CCA total, whatever the entry's inverter name is.
+    """
+    return any(
+        (inv or "").strip() and inv.strip() != default for inv in string_inverters.values()
+    )
+
+
+def cca_total_device_name(inverter: str) -> str:
+    """The entry's total once inverters have their own: ``Tigo Master CCA Total``."""
+    return _join(PREFIX, inverter, "CCA Total")
+
+
+def inverter_total_object_id(inverter: str) -> str:
+    """Entity ID base of an inverter's total: ``tigo_inverter_master``."""
+    return slugify(_join(PREFIX, "Inverter", inverter))

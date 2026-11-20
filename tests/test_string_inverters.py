@@ -48,7 +48,7 @@ async def test_one_cca_two_inverters(hass: HomeAssistant) -> None:
     names = {e.device_info["name"] for e in added}
     assert {"Tigo Master S1 P01", "Tigo Slave S2 P01", "Tigo Slave S3 P01",
             "Tigo Master String 1", "Tigo Slave String 2",
-            "Tigo Total", "Tigo Master Total", "Tigo Slave Total"} <= names
+            "Tigo CCA Total", "Tigo Master Total", "Tigo Slave Total"} <= names
     totals = {
         e.unique_id: sorted(e._barcodes) for e in added
         if isinstance(e, PyTapAggregateSensor) and e.unique_id.endswith("_power")
@@ -62,10 +62,27 @@ async def test_one_cca_two_inverters(hass: HomeAssistant) -> None:
     assert "sensor.tigo_b_2222222b_power" in {e.entity_id for e in added if hasattr(e, "_barcode")}
 
 
+async def test_entry_named_like_an_inverter_still_works(hass: HomeAssistant) -> None:
+    """No need to leave the entry's inverter name blank: its strings get an
+    inverter total like any other, and the entry total becomes the CCA total."""
+    added = await _entities(hass, "Master", {"2": "Slave"})
+    names = {e.device_info["name"] for e in added}
+    assert {"Tigo Master S1 P01", "Tigo Slave S2 P01", "Tigo Master S3 P01",
+            "Tigo Master CCA Total", "Tigo Master Total", "Tigo Slave Total"} <= names
+    power = {e.entity_id: sorted(e._barcodes) for e in added
+             if isinstance(e, PyTapAggregateSensor) and e.unique_id.endswith("_power")
+             and "_inverter_" in e.unique_id}
+    assert power == {
+        "sensor.tigo_inverter_master_power": ["A-1111111A", "C-3333333C"],
+        "sensor.tigo_inverter_slave_power": ["B-2222222B"],
+    }
+
+
 async def test_one_cca_per_inverter_has_no_extra_totals(hass: HomeAssistant) -> None:
     added = await _entities(hass, "Master", {})
     names = {e.device_info["name"] for e in added}
     assert "Tigo Master S1 P01" in names
+    assert "Tigo Master Total" in names
     assert not any("_inverter_" in (e.unique_id or "") for e in added)
 
 

@@ -47,6 +47,7 @@ from .coordinator import (
     coordinator_store,
     parked_coordinators,
 )
+from .naming import string_inverter
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -265,10 +266,10 @@ async def async_remove_config_entry_device(
     known = entry.runtime_data.modules if entry.state is ConfigEntryState.LOADED else modules
     used_strings = {f"{prefix}string_{m.get(CONF_MODULE_STRING)}" for m in known}
     string_inverters = entry.data.get(CONF_STRING_INVERTERS, {})
+    default = entry.data.get(CONF_INVERTER, "") or ""
     used_inverters = {
-        f"{prefix}inverter_{string_inverters[m.get(CONF_MODULE_STRING)]}"
+        f"{prefix}inverter_{string_inverter(string_inverters, m.get(CONF_MODULE_STRING, ''), default)}"
         for m in known
-        if string_inverters.get(m.get(CONF_MODULE_STRING))
     }
     return not identifiers & ({f"{prefix}installation"} | used_strings | used_inverters)
 

@@ -229,7 +229,7 @@ Entity *names* (what cards and history show, e.g. "Tigo Master S2 P01 Power") co
 
 - **One inverter, one CCA** (most installations): one PyTap entry, inverter name blank.
 - **One CCA per inverter:** one PyTap entry per CCA, each with an inverter name (`Master`, `Slave`). Each entry's Total device is that inverter's total.
-- **One CCA serving several inverters:** one PyTap entry with the inverter name blank. Use **Configure → Set a string's inverter** to name the inverter each string is wired to. Each inverter named there gets its own Total device (`Tigo Master Total`), and the entry's `Tigo Total` covers all strings. String names must be unique within the entry (for example `1`–`4`, or `M1`, `S1`).
+- **One CCA serving several inverters:** one PyTap entry. Use **Configure → Set a string's inverter** to name the inverter each string is wired to; strings you don't set feed the entry's inverter name. As soon as strings feed more than one inverter, each inverter gets its own Total device (`Tigo Master Total`, entity IDs `sensor.tigo_inverter_master_…`), and the entry's Total becomes the CCA total (`Tigo Master CCA Total`, or `Tigo CCA Total` without an inverter name). String names must be unique within the entry (for example `1`–`4`, or `M1`, `S1`).
 
 **Upgrading:** entity IDs that already exist are never changed; the barcode pattern applies to entities created from now on. Rename older ones in Home Assistant if you want them to match (history and statistics move with the rename).
 
