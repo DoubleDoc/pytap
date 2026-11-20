@@ -17,13 +17,17 @@ from homeassistant.helpers import entity_registry as er
 
 from .connection import InvalidConnectionSettings
 from .const import (
+    CONF_BAUD_RATE,
+    CONF_CONNECTION_TYPE,
     CONF_INVERTER,
     CONF_LIVE_REPORTING,
     CONF_MODULE_BARCODE,
     CONF_MODULE_PEAK_POWER,
     CONF_MODULE_STRING,
     CONF_MODULES,
+    CONF_SERIAL_PORT,
     CONF_WRITE_INTERVAL,
+    CONNECTION_TCP,
     DEFAULT_INVERTER,
     DEFAULT_LIVE_REPORTING,
     DEFAULT_PEAK_POWER,
@@ -49,7 +53,8 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 # Bumped from 3 → 4 when module peak_power became mandatory in config.
 # Bumped from 4 → 5 when live_reporting toggle was added.
 # Bumped from 5 → 6 when the optional inverter name was added.
-CONFIG_ENTRY_VERSION = 6
+# Bumped from 6 → 7 when serial and serial-proxy connections were added.
+CONFIG_ENTRY_VERSION = 7
 
 # Old unique IDs that were replaced by the _in/_out split.
 _LEGACY_UNIQUE_ID_RENAMES: dict[str, str] = {
@@ -61,7 +66,13 @@ _LEGACY_UNIQUE_IDS_TO_REMOVE: set[str] = {"voltage", "current"}
 
 
 # Readable names for the setting named in an invalid_connection_settings error.
-_SETTING_NAMES: dict[str, str] = {CONF_HOST: "host", CONF_PORT: "port"}
+_SETTING_NAMES: dict[str, str] = {
+    CONF_HOST: "host",
+    CONF_PORT: "port",
+    "base": "connection type",
+    CONF_SERIAL_PORT: "serial port",
+    CONF_BAUD_RATE: "baud rate",
+}
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: PyTapConfigEntry) -> bool:
@@ -220,7 +231,11 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     v3 → v4: module peak power is added with default value.
     v4 → v5: live_reporting toggle added (default True).
     v5 → v6: optional inverter name added (default blank).
+    v6 → v7: existing connections explicitly marked as TCP (azebro/pytap#36).
     """
+    if entry.version > CONFIG_ENTRY_VERSION:
+        # Saved by a newer PyTap (downgrade): don't guess at its data.
+        return False
     if entry.version == 1:
         _LOGGER.info(
             "Migrating PyTap config entry %s from version 1 to 2",
@@ -297,6 +312,17 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         new_data = {**entry.data}
         new_data.setdefault(CONF_INVERTER, DEFAULT_INVERTER)
         hass.config_entries.async_update_entry(entry, data=new_data, version=6)
+
+    if entry.version == 6:
+        _LOGGER.info(
+            "Migrating PyTap config entry %s from version 6 to 7",
+            entry.entry_id,
+        )
+        hass.config_entries.async_update_entry(
+            entry,
+            data={**entry.data, CONF_CONNECTION_TYPE: CONNECTION_TCP},
+            version=7,
+        )
 
     return True
 

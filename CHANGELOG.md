@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-The changes below are ported from [Tim Laing](https://github.com/timlaing)'s upstream pull request series: [PR #32](https://github.com/azebro/pytap/pull/32), [PR #33](https://github.com/azebro/pytap/pull/33), [PR #34](https://github.com/azebro/pytap/pull/34) and [PR #35](https://github.com/azebro/pytap/pull/35) so far.
+The changes below are ported from [Tim Laing](https://github.com/timlaing)'s upstream pull request series: [PR #32](https://github.com/azebro/pytap/pull/32), [PR #33](https://github.com/azebro/pytap/pull/33), [PR #34](https://github.com/azebro/pytap/pull/34), [PR #35](https://github.com/azebro/pytap/pull/35) and [PR #36](https://github.com/azebro/pytap/pull/36) so far.
+
+**Requires Home Assistant 2026.11 or later** (for serial connections).
 
 ### Fixed
 
@@ -15,6 +17,7 @@ The changes below are ported from [Tim Laing](https://github.com/timlaing)'s ups
 
 ### Added
 
+- **Serial and ESPHome serial-proxy connections** — Besides an RS-485 to TCP converter, PyTap can read the bus from a serial adapter on the Home Assistant host or from an ESPHome device with `serial_proxy`, picked with Home Assistant's serial-port selector. Setup and **Change connection settings** offer *RS-485 to TCP converter* or *Serial port or ESPHome serial proxy*; switching keeps entities and energy history. Serial is passive (38400 baud default, 8N1, no flow control, DTR/RTS untouched). Ports must be character devices under `/dev` or Home Assistant-managed `esphome-hass://` proxy URLs; a port already used by another PyTap entry is refused; titles, logs and diagnostics never show proxy URLs. Config entries move to version 7 (existing ones marked as TCP). Uses `serialx` through Home Assistant's `usb` integration. (#36)
 - **Stale reading behaviour** — **Configure → Change stale reading behaviour** sets what an optimizer's own live sensors show when it stops reporting: at night *Zero* (default) or *Hold last value*; when silent in daylight *Unavailable* (default), *Hold last value* or *Zero*; and after how many minutes a daylight dropout counts as silent (5–240, default 30). Energy sensors and the String and Total devices' rules don't change. Fitted to the fork's sun-aware rules rather than replacing them. (#34)
 
 ### Changed

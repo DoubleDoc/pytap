@@ -127,7 +127,8 @@ async def test_migration_v5_to_v6_adds_blank_inverter(hass: HomeAssistant) -> No
     entry.add_to_hass(hass)
 
     assert await async_migrate_entry(hass, entry)
-    assert entry.version == 6
+    assert entry.version == 7
+    assert entry.data["connection_type"] == "tcp"
     assert entry.data[CONF_INVERTER] == ""
     assert entry.data[CONF_MODULES] == MODULES
 

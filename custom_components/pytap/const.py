@@ -21,6 +21,17 @@ CONF_MODULE_PEAK_POWER = "peak_power"
 
 # Defaults
 DEFAULT_PORT = 502
+
+# Transport (adapted from Tim Laing's upstream PR azebro/pytap#36): a TCP
+# converter, a local serial adapter, or a Home Assistant ESPHome serial proxy.
+CONF_CONNECTION_TYPE = "connection_type"
+CONF_SERIAL_PORT = "serial_port"
+CONF_BAUD_RATE = "baud_rate"
+CONNECTION_TCP = "tcp"
+CONNECTION_SERIAL = "serial"
+DEFAULT_BAUD_RATE = 38400
+CONNECTION_TIMEOUT = 10
+SERIAL_READ_TIMEOUT = 1
 DEFAULT_STRING_NAME = "Default"
 DEFAULT_PEAK_POWER = 455
 DEFAULT_SCAN_INTERVAL = 30

@@ -3,3 +3,5 @@
 # and all HA core dependencies transitively.
 pytest-homeassistant-custom-component==0.13.375
 pytest_freezer==0.4.9
+serialx==1.15.1
+aiousbwatcher==1.1.2

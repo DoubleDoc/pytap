@@ -1,7 +1,7 @@
 # PyTap
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.4%2B-blue.svg)](https://www.home-assistant.io/)
+[![HA Version](https://img.shields.io/badge/Home%20Assistant-2026.11%2B-blue.svg)](https://www.home-assistant.io/)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Validate](https://github.com/DoubleDoc/pytap/actions/workflows/validate.yml/badge.svg)](https://github.com/DoubleDoc/pytap/actions/workflows/validate.yml)
 
@@ -30,6 +30,8 @@ The tiles are driven by two shared templates, so adapting the dashboard to your 
 PyTap needs an **RS-485 to TCP converter** connected to the bus between your Tigo CCA and its TAP(s). PyTap only listens: it never transmits, so the CCA and Tigo's cloud keep working as before. For background on the bus and other ways to connect, see [taptap](https://github.com/willglynn/taptap#connecting).
 
 You need one converter, and one PyTap entry, per CCA.
+
+**Other ways to connect** (Home Assistant 2026.11 and later): instead of a TCP converter, PyTap can read the bus from a **serial RS-485 adapter** on the Home Assistant host (for example a USB adapter), or from an **ESPHome device with `serial_proxy`** next to the CCA. Choose **Serial port or ESPHome serial proxy** when adding PyTap, and pick the port from Home Assistant's list. PyTap opens it at 38400 baud, 8N1, never changes DTR/RTS and never transmits. One port can be used by only one PyTap entry. (From [Tim Laing](https://github.com/timlaing)'s upstream [PR #36](https://github.com/azebro/pytap/pull/36).)
 
 ### Wiring
 
@@ -243,7 +245,10 @@ PyTap isn't in the default HACS or Marketplace list, so add it as a custom repos
 
 Updates appear in the Marketplace and as an update entity. Restart Home Assistant after updating; a repair offers to do it for you.
 
-### Home Assistant 2024.4 to 2026.10 (HACS)
+### Home Assistant 2024.4 to 2026.10 (HACS, PyTap 1.4.x only)
+
+PyTap 1.5 and later need Home Assistant 2026.11 (for serial connections). On older versions, HACS offers PyTap 1.4.x.
+
 
 1. Open **HACS**, select the **three dots** menu (top right) and choose **Custom repositories**.
 2. Add `https://github.com/DoubleDoc/pytap` with type **Integration**.

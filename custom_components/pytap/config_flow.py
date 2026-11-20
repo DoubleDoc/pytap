@@ -32,11 +32,22 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    SerialPortSelector,
 )
+import serialx
 import voluptuous as vol
 
-from .connection import InvalidConnectionSettings, normalize_connection
+from .connection import (
+    CONNECTION_KEYS,
+    InvalidConnectionSettings,
+    connection_title,
+    normalize_connection,
+    open_source,
+    resolved_endpoint_key,
+)
 from .const import (
+    CONF_BAUD_RATE,
+    CONF_CONNECTION_TYPE,
     CONF_ESTIMATE_SILENT,
     CONF_INVERTER,
     CONF_LIVE_REPORTING,
@@ -46,9 +57,13 @@ from .const import (
     CONF_MODULE_STRING,
     CONF_MODULES,
     CONF_NIGHT_ACTION,
+    CONF_SERIAL_PORT,
     CONF_SILENT_ACTION,
     CONF_SILENT_MINUTES,
     CONF_WRITE_INTERVAL,
+    CONNECTION_SERIAL,
+    CONNECTION_TCP,
+    DEFAULT_BAUD_RATE,
     DEFAULT_ESTIMATE_SILENT,
     DEFAULT_INVERTER,
     DEFAULT_LIVE_REPORTING,
@@ -66,19 +81,40 @@ from .const import (
     NIGHT_ACTIONS,
     SILENT_ACTIONS,
 )
+from .coordinator import parked_coordinators
 
 _LOGGER = logging.getLogger(__name__)
 
 # Barcode format: X-NNNNNNN[C] where X is hex digit, N is hex, C is alpha
 _BARCODE_PATTERN = re.compile(r"^[0-9A-Fa-f]-[0-9A-Fa-f]{1,7}[A-Za-z]$")
 
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_HOST): str,
-        vol.Optional(CONF_PORT, default=DEFAULT_PORT): int,
-        vol.Optional(CONF_INVERTER, default=DEFAULT_INVERTER): str,
-    }
-)
+def connection_schema(
+    connection_type: str,
+    current: dict[str, Any] | None = None,
+    *,
+    with_inverter: bool = False,
+) -> vol.Schema:
+    """Connection form for setup and options (adapted from azebro/pytap#36)."""
+    current = current or {}
+    if connection_type == CONNECTION_TCP:
+        fields: dict[Any, Any] = {
+            vol.Required(CONF_HOST, default=current.get(CONF_HOST, "")): str,
+            vol.Optional(CONF_PORT, default=current.get(CONF_PORT, DEFAULT_PORT)): int,
+        }
+    else:
+        fields = {
+            vol.Required(
+                CONF_SERIAL_PORT, default=current.get(CONF_SERIAL_PORT, "")
+            ): SerialPortSelector(),
+            vol.Optional(
+                CONF_BAUD_RATE, default=current.get(CONF_BAUD_RATE, DEFAULT_BAUD_RATE)
+            ): int,
+        }
+    if with_inverter:
+        fields[
+            vol.Optional(CONF_INVERTER, default=current.get(CONF_INVERTER, DEFAULT_INVERTER))
+        ] = str
+    return vol.Schema(fields)
 
 # Sensor keys of the per-string aggregate entities (see sensor.py).
 _STRING_SENSOR_KEYS = ("performance", "power", "daily_energy", "total_energy")
@@ -107,21 +143,88 @@ def validate_barcode(barcode: str) -> None:
 async def validate_connection(
     hass: HomeAssistant, data: dict[str, Any]
 ) -> dict[str, Any]:
-    """Validate connection to the Tigo gateway."""
-    host = data[CONF_HOST]
-    port = data.get(CONF_PORT, DEFAULT_PORT)
+    """Open and close the configured endpoint once (raises if it can't)."""
+    settings = normalize_connection(data)
 
     def _test_connection() -> None:
-        from .pytap.core.source import TcpSource
-
-        source = TcpSource(host, port)
-        try:
-            source.connect()
-        finally:
-            source.close()
+        open_source(hass.loop, settings).close()
 
     await hass.async_add_executor_job(_test_connection)
-    return {"title": f"PyTap ({host})"}
+    return {"title": connection_title(settings)}
+
+
+async def _same_serial_port(hass: HomeAssistant, first: str, second: str) -> bool:
+    """Compare endpoints after resolving symlinks such as /dev/serial/by-id."""
+    return await hass.async_add_executor_job(
+        lambda: resolved_endpoint_key(first) == resolved_endpoint_key(second)
+    )
+
+
+async def serial_port_claimed(
+    hass: HomeAssistant, settings: dict[str, Any], entry_id: str | None = None
+) -> bool:
+    """Whether another PyTap entry (or a listener still stopping) uses this port."""
+    if settings.get(CONF_CONNECTION_TYPE) != CONNECTION_SERIAL:
+        return False
+    others = [
+        entry.data
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.entry_id != entry_id
+    ]
+    others.extend(
+        coordinator.connection
+        for parked_id, coordinator in parked_coordinators(hass).items()
+        if parked_id != entry_id
+    )
+    for other in others:
+        if other.get(CONF_CONNECTION_TYPE) == CONNECTION_SERIAL and await _same_serial_port(
+            hass, other.get(CONF_SERIAL_PORT, ""), settings[CONF_SERIAL_PORT]
+        ):
+            return True
+    return False
+
+
+async def connection_errors(
+    hass: HomeAssistant,
+    settings: dict[str, Any],
+    flow: Any,
+    entry: ConfigEntry | None = None,
+) -> dict[str, str]:
+    """Check a connection; an unreachable endpoint is reported once.
+
+    Submitting the same settings again accepts them (the converter or proxy
+    may simply be offline). ``flow._unreachable_confirm`` remembers them.
+    """
+    if await serial_port_claimed(hass, settings, entry.entry_id if entry else None):
+        return {CONF_SERIAL_PORT: "serial_port_in_use"}
+    if (
+        entry is not None
+        and settings[CONF_CONNECTION_TYPE] == CONNECTION_SERIAL
+        and entry.data.get(CONF_CONNECTION_TYPE) == CONNECTION_SERIAL
+        and await _same_serial_port(
+            hass, entry.data.get(CONF_SERIAL_PORT, ""), settings[CONF_SERIAL_PORT]
+        )
+    ):
+        return {}  # the running listener owns this port; a reload applies changes
+    key = tuple(sorted(settings.items()))
+    try:
+        await validate_connection(hass, settings)
+    except InvalidConnectionSettings as err:
+        return {err.field: err.error}
+    except (ValueError, serialx.UnsupportedSetting):
+        return {"base": "unsupported_serial_settings"}
+    except Exception as err:  # noqa: BLE001
+        if flow._unreachable_confirm == key:
+            # Backend messages can contain full proxy URLs: log the type only.
+            _LOGGER.warning(
+                "Could not connect using %s (%s) — saving anyway",
+                settings[CONF_CONNECTION_TYPE],
+                type(err).__name__,
+            )
+            return {}
+        flow._unreachable_confirm = key
+        return {"base": "cannot_connect"}
+    return {}
 
 
 def _modules_description(modules: list[dict[str, Any]]) -> str:
@@ -143,7 +246,7 @@ def _modules_description(modules: list[dict[str, Any]]) -> str:
 class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for PyTap."""
 
-    VERSION = 6
+    VERSION = 7
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -160,20 +263,36 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle step 1: connection parameters (host/port)."""
-        errors: dict[str, str] = {}
+        """Choose how PyTap receives the bus traffic."""
+        return self.async_show_menu(step_id="user", menu_options=["tcp", "serial"])
 
+    async def async_step_tcp(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """An RS-485 to TCP converter."""
+        return await self._async_connection_step(CONNECTION_TCP, user_input)
+
+    async def async_step_serial(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """A local serial adapter or a Home Assistant ESPHome serial proxy."""
+        return await self._async_connection_step(CONNECTION_SERIAL, user_input)
+
+    async def _async_connection_step(
+        self, connection_type: str, user_input: dict[str, Any] | None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
             try:
-                settings = normalize_connection(user_input)
+                settings = normalize_connection(
+                    {**user_input, CONF_CONNECTION_TYPE: connection_type}
+                )
             except InvalidConnectionSettings as err:
                 errors[err.field] = err.error
             else:
-                # An unreachable converter is reported once; submitting the
-                # same settings again continues (it may simply be offline).
-                if await self._async_reachable_or_confirmed(settings, errors):
+                errors = await connection_errors(self.hass, settings, self)
+                if not errors:
                     self._user_data = {
-                        **user_input,
                         **settings,
                         CONF_INVERTER: user_input.get(CONF_INVERTER, "").strip(),
                     }
@@ -182,30 +301,10 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
                     return await self.async_step_modules_menu()
 
         return self.async_show_form(
-            step_id="user",
-            data_schema=self.add_suggested_values_to_schema(
-                STEP_USER_DATA_SCHEMA, user_input or {}
-            ),
+            step_id=connection_type,
+            data_schema=connection_schema(connection_type, user_input, with_inverter=True),
             errors=errors,
         )
-
-    async def _async_reachable_or_confirmed(
-        self, settings: dict[str, Any], errors: dict[str, str]
-    ) -> bool:
-        """Test the connection; on failure ask once, then accept the same settings."""
-        key = (settings[CONF_HOST], settings[CONF_PORT])
-        try:
-            await validate_connection(self.hass, settings)
-        except Exception:  # noqa: BLE001
-            if self._unreachable_confirm == key:
-                _LOGGER.warning(
-                    "Could not connect to %s:%s — saving anyway", *key
-                )
-                return True
-            self._unreachable_confirm = key
-            errors["base"] = "cannot_connect"
-            return False
-        return True
 
     async def async_step_modules_menu(
         self, user_input: dict[str, Any] | None = None, error: str = ""
@@ -289,7 +388,17 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_LIVE_REPORTING: False,
             CONF_WRITE_INTERVAL: DEFAULT_WRITE_INTERVAL,
         }
-        title = f"PyTap ({self._user_data[CONF_HOST]})"
+        if await serial_port_claimed(self.hass, self._user_data):
+            # Another flow may have claimed the port while modules were added.
+            connection_type = self._user_data[CONF_CONNECTION_TYPE]
+            return self.async_show_form(
+                step_id=connection_type,
+                data_schema=connection_schema(
+                    connection_type, self._user_data, with_inverter=True
+                ),
+                errors={CONF_SERIAL_PORT: "serial_port_in_use"},
+            )
+        title = connection_title(self._user_data)
         return self.async_create_entry(title=title, data=data)
 
 
@@ -568,65 +677,64 @@ class PyTapOptionsFlow(OptionsFlow):
     async def async_step_change_connection(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Allow the user to change the Tigo gateway IP address and port."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            try:
-                settings = normalize_connection(user_input)
-            except InvalidConnectionSettings as err:
-                errors[err.field] = err.error
-                settings = None
-            if settings is not None:
-                new_host, new_port = settings[CONF_HOST], settings[CONF_PORT]
-                key = (new_host, new_port)
-                # An unreachable converter is reported once; submitting the
-                # same settings again saves them.
-                try:
-                    await validate_connection(self.hass, settings)
-                except Exception:  # noqa: BLE001
-                    if self._unreachable_confirm != key:
-                        self._unreachable_confirm = key
-                        errors["base"] = "cannot_connect"
-                    else:
-                        _LOGGER.warning(
-                            "Could not connect to %s:%s — saving anyway", *key
-                        )
-
-            if settings is not None and not errors:
-                # Update entry data with new connection details
-                new_data = {**self._config_entry.data}
-                new_data[CONF_HOST] = new_host
-                new_data[CONF_PORT] = new_port
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry,
-                    data=new_data,
-                    title=f"PyTap ({new_host})",
-                )
-                # A loaded entry reloads through its update listener; one that
-                # failed setup (e.g. invalid saved settings) has none.
-                if self._config_entry.state in (
-                    ConfigEntryState.SETUP_ERROR,
-                    ConfigEntryState.SETUP_RETRY,
-                ):
-                    self.hass.config_entries.async_schedule_reload(
-                        self._config_entry.entry_id
-                    )
-                return await self.async_step_init()
-
-        # Pre-fill with current values
-        current_host = self._config_entry.data.get(CONF_HOST, "")
-        current_port = self._config_entry.data.get(CONF_PORT, DEFAULT_PORT)
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_HOST, default=current_host): str,
-                vol.Optional(CONF_PORT, default=current_port): int,
-            }
+        """Choose the transport to use after reloading this entry."""
+        return self.async_show_menu(
+            step_id="change_connection", menu_options=["change_tcp", "change_serial"]
         )
 
+    async def async_step_change_tcp(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change the RS-485 to TCP converter's address."""
+        return await self._async_connection_step(CONNECTION_TCP, user_input)
+
+    async def async_step_change_serial(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Change to (or edit) a serial port or ESPHome serial proxy."""
+        return await self._async_connection_step(CONNECTION_SERIAL, user_input)
+
+    async def _async_connection_step(
+        self, connection_type: str, user_input: dict[str, Any] | None
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                settings = normalize_connection(
+                    {**user_input, CONF_CONNECTION_TYPE: connection_type}
+                )
+            except InvalidConnectionSettings as err:
+                errors[err.field] = err.error
+            else:
+                errors = await connection_errors(
+                    self.hass, settings, self, self._config_entry
+                )
+                if not errors:
+                    new_data = {
+                        key: value
+                        for key, value in self._config_entry.data.items()
+                        if key not in CONNECTION_KEYS
+                    }
+                    self.hass.config_entries.async_update_entry(
+                        self._config_entry,
+                        data={**new_data, **settings},
+                        title=connection_title(settings),
+                    )
+                    # A loaded entry reloads through its update listener; one
+                    # that failed setup (e.g. invalid saved settings) has none.
+                    if self._config_entry.state in (
+                        ConfigEntryState.SETUP_ERROR,
+                        ConfigEntryState.SETUP_RETRY,
+                    ):
+                        self.hass.config_entries.async_schedule_reload(
+                            self._config_entry.entry_id
+                        )
+                    return await self.async_step_init()
+
+        current = user_input if user_input is not None else dict(self._config_entry.data)
         return self.async_show_form(
-            step_id="change_connection",
-            data_schema=schema,
+            step_id=f"change_{connection_type}",
+            data_schema=connection_schema(connection_type, current),
             errors=errors,
         )
 

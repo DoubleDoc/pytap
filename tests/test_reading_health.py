@@ -380,7 +380,7 @@ def _run_listener(coordinator, connect_results, max_sleeps=200):
     """Run _listen with connect() returning/raising the given results."""
     results = list(connect_results)
 
-    def fake_connect(_config):
+    def fake_connect(_loop, _connection):
         if not results:
             coordinator._stop_event.set()
             raise OSError("stopped")
@@ -397,7 +397,7 @@ def _run_listener(coordinator, connect_results, max_sleeps=200):
             coordinator._stop_event.set()
 
     with (
-        patch("custom_components.pytap.pytap.api.connect", fake_connect),
+        patch.object(coord_mod, "open_source", fake_connect),
         patch.object(coord_mod.time, "sleep", fake_sleep),
     ):
         coordinator._listen()

@@ -2,17 +2,11 @@
   "config": {
     "step": {
       "user": {
-        "title": "Connect to the RS-485 converter",
-        "description": "Enter the address of the RS-485 to TCP converter connected to your Tigo CCA's gateway bus.",
-        "data": {
-          "host": "Host",
-          "port": "Port",
-          "inverter": "Inverter name (optional)"
-        },
-        "data_description": {
-          "host": "The hostname or IP address of the RS-485 to TCP converter.",
-          "port": "The port number (default: 502).",
-          "inverter": "Only needed with more than one gateway: a short label such as Master or East, used at the start of device names. Leave blank for a single gateway."
+        "title": "Connect to the Tigo bus",
+        "description": "How does PyTap receive the RS-485 traffic between the Tigo CCA and its TAP?",
+        "menu_options": {
+          "tcp": "RS-485 to TCP converter",
+          "serial": "Serial port or ESPHome serial proxy"
         }
       },
       "modules_menu": {
@@ -41,6 +35,33 @@
       },
       "finish": {
         "title": "Finish Setup"
+      },
+      "tcp": {
+        "title": "RS-485 to TCP converter",
+        "description": "Enter the address of the RS-485 to TCP converter connected to your Tigo CCA's gateway bus.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "inverter": "Inverter name (optional)"
+        },
+        "data_description": {
+          "host": "The hostname or IP address of the RS-485 to TCP converter.",
+          "port": "The port number (default: 502).",
+          "inverter": "Only needed with more than one gateway: a short label such as Master or East, used at the start of device names. Leave blank for a single gateway."
+        }
+      },
+      "serial": {
+        "title": "Serial port or ESPHome serial proxy",
+        "data": {
+          "serial_port": "Serial port or proxy",
+          "baud_rate": "Baud rate",
+          "inverter": "Inverter name (optional)"
+        },
+        "data_description": {
+          "serial_port": "A USB or other RS-485 adapter on this host, or an ESPHome device with serial_proxy. PyTap only listens: it never transmits on the bus.",
+          "baud_rate": "38400 for the Tigo gateway bus.",
+          "inverter": "Only needed with more than one gateway: a short label such as Master or East, used at the start of device names. Leave blank for a single gateway."
+        }
       }
     },
     "error": {
@@ -54,7 +75,12 @@
       "no_modules": "At least one module must be added.",
       "unknown": "Unexpected error",
       "invalid_host": "Enter the RS-485 converter’s host name or IP address.",
-      "invalid_port": "Enter a port from 1 to 65535."
+      "invalid_port": "Enter a port from 1 to 65535.",
+      "serial_port_in_use": "Another PyTap entry already uses this serial port.",
+      "invalid_serial_port": "Choose a serial device under /dev or a Home Assistant serial proxy.",
+      "invalid_baud_rate": "Enter a baud rate from 1 to 4000000.",
+      "unsupported_serial_settings": "The serial port doesn’t support these settings.",
+      "invalid_connection_type": "Unknown connection type."
     },
     "abort": {
       "already_configured": "This gateway is already configured."
@@ -202,15 +228,10 @@
         }
       },
       "change_connection": {
-        "title": "Change Connection Settings",
-        "description": "Update the IP address and port of the RS-485 to TCP converter.",
-        "data": {
-          "host": "Host",
-          "port": "Port"
-        },
-        "data_description": {
-          "host": "The hostname or IP address of the RS-485 to TCP converter.",
-          "port": "The port number (default: 502)."
+        "title": "Change connection",
+        "menu_options": {
+          "change_tcp": "RS-485 to TCP converter",
+          "change_serial": "Serial port or ESPHome serial proxy"
         }
       },
       "add_module": {
@@ -305,6 +326,25 @@
           "silent_action": "An optimizer that stays quiet in daylight (usually a weak radio link to the TAP). Unavailable: live readings become unavailable. Hold: keep the last values. Zero: read 0 like at night.",
           "silent_minutes": "How long a daylight dropout lasts before the optimizer counts as silent (5–240). Short dropouts are normal; on one 19-panel installation gaps reached 76 s in production and 171 s at dawn."
         }
+      },
+      "change_tcp": {
+        "title": "RS-485 to TCP converter",
+        "description": "Update the IP address and port of the RS-485 to TCP converter.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      },
+      "change_serial": {
+        "title": "Serial port or ESPHome serial proxy",
+        "data": {
+          "serial_port": "Serial port or proxy",
+          "baud_rate": "Baud rate"
+        },
+        "data_description": {
+          "serial_port": "A USB or other RS-485 adapter on this host, or an ESPHome device with serial_proxy. PyTap only listens: it never transmits on the bus.",
+          "baud_rate": "38400 for the Tigo gateway bus."
+        }
       }
     },
     "error": {
@@ -313,7 +353,12 @@
       "missing_name": "Module name is required.",
       "invalid_host": "Enter the RS-485 converter’s host name or IP address.",
       "invalid_port": "Enter a port from 1 to 65535.",
-      "cannot_connect": "Could not connect to the RS-485 converter. Check the host and port, or submit again to save anyway."
+      "cannot_connect": "Could not connect to the RS-485 converter. Check the host and port, or submit again to save anyway.",
+      "serial_port_in_use": "Another PyTap entry already uses this serial port.",
+      "invalid_serial_port": "Choose a serial device under /dev or a Home Assistant serial proxy.",
+      "invalid_baud_rate": "Enter a baud rate from 1 to 4000000.",
+      "unsupported_serial_settings": "The serial port doesn’t support these settings.",
+      "invalid_connection_type": "Unknown connection type."
     }
   },
   "exceptions": {

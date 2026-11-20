@@ -27,8 +27,9 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
+import serialx
 
-from .connection import normalize_connection
+from .connection import normalize_connection, open_source
 from .const import (
     BUS_CONVERTER_UNREACHABLE,
     BUS_ERROR_LOG_INTERVAL_SECONDS,
@@ -37,6 +38,8 @@ from .const import (
     BUS_ERROR_WINDOW_SECONDS,
     BUS_NORMAL,
     BUS_QUIET,
+    CONF_BAUD_RATE,
+    CONF_CONNECTION_TYPE,
     CONF_ESTIMATE_SILENT,
     CONF_INVERTER,
     CONF_LIVE_REPORTING,
@@ -46,9 +49,11 @@ from .const import (
     CONF_MODULE_STRING,
     CONF_MODULES,
     CONF_NIGHT_ACTION,
+    CONF_SERIAL_PORT,
     CONF_SILENT_ACTION,
     CONF_SILENT_MINUTES,
     CONF_WRITE_INTERVAL,
+    CONNECTION_TCP,
     DEFAULT_ESTIMATE_SILENT,
     DEFAULT_LIVE_REPORTING,
     DEFAULT_NIGHT_ACTION,
@@ -202,10 +207,11 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         # Raises InvalidConnectionSettings for a bad saved host or port.
         settings = normalize_connection(entry.data)
-        self._host: str = settings[CONF_HOST]
-        self._port: int = settings[CONF_PORT]
+        self.connection: dict[str, Any] = settings
+        self._host: str | None = settings.get(CONF_HOST)
+        self._port: int | None = settings.get(CONF_PORT)
         self._log = _GatewayLog(
-            _LOGGER, {"gateway": entry.data.get(CONF_INVERTER) or self._host}
+            _LOGGER, {"gateway": entry.data.get(CONF_INVERTER) or self.endpoint_label}
         )
         self._modules: list[dict[str, Any]] = entry.data.get(CONF_MODULES, [])
         self._live_reporting: bool = entry.data.get(
@@ -366,6 +372,15 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _async_update_data(self) -> dict[str, Any]:
         """Return current data (push-based, no polling needed)."""
         return self.data
+
+    @property
+    def endpoint_label(self) -> str:
+        """Where the bus bytes come from, for logs (never a proxy URL)."""
+        if self.connection.get(CONF_CONNECTION_TYPE, CONNECTION_TCP) == CONNECTION_TCP:
+            return f"{self._host}:{self._port}"
+        if str(self.connection.get(CONF_SERIAL_PORT, "")).startswith("esphome-hass://"):
+            return "serial proxy"
+        return "serial port"
 
     # ------------------------------------------------------------------
     #  Publishing listener state to Home Assistant
@@ -734,10 +749,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else:
                 self._log.warning(
                     "Converter unreachable: no connection to the RS-485 "
-                    "converter at %s:%s for %s. Check its power and network. "
+                    "converter (%s) for %s. Check its power and network. "
                     "Live readings are unavailable; energy totals are kept",
-                    self._host,
-                    self._port,
+                    self.endpoint_label,
                     quiet_for,
                 )
         elif link_up and not self._link_was_up:
@@ -928,8 +942,11 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "connection_state": {
                 "infra_received": self._infra_received,
                 "pending_power_reports": self._pending_power_reports,
+                "connection_type": self.connection.get(CONF_CONNECTION_TYPE, CONNECTION_TCP),
                 "host": self._host,
                 "port": self._port,
+                "serial_port": self.connection.get(CONF_SERIAL_PORT),
+                "baud_rate": self.connection.get(CONF_BAUD_RATE),
             },
             "energy_state": {
                 barcode: {
@@ -993,11 +1010,13 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if source is None:
             return
         interrupt = getattr(source, "interrupt", None)
+        if interrupt is None:
+            # Serial sources: reads time out every SERIAL_READ_TIMEOUT, so the
+            # listener sees the stop within a second; it must close the port
+            # itself (closing it from the event loop isn't allowed).
+            return
         try:
-            if interrupt is not None:
-                interrupt()
-            else:
-                source.close()
+            interrupt()
         except Exception:  # noqa: BLE001
             pass
 
@@ -1127,7 +1146,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         STABLE_CONNECTION_SECONDS. Retries back off from RECONNECT_DELAY to
         RECONNECT_MAX_DELAY.
         """
-        from .pytap.api import connect, create_parser
+        from .pytap.api import create_parser
 
         retries = 0
         delay = RECONNECT_DELAY
@@ -1146,8 +1165,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self._source = None
 
             try:
-                source_config = {"tcp": self._host, "port": self._port}
-                source = connect(source_config)
+                source = open_source(self.hass.loop, self.connection)
                 with self._source_lock:
                     if self._stop_event.is_set():
                         source.close()
@@ -1156,16 +1174,12 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 connected_at = time.monotonic()
                 if not ever_connected:
                     self._log.info(
-                        "Connected to RS-485 converter at %s:%s",
-                        self._host,
-                        self._port,
+                        "Connected to RS-485 converter (%s)", self.endpoint_label
                     )
                     ever_connected = True
                 else:
                     self._log.debug(
-                        "Connected to RS-485 converter at %s:%s",
-                        self._host,
-                        self._port,
+                        "Connected to RS-485 converter (%s)", self.endpoint_label
                     )
                 last_data_time = connected_at
 
@@ -1229,20 +1243,19 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                                 )
                             break
 
-            except OSError as err:
-                # Socket errors, refused/timed-out connects, peer resets.
+            except (OSError, serialx.SerialException) as err:
+                # Socket and serial errors, refused/timed-out connects, resets.
                 if self._stop_event.is_set():
                     return
                 self._outage_cause = BUS_CONVERTER_UNREACHABLE
                 if outage_since is None:
                     outage_since = time.monotonic()
                     self._log.warning(
-                        "Connection to the RS-485 converter at %s:%s failed: "
+                        "Connection to the RS-485 converter (%s) failed: "
                         "%s. Retrying; further failures are logged at debug "
                         "level until data returns",
-                        self._host,
-                        self._port,
-                        err,
+                        self.endpoint_label,
+                        type(err).__name__ if self._host is None else err,
                     )
                 else:
                     self._log.debug("Connection attempt failed: %s", err)

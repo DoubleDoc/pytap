@@ -53,3 +53,21 @@ class _NoTimer:
 
     def cancel(self) -> None:
         """Nothing to cancel."""
+
+
+@pytest.fixture(autouse=True)
+def mock_usb_hardware():
+    """Keep HA's usb integration (a dependency since serial support) off host USB.
+
+    From Tim Laing's upstream PR azebro/pytap#36.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    with (
+        patch(
+            "homeassistant.components.usb.USBDiscovery._async_start_aiousbwatcher",
+            new_callable=AsyncMock,
+        ),
+        patch("homeassistant.components.usb.scan_serial_ports", return_value=[]),
+    ):
+        yield
