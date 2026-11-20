@@ -94,6 +94,7 @@ async def test_sensor_device_names_use_inverter(hass: HomeAssistant) -> None:
     coordinator = MagicMock(spec=PyTapDataUpdateCoordinator)
     coordinator.data = {"nodes": {}}
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
 
     entities = []
     await async_setup_entry(hass, entry, lambda e: entities.extend(e))

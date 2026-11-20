@@ -2,9 +2,20 @@
 
 ## [Unreleased]
 
-The changes below are ported from [Tim Laing](https://github.com/timlaing)'s upstream pull request series, starting with [PR #32](https://github.com/azebro/pytap/pull/32).
+The changes below are ported from [Tim Laing](https://github.com/timlaing)'s upstream pull request series: [PR #32](https://github.com/azebro/pytap/pull/32) and [PR #33](https://github.com/azebro/pytap/pull/33) so far.
 
 ### Fixed
+
+- **Saved state that can't be read is never overwritten** — If PyTap couldn't read its saved state, it started empty and its next save replaced the file, losing lifetime energy totals. It now leaves the file alone until the next reload. (#33)
+- **Midnight reset is DST-safe** — It used a timer for "seconds until midnight", which fired an hour off on the nights the clocks change; it now uses Home Assistant's local-time scheduling. (#33)
+- **Stopping interrupts the connection** — A stop wakes the listener's blocked read at once instead of waiting for its timeout. A listener that doesn't stop within 15 s is set aside and the entry isn't set up again until it has released the connection, instead of the entry getting stuck. A setup that fails part-way stops its listener again. (#33)
+- **Removing an entry deletes its saved state.** (#33)
+- **Diagnostics hide the entry title**, which contains the converter's address (the host itself was already hidden). (#33)
+
+### Changed
+
+- **Connection settings are validated** — Setup and *Change connection settings* check the host and port (1–65535). An unreachable converter is reported once; submitting the same settings again continues, for converters that are offline at the time. Invalid saved settings stop setup with a clear message instead of retrying forever, and correcting them reloads the entry. Finishing setup without any modules explains why instead of just showing the menu again. (#33)
+- The coordinator is kept in `entry.runtime_data` (Home Assistant's current pattern) instead of `hass.data`. CI lints the tests too. (#33)
 
 - **Invalid slot counters** — An invalid slot counter in a receive-response header no longer crashes the parser (an `IndexError` escaped `Parser.feed` and forced a reconnect). Such a frame never updates the slot clock and keeps its reports only when the packet walk consumes the payload exactly and every packet is well-formed; otherwise the whole frame is dropped. Like any power report, kept reports are still dropped while the gateway has no slot clock yet. Power reports with an invalid slot counter are dropped. New parser counters `invalid_slots`, `invalid_slot_frames_kept`, `invalid_slot_frames_dropped` and `no_slot_clock_drops` record these cases. The "no slot clock" warning is logged once per gateway (per connection), then at debug level, instead of for every discarded report.
 

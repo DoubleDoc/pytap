@@ -10,10 +10,12 @@ from __future__ import annotations
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
-from homeassistant.core import Event, HomeAssistant
+from homeassistant.const import CONF_HOST, CONF_PORT, EVENT_HOMEASSISTANT_STOP, Platform
+from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import entity_registry as er
 
+from .connection import InvalidConnectionSettings
 from .const import (
     CONF_INVERTER,
     CONF_LIVE_REPORTING,
@@ -31,7 +33,12 @@ from .const import (
     MAX_WRITE_INTERVAL,
     MIN_WRITE_INTERVAL,
 )
-from .coordinator import PyTapDataUpdateCoordinator
+from .coordinator import (
+    PyTapConfigEntry,
+    PyTapDataUpdateCoordinator,
+    coordinator_store,
+    parked_coordinators,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,47 +60,88 @@ _LEGACY_UNIQUE_ID_RENAMES: dict[str, str] = {
 _LEGACY_UNIQUE_IDS_TO_REMOVE: set[str] = {"voltage", "current"}
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+# Readable names for the setting named in an invalid_connection_settings error.
+_SETTING_NAMES: dict[str, str] = {CONF_HOST: "host", CONF_PORT: "port"}
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: PyTapConfigEntry) -> bool:
     """Set up PyTap from a config entry.
 
-    1. Clean up legacy entity unique IDs from pre-v0.2.0.
-    2. Create the streaming coordinator.
-    3. Run an initial refresh to validate connectivity.
-    4. Start the background listener task.
-    5. Store the coordinator and forward platform setup.
+    1. Wait for any previous listener for this entry to release its connection.
+    2. Clean up legacy entity unique IDs from pre-v0.2.0.
+    3. Create the coordinator and start the background listener.
+    4. Store the coordinator and forward platform setup.
+
+    Lifecycle handling adapted from Tim Laing's upstream PR azebro/pytap#33.
     """
-    hass.data.setdefault(DOMAIN, {})
+    # A timed-out stop must not let a new listener open the same connection:
+    # NotReady makes Home Assistant retry setup until the old one has stopped.
+    parked = parked_coordinators(hass)
+    if previous := parked.get(entry.entry_id):
+        if not await previous.async_stop_listener():
+            raise ConfigEntryNotReady(
+                translation_domain=DOMAIN, translation_key="previous_listener_stopping"
+            )
+        if parked.get(entry.entry_id) is previous:
+            del parked[entry.entry_id]
 
     # --- Legacy entity migration (voltage/current → voltage_in/out, current_in/out) ---
     await _async_cleanup_legacy_entities(hass, entry)
 
-    coordinator = PyTapDataUpdateCoordinator(hass, entry)
+    try:
+        coordinator = PyTapDataUpdateCoordinator(hass, entry)
+    except InvalidConnectionSettings as err:
+        # Ask the user to fix saved settings rather than retrying forever.
+        raise ConfigEntryError(
+            translation_domain=DOMAIN,
+            translation_key="invalid_connection_settings",
+            translation_placeholders={"field": _SETTING_NAMES.get(err.field, err.field)},
+        ) from err
 
-    # Validates that the coordinator can be initialised; does not block on data
-    await coordinator.async_config_entry_first_refresh()
-
-    # Start the background streaming listener
-    await coordinator.async_start_listener()
-
-    # Stop the listener and save state when the entry unloads, and when Home
-    # Assistant stops: HA doesn't unload config entries at shutdown.
-    entry.async_on_unload(coordinator.async_stop_listener)
-
-    async def _async_stop_on_shutdown(_event: Event) -> None:
-        await coordinator.async_stop_listener()
-
-    entry.async_on_unload(
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop_on_shutdown)
-    )
-
-    hass.data[DOMAIN][entry.entry_id] = coordinator
-
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    # Listen for options updates to reload module configuration
-    entry.async_on_unload(entry.add_update_listener(_async_update_options))
+    try:
+        # Validates that the coordinator can be initialised; does not block on data
+        await coordinator.async_config_entry_first_refresh()
+        await coordinator.async_start_listener()
+        entry.runtime_data = coordinator
+        _async_stop_on_shutdown(hass, entry, coordinator)
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        # Listen for options updates to reload module configuration
+        entry.async_on_unload(entry.add_update_listener(_async_update_options))
+    except BaseException:
+        # Don't leave a running listener or timers behind a failed setup.
+        await _async_stop_or_park(hass, entry.entry_id, coordinator)
+        raise
 
     return True
+
+
+@callback
+def _async_stop_on_shutdown(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: PyTapDataUpdateCoordinator
+) -> None:
+    """Stop the listener (and save state) when Home Assistant stops.
+
+    Home Assistant doesn't unload config entries at shutdown.
+    """
+    remove_listener: CALLBACK_TYPE | None = None
+
+    @callback
+    def _async_on_stop(_event: Event) -> None:
+        nonlocal remove_listener
+        remove_listener = None  # a one-time listener has removed itself
+        hass.async_create_task(
+            coordinator.async_stop_listener(), "pytap stop on shutdown"
+        )
+
+    @callback
+    def _async_remove_listener() -> None:
+        nonlocal remove_listener
+        if remove_listener is not None:
+            remove_listener()
+            remove_listener = None
+
+    remove_listener = hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_on_stop)
+    entry.async_on_unload(_async_remove_listener)
 
 
 async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -101,18 +149,67 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: PyTapConfigEntry) -> bool:
     """Unload a config entry.
 
-    1. Unload platforms.
-    2. Stop the coordinator's background listener.
-    3. Remove coordinator from hass.data.
+    A listener that doesn't stop in time is parked, so the next setup waits
+    (ConfigEntryNotReady) instead of the entry getting stuck until restart.
     """
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        coordinator: PyTapDataUpdateCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
-        await coordinator.async_stop_listener()
+    coordinator = entry.runtime_data
+    if not await _async_stop_or_park(hass, entry.entry_id, coordinator):
+        _LOGGER.warning("PyTap listener is still stopping; setup will wait for it")
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
-    return unload_ok
+
+async def _async_stop_or_park(
+    hass: HomeAssistant, entry_id: str, coordinator: PyTapDataUpdateCoordinator
+) -> bool:
+    """Stop the listener, or park the coordinator if it won't stop in time."""
+    stopped = False
+    try:
+        stopped = await coordinator.async_stop_listener()
+    finally:
+        if not stopped:
+            _async_park(hass, entry_id, coordinator)
+    return stopped
+
+
+@callback
+def _async_park(
+    hass: HomeAssistant, entry_id: str, coordinator: PyTapDataUpdateCoordinator
+) -> None:
+    """Track a coordinator whose stop timed out until its listener really exits.
+
+    Once the listener exits, the coordinator finishes its own cleanup, so it
+    doesn't leak when no setup comes to wait for it (e.g. a disabled entry).
+    """
+    parked = parked_coordinators(hass)
+    parked[entry_id] = coordinator
+
+    async def _async_finish_stop() -> None:
+        if parked.get(entry_id) is coordinator and await coordinator.async_stop_listener():
+            if parked.get(entry_id) is coordinator:
+                del parked[entry_id]
+
+    @callback
+    def _async_listener_exited() -> None:
+        hass.async_create_background_task(
+            _async_finish_stop(), "pytap parked listener cleanup"
+        )
+
+    coordinator.async_on_listener_exit(_async_listener_exited)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Delete this entry's saved state along with the entry."""
+    parked = parked_coordinators(hass)
+    if (coordinator := parked.get(entry.entry_id)) is not None:
+        if await coordinator.async_stop_listener(discard_state=True):
+            if parked.get(entry.entry_id) is coordinator:
+                del parked[entry.entry_id]
+        else:
+            _LOGGER.warning("PyTap listener is still stopping; deleting its saved state anyway")
+    await coordinator_store(hass, entry.entry_id).async_remove()
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

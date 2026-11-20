@@ -5,7 +5,7 @@ infrastructure state survive restarts via the consolidated HA Store.
 """
 
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant
@@ -1071,29 +1071,27 @@ class TestMidnightReset:
         coordinator._schedule_save.assert_not_called()
         coordinator.async_set_updated_data.assert_not_called()
 
-    def test_perform_midnight_reset_reschedules(self, hass: HomeAssistant) -> None:
-        """Midnight reset should reschedule itself for the next midnight."""
+    async def test_midnight_reset_uses_time_change(self, hass: HomeAssistant) -> None:
+        """The reset is a recurring local-midnight listener (DST-safe)."""
         entry = _make_entry(hass)
         coordinator = PyTapDataUpdateCoordinator(hass, entry)
-        coordinator._schedule_save = MagicMock()
-        coordinator.async_set_updated_data = MagicMock()
+        with patch(
+            "custom_components.pytap.coordinator.async_track_time_change",
+            return_value=MagicMock(),
+        ) as track:
+            coordinator._schedule_midnight_reset()
+        track.assert_called_once()
+        assert track.call_args.kwargs == {"hour": 0, "minute": 0, "second": 0}
+        assert coordinator._midnight_reset_unsub is track.return_value
 
-        coordinator._perform_midnight_reset()
-
-        assert coordinator._midnight_reset_unsub is not None
-
-    def test_stop_cancels_midnight_timer(self, hass: HomeAssistant) -> None:
-        """Stopping the listener should cancel the midnight reset timer."""
+    async def test_stop_cancels_midnight_timer(self, hass: HomeAssistant) -> None:
+        """Stopping the listener removes the midnight reset listener."""
         entry = _make_entry(hass)
         coordinator = PyTapDataUpdateCoordinator(hass, entry)
+        unsub = MagicMock()
+        coordinator._midnight_reset_unsub = unsub
 
-        mock_timer = MagicMock()
-        coordinator._midnight_reset_unsub = mock_timer
+        assert await coordinator.async_stop_listener() is True
 
-        # async_stop_listener cancels the timer
-        import asyncio
-
-        asyncio.get_event_loop().run_until_complete(coordinator.async_stop_listener())
-
-        mock_timer.cancel.assert_called_once()
+        unsub.assert_called_once()
         assert coordinator._midnight_reset_unsub is None

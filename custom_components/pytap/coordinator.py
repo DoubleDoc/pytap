@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta
-from datetime import time as dt_time
 import logging
 import math
 import threading
@@ -20,12 +19,16 @@ from astral import Observer
 from astral.sun import elevation as solar_elevation
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.helpers.event import (
+    async_track_time_change,
+    async_track_time_interval,
+)
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
+from .connection import normalize_connection
 from .const import (
     BUS_CONVERTER_UNREACHABLE,
     BUS_ERROR_LOG_INTERVAL_SECONDS,
@@ -46,7 +49,6 @@ from .const import (
     DEFAULT_ESTIMATE_SILENT,
     DEFAULT_LIVE_REPORTING,
     DEFAULT_PEAK_POWER,
-    DEFAULT_PORT,
     DEFAULT_WRITE_INTERVAL,
     DOMAIN,
     ENERGY_GAP_THRESHOLD_SECONDS,
@@ -100,6 +102,8 @@ _LOGGER = logging.getLogger(__name__)
 
 STORE_VERSION = 2
 SAVE_DELAY_SECONDS = 10
+# How long a stop waits for the listener thread to release the connection.
+LISTENER_STOP_TIMEOUT = 15.0
 
 # A reconnected stream counts as recovered once data has flowed this long,
 # so a connection that drops straight after connecting doesn't log
@@ -157,6 +161,22 @@ class _MigratingStore(Store):
         return old_data
 
 
+type PyTapConfigEntry = ConfigEntry[PyTapDataUpdateCoordinator]
+
+
+def coordinator_store(hass: HomeAssistant, entry_id: str) -> Store:
+    """The Store holding an entry's saved state (also used to delete it)."""
+    return _MigratingStore(hass, STORE_VERSION, f"pytap_{entry_id}_coordinator")
+
+
+def parked_coordinators(hass: HomeAssistant) -> dict[str, PyTapDataUpdateCoordinator]:
+    """Coordinators whose stop timed out, by entry ID, until their worker exits.
+
+    Setup of the same entry waits for them (adapted from azebro/pytap#33).
+    """
+    return hass.data.setdefault(f"{DOMAIN}_parked", {})
+
+
 class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Manage streaming data from the Tigo gateway via pytap parser.
 
@@ -175,8 +195,10 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name=DOMAIN,
             config_entry=entry,
         )
-        self._host: str = entry.data[CONF_HOST]
-        self._port: int = entry.data.get(CONF_PORT, DEFAULT_PORT)
+        # Raises InvalidConnectionSettings for a bad saved host or port.
+        settings = normalize_connection(entry.data)
+        self._host: str = settings[CONF_HOST]
+        self._port: int = settings[CONF_PORT]
         self._log = _GatewayLog(
             _LOGGER, {"gateway": entry.data.get(CONF_INVERTER) or self._host}
         )
@@ -280,19 +302,25 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Flushed (time-weighted averaged) each time the write interval fires.
         self._reading_buffers: dict[str, list[tuple[float, dict[str, Any]]]] = {}
 
-        # Midnight reset timer handle
-        self._midnight_reset_unsub: asyncio.TimerHandle | None = None
+        # Midnight reset listener (async_track_time_change: DST-safe)
+        self._midnight_reset_unsub: CALLBACK_TYPE | None = None
 
         # Source handle for cancellation — accessed from both threads
         self._source: Any = None
         self._source_lock = threading.Lock()
 
         # --- Persistence (single HA Store for all state) ---
-        self._store = _MigratingStore(
-            hass, STORE_VERSION, f"pytap_{entry.entry_id}_coordinator"
-        )
+        self._store = coordinator_store(hass, entry.entry_id)
         self._unsaved_changes: bool = False
         self._save_task: asyncio.TimerHandle | None = None
+        # Set when the saved state couldn't be read (so it's never overwritten
+        # with empty state) and when the entry is being removed.
+        self._save_blocked: bool = False
+
+        # Listener worker (executor job) and stop coordination.
+        self._worker_future: asyncio.Future | None = None
+        self._stop_lock = asyncio.Lock()
+        self._exit_callbacks: list[CALLBACK_TYPE] = []
 
         # Parser infrastructure state — shared between coordinator and parser
         self._persistent_state: PersistentState = PersistentState()
@@ -802,61 +830,127 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     async def _async_listen(self) -> None:
-        """Async wrapper to run the blocking listener in an executor."""
-        await self.hass.async_add_executor_job(self._listen)
+        """Run the blocking listener in an executor, then notify exit callbacks."""
+        self._worker_future = self.hass.async_add_executor_job(self._listen)
+        try:
+            await self._worker_future
+        finally:
+            if self._worker_future.done():
+                callbacks, self._exit_callbacks = self._exit_callbacks, []
+                for exit_callback in callbacks:
+                    exit_callback()
 
-    async def async_stop_listener(self) -> None:
-        """Stop the background listener task."""
-        self._stop_event.set()
+    @callback
+    def async_on_listener_exit(self, exit_callback: CALLBACK_TYPE) -> None:
+        """Call ``exit_callback`` once the listener thread has exited."""
+        if self._worker_future is None or self._worker_future.done():
+            exit_callback()
+        else:
+            self._exit_callbacks.append(exit_callback)
+
+    def _interrupt_source(self) -> None:
+        """Wake a blocked read; the listener thread closes the connection itself."""
+        with self._source_lock:
+            source = self._source
+        if source is None:
+            return
+        interrupt = getattr(source, "interrupt", None)
+        try:
+            if interrupt is not None:
+                interrupt()
+            else:
+                source.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    @callback
+    def _cancel_lifecycle_timers(self) -> None:
+        """Cancel the health check, midnight reset and pending save timer."""
         if self._health_unsub is not None:
             self._health_unsub()
             self._health_unsub = None
-        # Cancel midnight reset timer
         if self._midnight_reset_unsub is not None:
-            self._midnight_reset_unsub.cancel()
+            self._midnight_reset_unsub()
             self._midnight_reset_unsub = None
-        # Close source to unblock the read()/connect() call in the executor,
-        # and let the listener finish before the final save, so no reading
-        # arrives after it.
-        with self._source_lock:
-            if self._source is not None:
-                try:
-                    self._source.close()
-                except Exception:
-                    pass
-        if self._listener_task is not None:
-            self._listener_task.cancel()
-            try:
-                async with asyncio.timeout(5):
-                    await self._listener_task
-            except (asyncio.CancelledError, TimeoutError, Exception):
-                pass
-            self._listener_task = None
-        # Flush any pending state save
         if self._save_task is not None:
             self._save_task.cancel()
             self._save_task = None
-        if self._unsaved_changes:
-            await self._async_save_coordinator_state()
+
+    async def async_stop_listener(self, *, discard_state: bool = False) -> bool:
+        """Stop the listener and save state; return whether it stopped in time.
+
+        The whole stop is bounded. Timers are cancelled even if the listener
+        thread can't be joined in time; then the caller parks this coordinator
+        so the entry isn't set up again until the thread has released the
+        connection. ``discard_state`` (entry removal) blocks every later save,
+        so a late final save can't recreate a deleted Store. Adapted from
+        Tim Laing's upstream PR azebro/pytap#33.
+        """
+        if discard_state:
+            self._save_blocked = True
+        self._stop_event.set()
+        self._interrupt_source()
+        self._cancel_lifecycle_timers()
+        try:
+            async with asyncio.timeout(LISTENER_STOP_TIMEOUT):
+                return await self._async_stop_listener_locked()
+        except TimeoutError:
+            self._log.error("Listener did not stop in time; it will finish in the background")
+            return False
+
+    async def _async_stop_listener_locked(self) -> bool:
+        """Wait for the listener thread to exit, then do the final save."""
+        async with self._stop_lock:
+            self._stop_event.set()
+            try:
+                # Leave part of the caller's bound for the final save.
+                async with asyncio.timeout(LISTENER_STOP_TIMEOUT * 0.75):
+                    if self._listener_task is not None:
+                        try:
+                            await asyncio.shield(self._listener_task)
+                        except asyncio.CancelledError:
+                            # HA cancels background tasks at shutdown: still
+                            # wait for the thread, unless this stop itself is
+                            # being cancelled.
+                            current = asyncio.current_task()
+                            if current is not None and current.cancelling():
+                                raise
+                    if self._worker_future is not None:
+                        await asyncio.shield(self._worker_future)
+            except TimeoutError:
+                return False
+            except Exception as err:  # noqa: BLE001
+                # The thread has exited; a failure in it mustn't stop cleanup.
+                self._log.error("Listener exited with %s", type(err).__name__)
+            self._listener_task = None
+            self._worker_future = None
+            self._cancel_lifecycle_timers()
+            if self._unsaved_changes and not self._save_blocked:
+                # Shielded: a timeout or HA shutdown mustn't cut the final
+                # write short once the listener has released the state.
+                await asyncio.shield(
+                    self.hass.async_create_task(
+                        self._async_save_coordinator_state(), "pytap final state save"
+                    )
+                )
+            return True
 
     def _schedule_midnight_reset(self) -> None:
-        """Schedule a callback at the next local midnight to reset daily accumulators."""
-        now = dt_util.now()
-        next_midnight = datetime.combine(
-            now.date() + timedelta(days=1), dt_time.min, tzinfo=now.tzinfo
-        )
-        delay = (next_midnight - now).total_seconds()
-        self._midnight_reset_unsub = self.hass.loop.call_later(
-            delay, self._perform_midnight_reset
-        )
-        self._log.debug(
-            "Scheduled daily reset in %.0f seconds (at %s)", delay, next_midnight
+        """Reset daily accumulators at every local midnight (DST-safe)."""
+        if self._midnight_reset_unsub is not None:
+            self._midnight_reset_unsub()
+
+        @callback
+        def _at_midnight(_now: datetime) -> None:
+            self._perform_midnight_reset()
+
+        self._midnight_reset_unsub = async_track_time_change(
+            self.hass, _at_midnight, hour=0, minute=0, second=0
         )
 
     @callback
     def _perform_midnight_reset(self) -> None:
         """Reset all daily accumulators and push updated data to sensors."""
-        self._midnight_reset_unsub = None
         today = dt_util.now().date().isoformat()
         self._log.info(
             "Midnight daily reset — resetting daily accumulators for %s", today
@@ -878,9 +972,6 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if data_changed:
             self._schedule_save()
             self.async_set_updated_data(dict(self.data))
-
-        # Re-schedule for the next midnight
-        self._schedule_midnight_reset()
 
     def _listen(self) -> None:
         """Blocking listener loop (runs in executor thread).
@@ -1684,8 +1775,12 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             stored = await self._store.async_load()
         except Exception:
+            # Never overwrite state we couldn't read (e.g. lifetime energy)
+            # with empty state; adapted from azebro/pytap#33.
+            self._save_blocked = True
             self._log.warning(
-                "Could not read saved PyTap state; starting without it",
+                "Could not read saved PyTap state; starting without it, and "
+                "it won't be overwritten until the next reload",
                 exc_info=True,
             )
             stored = None
@@ -1789,6 +1884,8 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_save_coordinator_state(self) -> None:
         """Save all state (barcode mappings, discovered barcodes, parser state) to HA Store."""
+        if self._save_blocked:
+            return
         self._unsaved_changes = False
         data = {
             # When PyTap last saved, i.e. roughly when it stopped hearing the

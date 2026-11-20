@@ -75,8 +75,15 @@ async def test_user_step_proceeds_even_without_connection(
             result["flow_id"],
             {"host": MOCK_HOST, "port": MOCK_PORT},
         )
+        # The first submit reports it once...
+        assert result["type"] is FlowResultType.FORM
+        assert result["errors"] == {"base": "cannot_connect"}
+        # ...and submitting the same settings again continues anyway.
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"host": MOCK_HOST, "port": MOCK_PORT},
+        )
 
-    # Should still proceed to modules menu (connection test is non-blocking)
     assert result["type"] is FlowResultType.MENU
     assert result["step_id"] == "modules_menu"
 
@@ -454,6 +461,13 @@ async def test_options_change_connection_warn_only_on_failure(
             result["flow_id"],
             {"host": new_host, "port": MOCK_PORT},
         )
+        # Reported once, then saved when the same settings are submitted again.
+        assert result["errors"] == {"base": "cannot_connect"}
+        assert entry.data["host"] != new_host
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {"host": new_host, "port": MOCK_PORT},
+        )
 
     # Should still return to menu despite connection failure
     assert result["type"] is FlowResultType.MENU
@@ -754,3 +768,42 @@ async def test_options_prefill_interval_from_entry(
     schema_dict = {str(k): k for k in result["data_schema"].schema}
     wi_key = schema_dict["write_interval"]
     assert wi_key.default() == 60
+
+
+@pytest.mark.parametrize(
+    ("host", "port", "field", "error"),
+    [("  ", 502, "host", "invalid_host"), ("10.0.0.5", 0, "port", "invalid_port"),
+     ("10.0.0.5", 70000, "port", "invalid_port")],
+)
+async def test_user_step_rejects_invalid_settings(
+    hass: HomeAssistant, host: str, port: int, field: str, error: str
+) -> None:
+    """Invalid host or port is reported on its field without connecting."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    with patch("custom_components.pytap.config_flow.validate_connection") as validate:
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"host": host, "port": port}
+        )
+    assert result["errors"] == {field: error}
+    validate.assert_not_called()
+
+
+async def test_finish_without_modules_explains(hass: HomeAssistant) -> None:
+    """Finishing with no modules shows the menu again with an explanation."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    with patch(
+        "custom_components.pytap.config_flow.validate_connection",
+        return_value={"title": "x"},
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"host": MOCK_HOST, "port": MOCK_PORT}
+        )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "finish"}
+    )
+    assert result["type"] is FlowResultType.MENU
+    assert "at least one module" in result["description_placeholders"]["error"]

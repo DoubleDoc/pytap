@@ -57,7 +57,7 @@ from .const import (
     VALIDITY_REPORTING,
     VALIDITY_STATES,
 )
-from .coordinator import PyTapDataUpdateCoordinator
+from .coordinator import PyTapConfigEntry, PyTapDataUpdateCoordinator
 from .naming import optimizer_device_name, string_device_name, total_device_name
 
 _LOGGER = logging.getLogger(__name__)
@@ -335,7 +335,7 @@ INSTALLATION_SENSOR_DESCRIPTIONS: tuple[PyTapAggregateSensorDescription, ...] = 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: PyTapConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up PyTap sensors from a config entry.
@@ -343,7 +343,7 @@ async def async_setup_entry(
     Creates sensor entities deterministically from the configured module list.
     Each configured module gets the 12 measurement sensors plus a Data validity sensor.
     """
-    coordinator: PyTapDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator = entry.runtime_data
     modules: list[dict[str, str]] = entry.data.get(CONF_MODULES, [])
     inverter: str = entry.data.get(CONF_INVERTER, "") or ""
 

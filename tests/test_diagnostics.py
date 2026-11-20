@@ -78,6 +78,7 @@ async def test_config_entry_diagnostics_redacts_host(hass: HomeAssistant) -> Non
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -99,6 +100,7 @@ async def test_config_entry_diagnostics_includes_unredacted_barcodes(
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -112,6 +114,7 @@ async def test_config_entry_diagnostics_fresh_install(hass: HomeAssistant) -> No
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 
@@ -146,6 +149,7 @@ async def test_config_entry_diagnostics_all_keys_present(
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
 
     diagnostics = await async_get_config_entry_diagnostics(hass, entry)
 

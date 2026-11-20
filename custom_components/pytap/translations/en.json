@@ -44,7 +44,7 @@
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect to the Tigo gateway. Check host and port.",
+      "cannot_connect": "Could not connect to the RS-485 converter. Check the host and port, or submit again to continue anyway (for example if it is offline right now).",
       "invalid_auth": "Invalid authentication",
       "invalid_barcode": "Invalid barcode format. Expected format like A-1234567B.",
       "missing_string": "String group is required.",
@@ -52,7 +52,9 @@
       "missing_barcode": "Barcode is required.",
       "duplicate_barcode": "This barcode has already been added.",
       "no_modules": "At least one module must be added.",
-      "unknown": "Unexpected error"
+      "unknown": "Unexpected error",
+      "invalid_host": "Enter the RS-485 converter’s host name or IP address.",
+      "invalid_port": "Enter a port from 1 to 65535."
     },
     "abort": {
       "already_configured": "This gateway is already configured."
@@ -293,7 +295,18 @@
     "error": {
       "string_exists": "Another string already has this name.",
       "missing_string": "String group is required.",
-      "missing_name": "Module name is required."
+      "missing_name": "Module name is required.",
+      "invalid_host": "Enter the RS-485 converter’s host name or IP address.",
+      "invalid_port": "Enter a port from 1 to 65535.",
+      "cannot_connect": "Could not connect to the RS-485 converter. Check the host and port, or submit again to save anyway."
+    }
+  },
+  "exceptions": {
+    "invalid_connection_settings": {
+      "message": "The saved RS-485 converter {field} is invalid. Correct it under Configure → Change connection settings."
+    },
+    "previous_listener_stopping": {
+      "message": "The previous PyTap listener is still stopping; setup will retry."
     }
   }
 }

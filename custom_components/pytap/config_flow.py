@@ -18,6 +18,7 @@ import uuid
 
 from homeassistant.config_entries import (
     ConfigEntry,
+    ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
@@ -29,6 +30,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 import voluptuous as vol
 
+from .connection import InvalidConnectionSettings, normalize_connection
 from .const import (
     CONF_ESTIMATE_SILENT,
     CONF_INVERTER,
@@ -132,6 +134,7 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize the config flow."""
         self._user_data: dict[str, Any] = {}
         self._modules: list[dict[str, str]] = []
+        self._unreachable_confirm: tuple[str, int] | None = None
 
     @staticmethod
     @callback
@@ -146,33 +149,51 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            self._user_data = {
-                **user_input,
-                CONF_INVERTER: user_input.get(CONF_INVERTER, "").strip(),
-            }
-            # Stable unique ID — not tied to mutable connection settings
-            await self.async_set_unique_id(uuid.uuid4().hex)
-
-            # Optional connection test — warn but don't block
             try:
-                await validate_connection(self.hass, user_input)
-            except Exception:
-                _LOGGER.warning(
-                    "Could not connect to %s:%s — proceeding anyway",
-                    user_input[CONF_HOST],
-                    user_input.get(CONF_PORT, DEFAULT_PORT),
-                )
-
-            return await self.async_step_modules_menu()
+                settings = normalize_connection(user_input)
+            except InvalidConnectionSettings as err:
+                errors[err.field] = err.error
+            else:
+                # An unreachable converter is reported once; submitting the
+                # same settings again continues (it may simply be offline).
+                if await self._async_reachable_or_confirmed(settings, errors):
+                    self._user_data = {
+                        **user_input,
+                        **settings,
+                        CONF_INVERTER: user_input.get(CONF_INVERTER, "").strip(),
+                    }
+                    # Stable unique ID — not tied to mutable connection settings
+                    await self.async_set_unique_id(uuid.uuid4().hex)
+                    return await self.async_step_modules_menu()
 
         return self.async_show_form(
             step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
+            data_schema=self.add_suggested_values_to_schema(
+                STEP_USER_DATA_SCHEMA, user_input or {}
+            ),
             errors=errors,
         )
 
+    async def _async_reachable_or_confirmed(
+        self, settings: dict[str, Any], errors: dict[str, str]
+    ) -> bool:
+        """Test the connection; on failure ask once, then accept the same settings."""
+        key = (settings[CONF_HOST], settings[CONF_PORT])
+        try:
+            await validate_connection(self.hass, settings)
+        except Exception:  # noqa: BLE001
+            if self._unreachable_confirm == key:
+                _LOGGER.warning(
+                    "Could not connect to %s:%s — saving anyway", *key
+                )
+                return True
+            self._unreachable_confirm = key
+            errors["base"] = "cannot_connect"
+            return False
+        return True
+
     async def async_step_modules_menu(
-        self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None, error: str = ""
     ) -> ConfigFlowResult:
         """Show the modules menu: add another or finish."""
         return self.async_show_menu(
@@ -180,7 +201,7 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
             menu_options=["add_module", "finish"],
             description_placeholders={
                 "modules_list": _modules_description(self._modules),
-                "error": "",
+                "error": error,
             },
         )
 
@@ -240,7 +261,10 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Finish the config flow — create the entry."""
         if not self._modules:
-            return await self.async_step_modules_menu()
+            # Say why instead of silently showing the menu again.
+            return await self.async_step_modules_menu(
+                error="**Add at least one module before finishing setup.**"
+            )
         # New entries start in averaged mode at DEFAULT_WRITE_INTERVAL: live
         # mode writes every reading to the recorder. Entries created before
         # this keep live mode (DEFAULT_LIVE_REPORTING) until changed.
@@ -260,6 +284,7 @@ class PyTapOptionsFlow(OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
         self._config_entry = config_entry
+        self._unreachable_confirm: tuple[str, int] | None = None
         # Copy each module: edits must not touch the entry's own data, or
         # saving would see no change and skip the reload.
         self._modules: list[dict[str, str]] = [
@@ -473,24 +498,28 @@ class PyTapOptionsFlow(OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            new_host = user_input[CONF_HOST].strip()
-            new_port = user_input.get(CONF_PORT, DEFAULT_PORT)
-
-            if not new_host:
-                errors[CONF_HOST] = "cannot_connect"
-            else:
-                # Warn-only connection test (same as initial setup)
+            try:
+                settings = normalize_connection(user_input)
+            except InvalidConnectionSettings as err:
+                errors[err.field] = err.error
+                settings = None
+            if settings is not None:
+                new_host, new_port = settings[CONF_HOST], settings[CONF_PORT]
+                key = (new_host, new_port)
+                # An unreachable converter is reported once; submitting the
+                # same settings again saves them.
                 try:
-                    await validate_connection(
-                        self.hass, {CONF_HOST: new_host, CONF_PORT: new_port}
-                    )
-                except Exception:
-                    _LOGGER.warning(
-                        "Could not connect to %s:%s — saving anyway",
-                        new_host,
-                        new_port,
-                    )
+                    await validate_connection(self.hass, settings)
+                except Exception:  # noqa: BLE001
+                    if self._unreachable_confirm != key:
+                        self._unreachable_confirm = key
+                        errors["base"] = "cannot_connect"
+                    else:
+                        _LOGGER.warning(
+                            "Could not connect to %s:%s — saving anyway", *key
+                        )
 
+            if settings is not None and not errors:
                 # Update entry data with new connection details
                 new_data = {**self._config_entry.data}
                 new_data[CONF_HOST] = new_host
@@ -500,6 +529,15 @@ class PyTapOptionsFlow(OptionsFlow):
                     data=new_data,
                     title=f"PyTap ({new_host})",
                 )
+                # A loaded entry reloads through its update listener; one that
+                # failed setup (e.g. invalid saved settings) has none.
+                if self._config_entry.state in (
+                    ConfigEntryState.SETUP_ERROR,
+                    ConfigEntryState.SETUP_RETRY,
+                ):
+                    self.hass.config_entries.async_schedule_reload(
+                        self._config_entry.entry_id
+                    )
                 return await self.async_step_init()
 
         # Pre-fill with current values
