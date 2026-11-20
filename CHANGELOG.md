@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **No more `via_device` deprecation warning** — Home Assistant 2026.11 deprecated linking a device to its parent by identifier (it stops working in 2027.8). Optimizer devices now connect via their string's device by registry id (`via_device_id`), registering the string device first.
+
 ## [1.6.0] - 2026-11-20
 
 ### Added

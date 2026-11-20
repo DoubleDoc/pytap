@@ -33,6 +33,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -68,7 +69,6 @@ from .naming import (
     cca_total_device_name,
     has_inverter_totals,
     inverter_total_object_id,
-    optimizer_device_name,
     optimizer_object_id,
     string_device_name,
     string_inverter,
@@ -384,6 +384,31 @@ async def async_setup_entry(
         model="Installation Aggregate",
     )
 
+    string_device_ids: dict[str, str | None] = {}
+
+    def string_device_info(string_name: str) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, f"{entry.entry_id}_string_{string_name}")},
+            name=string_device_name(inverter_of(string_name), string_name),
+            manufacturer="Tigo Energy",
+            model="String Aggregate",
+        )
+
+    def string_device_id(string_name: str) -> str | None:
+        """Registry id of a string's device, registered first if needed, so
+        its optimizers can connect via it."""
+        if not string_name:
+            return None
+        if string_name not in string_device_ids:
+            if hass.config_entries.async_get_entry(entry.entry_id) is None:
+                string_device_ids[string_name] = None  # not a registered entry
+            else:
+                device = dr.async_get(hass).async_get_or_create(
+                    config_entry_id=entry.entry_id, **string_device_info(string_name)
+                )
+                string_device_ids[string_name] = device.id
+        return string_device_ids[string_name]
+
     @callback
     def add_new_entities() -> None:
         """Add entities for modules not seen yet (runs on HA's loop)."""
@@ -411,6 +436,9 @@ async def async_setup_entry(
                         module_config=module_config,
                         entry=entry,
                         inverter=inverter_of(module_config.get(CONF_MODULE_STRING, "")),
+                        via_device_id=string_device_id(
+                            module_config.get(CONF_MODULE_STRING, "")
+                        ),
                     )
                 )
             entities.append(
@@ -433,12 +461,7 @@ async def async_setup_entry(
         aggregates: list[SensorEntity] = []
         for string_name, barcodes in string_to_barcodes.items():
             if string_name not in string_sensors:
-                device_info = DeviceInfo(
-                    identifiers={(DOMAIN, f"{entry.entry_id}_string_{string_name}")},
-                    name=string_device_name(inverter_of(string_name), string_name),
-                    manufacturer="Tigo Energy",
-                    model="String Aggregate",
-                )
+                device_info = string_device_info(string_name)
                 string_sensors[string_name] = [
                     PyTapAggregateSensor(
                         coordinator=coordinator,
@@ -736,6 +759,7 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
         module_config: dict[str, str],
         entry: ConfigEntry,
         inverter: str = "",
+        via_device_id: str | None = None,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
@@ -750,19 +774,12 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
         # Entity ID: the barcode (see naming.py); set when first created.
         self.entity_id = f"sensor.{optimizer_object_id(self._barcode)}_{description.key}"
 
-        # Device info — groups all sensors for one optimizer under one device
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._barcode)},
-            name=optimizer_device_name(
-                inverter, self._module_string, self._module_name, self._barcode
-            ),
-            via_device=(DOMAIN, f"{entry.entry_id}_string_{self._module_string}")
-            if self._module_string
-            else None,
-            manufacturer="Tigo Energy",
-            model="TS4",
-            serial_number=self._barcode,
-        )
+        # Device info — groups all sensors for one optimizer under one device,
+        # connected via its string's device (by registry id: HA 2026.11 replaced
+        # via_device identifiers with via_device_id).
+        self._attr_device_info = optimizer_device_info(inverter, module_config)
+        if via_device_id is not None:
+            self._attr_device_info["via_device_id"] = via_device_id
         self._restored_native_value = False
 
     async def async_added_to_hass(self) -> None:

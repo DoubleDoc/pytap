@@ -390,3 +390,35 @@ async def test_migration_keeps_settings_from_any_source(hass: HomeAssistant) -> 
     assert reg.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{a}_power") == (
         "sensor.tigo_s2_p01_power"
     )
+
+
+async def test_optimizers_connect_via_their_string_device(hass: HomeAssistant) -> None:
+    """Optimizers link to their string's device by registry id (via_device_id)."""
+    from homeassistant.helpers import device_registry as dr
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from tests.conftest import with_modules
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        version=8,
+        data={CONF_HOST: "h", CONF_PORT: DEFAULT_PORT, CONF_INVERTER: "Master",
+              CONF_MODULES: MODULES},
+    )
+    entry.add_to_hass(hass)
+    coordinator = with_modules(MagicMock(spec=PyTapDataUpdateCoordinator), MODULES)
+    coordinator.data = {"nodes": {}}
+    entry.runtime_data = coordinator
+    entities: list = []
+    await async_setup_entry(hass, entry, entities.extend)
+
+    string_device = next(
+        d
+        for d in dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+        if (DOMAIN, f"{entry.entry_id}_string_2") in d.identifiers
+    )
+    assert string_device is not None
+    assert string_device.name == "Tigo Master String 2"
+    optimizer = next(e for e in entities if isinstance(e, PyTapSensor))
+    assert optimizer.device_info["via_device_id"] == string_device.id
+    assert "via_device" not in optimizer.device_info
