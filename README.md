@@ -207,23 +207,27 @@ Its attributes show the learned share of the string average (to the nearest 0.05
 
 ### Device naming
 
-Device names are built from up to three levels, leaving out any that aren't set:
+Names are built from up to three levels, leaving out any that aren't set:
 
 | Level | Set in | Example |
 | --- | --- | --- |
 | Inverter | Optional per gateway: **Inverter name** | `Master` |
-| String | Each module's **String group** | `2` (numbers are shown as `S2`) or `East` |
+| String | Each module's **String group** | `2` or `East` |
 | Module | Each module's **Name**, usually its position | `P01` |
 
 | Device | One gateway (no inverter name) | Two gateways (`Master`, `Slave`) |
 | --- | --- | --- |
-| Optimizer | `Tigo S2 P01` | `Tigo Master S2 P01` |
+| Optimizer | `Tigo P01` | `Tigo Master P01` |
 | String total | `Tigo String 2` | `Tigo Master String 2` |
 | Gateway total | `Tigo Total` | `Tigo Master Total` |
 
+Optimizer devices leave the string out, because maintenance can move a module to another string. The device page shows its string instead: an optimizer is *connected via* its string's device.
+
+**Optimizer entity IDs combine the position with the optimizer's barcode**, which never changes: `sensor.tigo_master_p01_4_5db467z_power` (inverter `Master`, name `P01`, barcode `4-5DB467Z`). The barcode keeps them unique and tells you exactly which optimizer it is; moving a module to another string doesn't touch them. They're set when an entity is first created; if you later rename a module, its entity IDs keep the old position unless you rename them in Home Assistant (history and statistics move with the rename). String and total entities are named after the string and gateway, for example `sensor.tigo_master_string_2_power`.
+
 Most installations have one CCA and one PyTap entry, and can leave the inverter name blank. With more than one CCA (for example one per inverter), add one PyTap entry per gateway and give each an inverter name so their devices don't share names.
 
-Entity IDs are generated from the device names when entities are first created, for example `sensor.tigo_master_s2_p01_power`. If the device is in an area, recent Home Assistant versions may put the area name first (`sensor.outside_tigo_master_s2_p01_power`). Home Assistant doesn't change existing entity IDs when names change later; rename them in Home Assistant if you want them to match. History and statistics move with the rename.
+**Upgrading from 1.4.x:** optimizer entity IDs change once from the older string-based pattern (`sensor.tigo_master_s2_p01_power`) to position + barcode. Only IDs still at the old automatic pattern are renamed; IDs you customised are kept. History and statistics move with them, but dashboards, automations, scripts and templates that name optimizer entities must be updated to the new IDs (string and total entities don't change).
 
 ### Dual-module optimizers
 

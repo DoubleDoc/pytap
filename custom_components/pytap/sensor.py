@@ -61,7 +61,12 @@ from .const import (
     VALIDITY_STATES,
 )
 from .coordinator import PyTapConfigEntry, PyTapDataUpdateCoordinator
-from .naming import optimizer_device_name, string_device_name, total_device_name
+from .naming import (
+    optimizer_device_name,
+    optimizer_object_id,
+    string_device_name,
+    total_device_name,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -438,6 +443,8 @@ async def async_setup_entry(
             )
         )
 
+    # String and total devices first: optimizer devices connect via them.
+    entities.sort(key=lambda entity: not isinstance(entity, PyTapAggregateSensor))
     async_add_entities(entities)
 
 
@@ -473,13 +480,19 @@ class PyTapSensor(CoordinatorEntity[PyTapDataUpdateCoordinator], RestoreSensor):
 
         # Unique ID: domain + barcode + sensor key
         self._attr_unique_id = f"{DOMAIN}_{self._barcode}_{description.key}"
+        # Entity ID: position + barcode (see naming.py); used when first created.
+        self.entity_id = (
+            f"sensor.{optimizer_object_id(inverter, self._module_name, self._barcode)}"
+            f"_{description.key}"
+        )
 
         # Device info — groups all sensors for one optimizer under one device
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._barcode)},
-            name=optimizer_device_name(
-                inverter, self._module_string, self._module_name
-            ),
+            name=optimizer_device_name(inverter, self._module_name),
+            via_device=(DOMAIN, f"{entry.entry_id}_string_{self._module_string}")
+            if self._module_string
+            else None,
             manufacturer="Tigo Energy",
             model="TS4",
             serial_number=self._barcode,
@@ -1053,13 +1066,14 @@ class PyTapDataValiditySensor(
         super().__init__(coordinator)
         self._barcode = module_config[CONF_MODULE_BARCODE]
         self._attr_unique_id = f"{DOMAIN}_{self._barcode}_data_validity"
+        self.entity_id = (
+            "sensor."
+            f"{optimizer_object_id(inverter, module_config[CONF_MODULE_NAME], self._barcode)}"
+            "_data_validity"
+        )
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._barcode)},
-            name=optimizer_device_name(
-                inverter,
-                module_config.get(CONF_MODULE_STRING, ""),
-                module_config[CONF_MODULE_NAME],
-            ),
+            name=optimizer_device_name(inverter, module_config[CONF_MODULE_NAME]),
             manufacturer="Tigo Energy",
             model="TS4",
             serial_number=self._barcode,

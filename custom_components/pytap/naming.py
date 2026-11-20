@@ -10,14 +10,22 @@ Names are built from up to three levels, leaving out any that are not set:
 
 Examples::
 
-    inverter="Master", string="2", module="P01" -> "Tigo Master S2 P01"
-    inverter="",       string="East", module="P01" -> "Tigo East P01"
+    inverter="Master", module="P01" -> "Tigo Master P01"
+    inverter="",       module="P01" -> "Tigo P01"
 
-Entity IDs are generated from these names when entities are first created,
-so ``sensor.tigo_master_s2_p01_power`` follows from the device name.
+Optimizer devices leave the string out: maintenance can move a module to
+another string, and the string is shown by the device it connects via (the
+string's device) instead. String and total devices keep their names.
+
+Optimizer entity IDs combine the position and the barcode, which never
+changes: ``sensor.tigo_master_p01_4_5db467z_power``. They're set when an
+entity is first created; existing IDs from the older string-based pattern
+(``sensor.tigo_master_s2_p01_power``) are migrated once (config entry v8).
 """
 
 from __future__ import annotations
+
+from homeassistant.util import slugify
 
 PREFIX = "Tigo"
 
@@ -38,9 +46,23 @@ def string_label(string_name: str) -> str:
     return string_name
 
 
-def optimizer_device_name(inverter: str, string_name: str, module_name: str) -> str:
-    """Name of an optimizer device, e.g. ``Tigo Master S2 P01``."""
-    return _join(PREFIX, inverter, string_label(string_name), module_name)
+def optimizer_device_name(inverter: str, module_name: str) -> str:
+    """Name of an optimizer device, e.g. ``Tigo Master P01``."""
+    return _join(PREFIX, inverter, module_name)
+
+
+def optimizer_object_id(inverter: str, module_name: str, barcode: str) -> str:
+    """Entity ID base of an optimizer: position plus barcode.
+
+    ``tigo_master_p01_4_5db467z``; without a name (e.g. just discovered),
+    ``tigo_master_4_5db467z``.
+    """
+    return slugify(_join(PREFIX, inverter, module_name, barcode))
+
+
+def legacy_optimizer_object_id(inverter: str, string_name: str, module_name: str) -> str:
+    """Entity ID base from before v8: ``tigo_master_s2_p01`` (string, no barcode)."""
+    return slugify(_join(PREFIX, inverter, string_label(string_name), module_name))
 
 
 def string_device_name(inverter: str, string_name: str) -> str:

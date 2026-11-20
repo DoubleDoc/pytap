@@ -282,7 +282,7 @@ def test_data_validity_sensor(hass: HomeAssistant) -> None:
     coordinator._update_estimates(time.monotonic())
     sensor = PyTapDataValiditySensor(coordinator, MODULES[0], "Master")
     assert sensor.unique_id == f"{DOMAIN}_{A}_data_validity"
-    assert sensor.device_info["name"] == "Tigo Master S2 P01"
+    assert sensor.device_info["name"] == "Tigo Master P01"
     assert sensor.native_value == VALIDITY_ESTIMATED
     attrs = sensor.extra_state_attributes
     assert attrs["share"] == pytest.approx(0.5, abs=0.01)

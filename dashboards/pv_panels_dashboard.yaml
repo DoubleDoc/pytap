@@ -4,7 +4,8 @@
 #
 # Worked example for a roof with two strings: "Master" (6 panels, 3 rows of 2)
 # and "Slave" (12 panels in one row). Replace the entity IDs, names and grid
-# positions with your own; everything else works as it is.
+# positions with your own; everything else works as it is. Optimizer entity IDs
+# are tigo_<inverter>_<position>_<barcode>_power; the barcodes here are made up.
 #
 # Needs:
 #   - custom:button-card 7+ and custom:layout-card (HACS or the Marketplace)
@@ -197,12 +198,12 @@ views:
               grid-gap: 6px
               margin: 0
             cards:
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_s2_p01_power, name: P01, view_layout: { grid-row: 1, grid-column: 1 / 3 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_s2_p02_power, name: P02, view_layout: { grid-row: 1, grid-column: 3 / 5 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_s2_p03_power, name: P03, view_layout: { grid-row: 2, grid-column: 1 / 3 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_s2_p04_power, name: P04, view_layout: { grid-row: 2, grid-column: 3 / 5 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_s2_p05_power, name: P05, view_layout: { grid-row: 3, grid-column: 1 / 3 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_s2_p06_power, name: P06, view_layout: { grid-row: 3, grid-column: 3 / 5 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_p01_4_000001a_power, name: P01, view_layout: { grid-row: 1, grid-column: 1 / 3 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_p02_4_000002a_power, name: P02, view_layout: { grid-row: 1, grid-column: 3 / 5 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_p03_4_000003a_power, name: P03, view_layout: { grid-row: 2, grid-column: 1 / 3 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_p04_4_000004a_power, name: P04, view_layout: { grid-row: 2, grid-column: 3 / 5 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_p05_4_000005a_power, name: P05, view_layout: { grid-row: 3, grid-column: 1 / 3 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_master_p06_4_000006a_power, name: P06, view_layout: { grid-row: 3, grid-column: 3 / 5 } }
 
           # ── Slave: 12 in one row ───────────────────────────────────────
           - type: heading
@@ -211,15 +212,15 @@ views:
             layout_type: custom:grid-layout
             layout: *panel_grid
             cards:
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p01_power, name: P01, view_layout: { grid-row: 1, grid-column: 1 / 3 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p02_power, name: P02, view_layout: { grid-row: 1, grid-column: 3 / 5 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p03_power, name: P03, view_layout: { grid-row: 1, grid-column: 5 / 7 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p04_power, name: P04, view_layout: { grid-row: 1, grid-column: 7 / 9 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p05_power, name: P05, view_layout: { grid-row: 1, grid-column: 9 / 11 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p06_power, name: P06, view_layout: { grid-row: 1, grid-column: 11 / 13 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p07_power, name: P07, view_layout: { grid-row: 1, grid-column: 13 / 15 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p08_power, name: P08, view_layout: { grid-row: 1, grid-column: 15 / 17 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p09_power, name: P09, view_layout: { grid-row: 1, grid-column: 17 / 19 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p10_power, name: P10, view_layout: { grid-row: 1, grid-column: 19 / 21 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p11_power, name: P11, view_layout: { grid-row: 1, grid-column: 21 / 23 } }
-              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_s2_p12_power, name: P12, view_layout: { grid-row: 1, grid-column: 23 / 25 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_p01_4_100001a_power, name: P01, view_layout: { grid-row: 1, grid-column: 1 / 3 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_p02_4_100002a_power, name: P02, view_layout: { grid-row: 1, grid-column: 3 / 5 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_p03_4_100003a_power, name: P03, view_layout: { grid-row: 1, grid-column: 5 / 7 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_p04_4_100004a_power, name: P04, view_layout: { grid-row: 1, grid-column: 7 / 9 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_p05_4_100005a_power, name: P05, view_layout: { grid-row: 1, grid-column: 9 / 11 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_p06_4_100006a_power, name: P06, view_layout: { grid-row: 1, grid-column: 11 / 13 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_p07_4_100007a_power, name: P07, view_layout: { grid-row: 1, grid-column: 13 / 15 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_p08_4_100008a_power, name: P08, view_layout: { grid-row: 1, grid-column: 15 / 17 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_p09_4_100009a_power, name: P09, view_layout: { grid-row: 1, grid-column: 17 / 19 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_p10_4_100010a_power, name: P10, view_layout: { grid-row: 1, grid-column: 19 / 21 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_p11_4_100011a_power, name: P11, view_layout: { grid-row: 1, grid-column: 21 / 23 } }
+              - { type: custom:button-card, template: pytap_panel, entity: sensor.tigo_slave_p12_4_100012a_power, name: P12, view_layout: { grid-row: 1, grid-column: 23 / 25 } }

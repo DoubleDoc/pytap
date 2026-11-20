@@ -68,15 +68,14 @@ def test_string_label() -> None:
 
 def test_device_names_with_inverter() -> None:
     """Multi-gateway installs put the inverter first."""
-    assert optimizer_device_name("Master", "2", "P01") == "Tigo Master S2 P01"
+    assert optimizer_device_name("Master", "P01") == "Tigo Master P01"
     assert string_device_name("Master", "2") == "Tigo Master String 2"
     assert total_device_name("Master") == "Tigo Master Total"
 
 
 def test_device_names_without_inverter() -> None:
     """Single-gateway installs leave the inverter out."""
-    assert optimizer_device_name("", "2", "P01") == "Tigo S2 P01"
-    assert optimizer_device_name("", "East", "P01") == "Tigo East P01"
+    assert optimizer_device_name("", "P01") == "Tigo P01"
     assert string_device_name("", "East") == "Tigo String East"
     assert total_device_name("") == "Tigo Total"
 
@@ -101,12 +100,17 @@ async def test_sensor_device_names_use_inverter(hass: HomeAssistant) -> None:
 
     names = {e.device_info["name"] for e in entities}
     assert names == {
-        "Tigo Master S2 P01",
-        "Tigo Master S2 P02",
+        "Tigo Master P01",
+        "Tigo Master P02",
         "Tigo Master String 2",
         "Tigo Master Total",
     }
     optimizer = next(e for e in entities if isinstance(e, PyTapSensor))
+    # New optimizer entities get position + barcode entity IDs.
+    assert {e.entity_id for e in entities if isinstance(e, PyTapSensor)} >= {
+        "sensor.tigo_master_p01_a_1234567b_power",
+        "sensor.tigo_master_p02_c_2345678d_daily_energy",
+    }
     # No attribute that changes with every reading (it would force a state
     # row per reading even when the value is unchanged).
     optimizer.coordinator.data = {"nodes": {optimizer._barcode: {
@@ -127,7 +131,7 @@ async def test_migration_v5_to_v6_adds_blank_inverter(hass: HomeAssistant) -> No
     entry.add_to_hass(hass)
 
     assert await async_migrate_entry(hass, entry)
-    assert entry.version == 7
+    assert entry.version == 8
     assert entry.data["connection_type"] == "tcp"
     assert entry.data[CONF_INVERTER] == ""
     assert entry.data[CONF_MODULES] == MODULES
@@ -334,3 +338,50 @@ async def test_options_rename_string_rejects_existing_name(
         flow_id, {"old_string": "2", "new_string": "3"}
     )
     assert result["errors"] == {"new_string": "string_exists"}
+
+
+def test_optimizer_entity_ids_are_position_plus_barcode() -> None:
+    from custom_components.pytap.naming import (
+        legacy_optimizer_object_id,
+        optimizer_object_id,
+    )
+
+    assert optimizer_object_id("Master", "P01", "4-5DB467Z") == "tigo_master_p01_4_5db467z"
+    assert optimizer_object_id("", "P01", "4-5DB467Z") == "tigo_p01_4_5db467z"
+    assert optimizer_object_id("Master", "", "4-5DB467Z") == "tigo_master_4_5db467z"
+    assert legacy_optimizer_object_id("Master", "2", "P01") == "tigo_master_s2_p01"
+
+
+async def test_migration_v7_to_v8_renames_optimizer_entities(hass: HomeAssistant) -> None:
+    """Old string-based IDs move to position + barcode; customised ones stay."""
+    from homeassistant.helpers import entity_registry as er
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        version=7,
+        data={CONF_HOST: "h", CONF_MODULES: MODULES, CONF_INVERTER: "Master",
+              "connection_type": "tcp"},
+    )
+    entry.add_to_hass(hass)
+    reg = er.async_get(hass)
+    a, b = MODULES[0][CONF_MODULE_BARCODE], MODULES[1][CONF_MODULE_BARCODE]
+    reg.async_get_or_create("sensor", DOMAIN, f"{DOMAIN}_{a}_power", config_entry=entry,
+                            suggested_object_id="tigo_master_s2_p01_power")
+    reg.async_get_or_create("sensor", DOMAIN, f"{DOMAIN}_{a}_data_validity",
+                            config_entry=entry,
+                            suggested_object_id="tigo_master_s2_p01_data_validity")
+    reg.async_get_or_create("sensor", DOMAIN, f"{DOMAIN}_{b}_power", config_entry=entry,
+                            suggested_object_id="my_custom_name")
+
+    assert await async_migrate_entry(hass, entry)
+    assert entry.version == 8
+    slug_a = a.lower().replace("-", "_")
+    assert reg.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{a}_power") == (
+        f"sensor.tigo_master_p01_{slug_a}_power"
+    )
+    assert reg.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{a}_data_validity") == (
+        f"sensor.tigo_master_p01_{slug_a}_data_validity"
+    )
+    assert reg.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{b}_power") == (
+        "sensor.my_custom_name"
+    )

@@ -22,6 +22,7 @@ from .const import (
     CONF_INVERTER,
     CONF_LIVE_REPORTING,
     CONF_MODULE_BARCODE,
+    CONF_MODULE_NAME,
     CONF_MODULE_PEAK_POWER,
     CONF_MODULE_STRING,
     CONF_MODULES,
@@ -43,6 +44,7 @@ from .coordinator import (
     coordinator_store,
     parked_coordinators,
 )
+from .naming import legacy_optimizer_object_id, optimizer_object_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,7 +56,8 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 # Bumped from 4 → 5 when live_reporting toggle was added.
 # Bumped from 5 → 6 when the optional inverter name was added.
 # Bumped from 6 → 7 when serial and serial-proxy connections were added.
-CONFIG_ENTRY_VERSION = 7
+# Bumped from 7 → 8 when optimizer entity IDs became position + barcode.
+CONFIG_ENTRY_VERSION = 8
 
 # Old unique IDs that were replaced by the _in/_out split.
 _LEGACY_UNIQUE_ID_RENAMES: dict[str, str] = {
@@ -232,6 +235,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     v4 → v5: live_reporting toggle added (default True).
     v5 → v6: optional inverter name added (default blank).
     v6 → v7: existing connections explicitly marked as TCP (azebro/pytap#36).
+    v7 → v8: optimizer entity IDs renamed from string-based
+             (sensor.tigo_master_s2_p01_power) to position + barcode
+             (sensor.tigo_master_p01_4_5db467z_power); customised IDs are kept.
     """
     if entry.version > CONFIG_ENTRY_VERSION:
         # Saved by a newer PyTap (downgrade): don't guess at its data.
@@ -324,7 +330,52 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             version=7,
         )
 
+    if entry.version == 7:
+        renamed = _async_rename_optimizer_entities(hass, entry)
+        _LOGGER.info(
+            "Migrating PyTap config entry %s from version 7 to 8: renamed %d "
+            "optimizer entity IDs to position + barcode",
+            entry.entry_id,
+            renamed,
+        )
+        hass.config_entries.async_update_entry(entry, version=8)
+
     return True
+
+
+@callback
+def _async_rename_optimizer_entities(hass: HomeAssistant, entry: ConfigEntry) -> int:
+    """Rename optimizer entities from the string-based pattern to position + barcode.
+
+    Only entity IDs still at the old automatic pattern are renamed, and only
+    when the new ID is free; Home Assistant keeps their history.
+    """
+    ent_reg = er.async_get(hass)
+    inverter = entry.data.get(CONF_INVERTER, DEFAULT_INVERTER) or ""
+    renamed = 0
+    for module in entry.data.get(CONF_MODULES, []):
+        barcode = module.get(CONF_MODULE_BARCODE)
+        name = module.get(CONF_MODULE_NAME, "")
+        if not barcode:
+            continue
+        old_base = legacy_optimizer_object_id(
+            inverter, module.get(CONF_MODULE_STRING, ""), name
+        )
+        new_base = optimizer_object_id(inverter, name, barcode)
+        prefix = f"{DOMAIN}_{barcode}_"
+        for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+            if not (reg_entry.unique_id or "").startswith(prefix):
+                continue
+            key = reg_entry.unique_id[len(prefix):]
+            domain = reg_entry.entity_id.split(".", 1)[0]
+            if reg_entry.entity_id != f"{domain}.{old_base}_{key}":
+                continue  # customised by the user: leave it
+            new_id = f"{domain}.{new_base}_{key}"
+            if ent_reg.async_get(new_id) is not None:
+                continue
+            ent_reg.async_update_entity(reg_entry.entity_id, new_entity_id=new_id)
+            renamed += 1
+    return renamed
 
 
 async def _async_cleanup_legacy_entities(

@@ -246,7 +246,7 @@ def _modules_description(modules: list[dict[str, Any]]) -> str:
 class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for PyTap."""
 
-    VERSION = 7
+    VERSION = 8
 
     def __init__(self) -> None:
         """Initialize the config flow."""
