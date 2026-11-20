@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Packet capture and offline replay** — Admin-only actions record the raw bus bytes PyTap reads (`pytap.start_capture`, `stop_capture`, `capture_status`, `list_captures`, `export_capture`, `delete_capture`): passive, off unless started, never resumed after a restart, bounded by duration (default 24 h) and storage (default 1 GiB), private files under `/config/pytap_captures/` with checksums, ZIP export. Captures are deleted with the PyTap entry; the README explains how to delete them yourself, and that they're included in backups. `scripts/replay_capture.py` checks and exports a capture offline; the parser accepts a clock so replays use recorded times. Adapted from [Tim Laing](https://github.com/timlaing)'s upstream [PR #38](https://github.com/azebro/pytap/pull/38). (#38)
+- **Power report export for research** — `scripts/capture_reports.py` replays a capture (PyTap's own, or a simple timestamped recording) through PyTap's parser and writes every power report to a CSV with its flag bytes decoded bit by bit, with an optional per-optimizer summary of status and jstatus values. The flag decoding moved into the parser library so diagnostics and the script share it.
+
 ## [1.5.0] - 2026-11-20
 
 The changes below are ported from [Tim Laing](https://github.com/timlaing)'s upstream pull request series: [PR #32](https://github.com/azebro/pytap/pull/32), [PR #33](https://github.com/azebro/pytap/pull/33), [PR #34](https://github.com/azebro/pytap/pull/34), [PR #35](https://github.com/azebro/pytap/pull/35), [PR #36](https://github.com/azebro/pytap/pull/36) and [PR #37](https://github.com/azebro/pytap/pull/37) so far.

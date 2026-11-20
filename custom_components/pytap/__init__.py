@@ -13,9 +13,12 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT, EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.typing import ConfigType
 
+from .capture_services import async_remove_captures, register_capture_services
 from .connection import InvalidConnectionSettings
 from .const import (
     CONF_AUTO_DISCOVERY,
@@ -82,6 +85,15 @@ _SETTING_NAMES: dict[str, str] = {
 }
 
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the packet capture actions once (azebro/pytap#38)."""
+    register_capture_services(hass)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: PyTapConfigEntry) -> bool:
     """Set up PyTap from a config entry.
 
@@ -142,7 +154,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PyTapConfigEntry) -> boo
 def _async_stop_on_shutdown(
     hass: HomeAssistant, entry: ConfigEntry, coordinator: PyTapDataUpdateCoordinator
 ) -> None:
-    """Stop the listener (and save state) when Home Assistant stops.
+    """Stop the listener, finalise any packet capture and save state when
+    Home Assistant stops.
 
     Home Assistant doesn't unload config entries at shutdown.
     """
@@ -227,15 +240,18 @@ def _async_park(
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Delete this entry's saved state along with the entry."""
+    """Delete this entry's packet captures and saved state along with the entry."""
     parked = parked_coordinators(hass)
     if (coordinator := parked.get(entry.entry_id)) is not None:
         if await coordinator.async_stop_listener(discard_state=True):
             if parked.get(entry.entry_id) is coordinator:
                 del parked[entry.entry_id]
         else:
-            _LOGGER.warning("PyTap listener is still stopping; deleting its saved state anyway")
+            _LOGGER.warning(
+                "PyTap listener is still stopping; deleting its captures and saved state anyway"
+            )
         coordinator.release_barcode_claims()
+    await async_remove_captures(hass, entry.entry_id)
     await coordinator_store(hass, entry.entry_id).async_remove()
 
 

@@ -32,3 +32,13 @@ Whole codes seen: `0x64` (normal), `0x66` (normal + bit 1), `0x68` (bit 3 instea
 ## Open questions
 
 A capture through midday and dusk, and the optimizers' hardware IDs (from their Version answers), would help with: bit 3, bit 1 and which optimizers enter it, bit 6, and the jstatus levels.
+
+## Contributing data
+
+Captures from other installations help most, especially with different optimizer hardware. Record one with the `pytap.start_capture` action (see [Packet capture and replay](../README.md#packet-capture-and-replay)), then run:
+
+```sh
+python scripts/capture_reports.py /path/to/capture --output reports.csv --summary
+```
+
+The summary lists, per optimizer, how often each status and jstatus value occurred; the CSV has every report with its measurements and decoded bits. Both contain barcodes, so share them deliberately, and delete the capture when you're done.

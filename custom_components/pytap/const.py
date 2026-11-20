@@ -1,6 +1,14 @@
 """Constants for the PyTap integration."""
+import json
+from pathlib import Path
 
 DOMAIN = "pytap"
+
+# The integration's own version, read from the manifest (used in capture
+# metadata, so it can't drift from the release).
+INTEGRATION_VERSION: str = json.loads(
+    (Path(__file__).parent / "manifest.json").read_text(encoding="utf-8")
+)["version"]
 DEFAULT_NAME = "PyTap"
 
 # Configuration keys

@@ -11,9 +11,10 @@
 > - **More ways to connect.** Besides an RS-485 to TCP converter, a serial adapter on the Home Assistant host or an ESPHome serial proxy.
 > - **Readings you can trust.** Per-panel data validity and health, estimates for silent optimizers, a bus status sensor, sun-aware night handling with a choice of what stale readings show, and energy bridged across short gaps and restarts. String and total energy never jump when modules move, and a malformed bus frame can't crash the parser.
 > - **Robust over time.** Clean stops and reloads, saved energy that is never overwritten by unreadable state, a DST-safe midnight reset, and much lower database load.
+> - **Troubleshooting and research tools.** Record the raw bus on demand, replay it offline through PyTap's own parser, and export every report with its decoded status bits.
 > - **The single-view [PV Panels dashboard](dashboards/pv_panels.md).**
 >
-> Many of these come from [Tim Laing](https://github.com/timlaing)'s upstream pull requests [#32](https://github.com/azebro/pytap/pull/32)–[#37](https://github.com/azebro/pytap/pull/37), adopted here. See the [changelog](CHANGELOG.md) for everything that differs, and [Acknowledgements](#acknowledgements) for credits.
+> Many of these come from [Tim Laing](https://github.com/timlaing)'s upstream pull requests [#32](https://github.com/azebro/pytap/pull/32)–[#38](https://github.com/azebro/pytap/pull/38), adopted here. See the [changelog](CHANGELOG.md) for everything that differs, and [Acknowledgements](#acknowledgements) for credits.
 
 A Home Assistant custom integration for monitoring **Tigo TS4 optimizers** locally, without Tigo's cloud. PyTap listens to the RS-485 bus between a Tigo CCA and its TAP, through an RS-485 to TCP converter, a serial adapter or an ESPHome serial proxy, and exposes real-time per-optimizer sensors: power, voltage, current, temperature, energy and more.
 
@@ -395,7 +396,69 @@ PyTap diagnostics are available from the integration page:
 3. Use the menu (⋮) and select **Download diagnostics**.
 
 The diagnostics JSON includes parser counters, infrastructure and node mappings,
-the node mapping status, discovered barcodes, connection state, and per-node summaries. Host/IP is redacted.
+the node mapping status, discovered barcodes, connection state, module discovery, packet capture counters, and per-node summaries with their decoded flag bytes. Host/IP and serial port are redacted.
+
+### Packet capture and replay
+
+PyTap can record the raw bytes it reads from the bus, so problems can be studied later, offline, and so protocol details such as the [flag bytes](docs/protocol-status-bits.md) can be researched from real data. It's useful for reporting a problem too: a capture shows exactly what your gateway sent. Adapted from [Tim Laing](https://github.com/timlaing)'s upstream [PR #38](https://github.com/azebro/pytap/pull/38).
+
+**It's off unless you start it, and only listens.** A capture copies what the existing connection reads, before decoding: no second connection to the converter (so it works with serial ports too), nothing sent on the bus. It never resumes after a restart or reload, and is stopped and finalised when Home Assistant shuts down.
+
+#### Recording
+
+All actions are admin-only. Run them from the **Actions** tab of Home Assistant's developer tools; each shows its result there.
+
+1. **`pytap.start_capture`**: pick the PyTap instance (one per gateway), a maximum duration (`duration_minutes`, default 1440 = 24 h, up to 7 days) and a storage budget (`max_storage_mib`, default 1024 MiB). For example:
+
+   ```yaml
+   action: pytap.start_capture
+   data:
+     config_entry_id: <your PyTap entry>   # picked from a list in the UI
+     duration_minutes: 240
+   ```
+
+2. **`pytap.capture_status`**: progress, bytes recorded, and why a capture stopped. Diagnostics show the same counters (never the captured data).
+3. **`pytap.stop_capture`** when you're done, or let the duration or budget stop it. A capture that reaches its budget stops; it never deletes older data to make room.
+4. **`pytap.list_captures`**: the latest 20 captures of an instance, with their `capture_id`.
+5. **`pytap.export_capture`** (optional): checks a stopped capture and writes a private ZIP next to it, to copy off with Samba or a file manager add-on. It isn't offered for download over the web on purpose.
+
+**Size:** measured over one morning, about **10–12 MB an hour per gateway** (6 and 12 optimizers), so plan on up to about 300 MB a day per gateway; the default 1 GiB budget lasts about 3 days. Night-time traffic hasn't been measured yet.
+
+**Privacy:** captures contain your optimizers' barcodes and everything on the bus. Files are readable only by Home Assistant, and contain no host names, IP addresses or credentials, but share a capture only deliberately.
+
+#### When you're done: delete the files
+
+Captures stay until you delete them (except when the PyTap entry itself is deleted). They live in your configuration folder, under `/config/pytap_captures/<config_entry_id>/` (one folder per capture, with any ZIP exports next to it), so **they are also included in Home Assistant backups**.
+
+1. Copy off anything you want to keep (export it first if you want a ZIP).
+2. Run **`pytap.list_captures`** for the instance to see the `capture_id`s.
+3. Run **`pytap.delete_capture`** with each `capture_id`. This deletes the capture and its ZIP exports. A running capture must be stopped first.
+
+   ```yaml
+   action: pytap.delete_capture
+   data:
+     config_entry_id: <your PyTap entry>
+     capture_id: <capture_id from list_captures>
+   ```
+
+4. Run `pytap.list_captures` again: it should list nothing you meant to delete.
+5. **Backups:** backups made while captures existed still contain them. Delete those backups too if you don't want the data kept (Settings → System → Backups).
+
+Deleting the PyTap entry deletes all of its captures. Files can also be removed by hand from `/config/pytap_captures/` with Samba, SSH or a file manager add-on, while no capture is running.
+
+#### Reading captures offline
+
+Two scripts in [`scripts/`](scripts/) read captures without Home Assistant (run with Python 3 from a copy of this repository). They never change the capture.
+
+- **`capture_reports.py`** replays a capture through PyTap's own parser, at the recorded times, and writes every power report to a CSV: measurements plus the flag bytes decoded bit by bit (low input voltage, the state field, idle pass-through, producing, jstatus level; see [protocol-status-bits.md](docs/protocol-status-bits.md)). `--summary` prints how often each status and jstatus value occurred per optimizer, `--start`/`--end` select a time window, and `--state` starts from PyTap's saved state (`.storage/pytap_<config_entry_id>_coordinator`) so barcodes are known from the first report.
+
+  ```sh
+  python scripts/capture_reports.py /path/to/capture --output reports.csv --summary
+  ```
+
+- **`replay_capture.py`** checks a capture and exports its index, every frame (including ones the live parser would drop, and why) and every decoded event as JSON lines, with a summary.
+
+`capture_reports.py` also reads simple recordings made by other tools: a file of records, each an 8-byte big-endian Unix time, a 4-byte big-endian length and that many raw bytes. The output CSV contains barcodes too: keep it private and delete it when done.
 
 ### Energy dashboard
 
@@ -594,7 +657,7 @@ Run `./deploy/deploy.sh --help` for all options.
 
 **PyTap is the work of [Adam Zebrowski](https://github.com/azebro)** ([azebro/pytap](https://github.com/azebro/pytap)), and this fork stands entirely on it. Adam wrote the integration from the ground up: the embedded Python parser for the Tigo gateway protocol, the push-based coordinator that turns bus traffic into Home Assistant entities, node-table and barcode mapping that survives restarts, per-optimizer energy integration, the string and installation totals, the configuration flow, and the PV Production dashboard and its Grafana version. Everything this fork adds builds on that foundation, and it's a pleasure to build on: a clean design, thorough tests and careful documentation. Thank you, Adam.
 
-**[Tim Laing](https://github.com/timlaing)** wrote a careful series of upstream pull requests that this fork has adopted, fitting each to the fork's design: parser hardening against invalid slot counters ([#32](https://github.com/azebro/pytap/pull/32)); the reliability work that separates the listener's state from Home Assistant's, bounds shutdown and fixes lifecycle edge cases ([#33](https://github.com/azebro/pytap/pull/33)); configurable stale-reading behaviour ([#34](https://github.com/azebro/pytap/pull/34)); aggregate energy that survives membership changes ([#35](https://github.com/azebro/pytap/pull/35)); serial and ESPHome serial-proxy connections ([#36](https://github.com/azebro/pytap/pull/36)); and passive module discovery with module editing ([#37](https://github.com/azebro/pytap/pull/37)). The series is thoughtfully designed and thoroughly tested, and it made PyTap sturdier, easier to set up and easier to maintain. Thank you, Tim.
+**[Tim Laing](https://github.com/timlaing)** wrote a careful series of upstream pull requests that this fork has adopted, fitting each to the fork's design: parser hardening against invalid slot counters ([#32](https://github.com/azebro/pytap/pull/32)); the reliability work that separates the listener's state from Home Assistant's, bounds shutdown and fixes lifecycle edge cases ([#33](https://github.com/azebro/pytap/pull/33)); configurable stale-reading behaviour ([#34](https://github.com/azebro/pytap/pull/34)); aggregate energy that survives membership changes ([#35](https://github.com/azebro/pytap/pull/35)); serial and ESPHome serial-proxy connections ([#36](https://github.com/azebro/pytap/pull/36)); passive module discovery with module editing ([#37](https://github.com/azebro/pytap/pull/37)); and opt-in raw packet capture with offline replay ([#38](https://github.com/azebro/pytap/pull/38)), whose durable, checksummed capture format is the basis of the fork's research tools. The series is thoughtfully designed and thoroughly tested, and it made PyTap sturdier, easier to set up and easier to maintain. Thank you, Tim.
 
 [Kyrill](https://github.com/poolski) contributed the averaged reporting interval upstream: the configurable write interval and the time-weighted averaging of readings across it, which this fork now uses by default.
 
