@@ -15,6 +15,29 @@ from .coordinator import PyTapConfigEntry
 TO_REDACT = {CONF_HOST, CONF_SERIAL_PORT, "title"}
 
 
+def describe_flags(status: int | None, jstatus: int | None) -> dict[str, Any] | None:
+    """The latest power report's flag bytes, bit by bit.
+
+    Meanings come from passive captures and are partly tentative; see
+    docs/protocol-status-bits.md. Raw values are included so nothing is lost.
+    """
+    if status is None and jstatus is None:
+        return None
+    status = status or 0
+    jstatus = jstatus or 0
+    return {
+        "status": f"0x{status:04X}",
+        "status_bits": [bit for bit in range(16) if status >> bit & 1],
+        "low_input_voltage": bool(status & 0x80),  # bit 7
+        "state_field": (status >> 2) & 0b11,  # bits 3..2, exactly one set so far
+        "idle_pass_through": bool(status & 0x02),  # bit 1 (tentative)
+        "temperature_valid": bool(status & 0x20),  # bit 5 (CCA firmware)
+        "jstatus": f"0x{jstatus:02X}",
+        "producing": bool(jstatus & 0x80),  # byte 7 bit 7
+        "jstatus_level": jstatus & 0x7F,
+    }
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant,
     entry: PyTapConfigEntry,
@@ -32,6 +55,7 @@ async def async_get_config_entry_diagnostics(
             "daily_energy_wh": node_data.get("daily_energy_wh"),
             "total_energy_wh": node_data.get("total_energy_wh"),
             "readings_today": node_data.get("readings_today"),
+            "flags": describe_flags(node_data.get("status"), node_data.get("jstatus")),
         }
         for barcode, node_data in coordinator.data.get("nodes", {}).items()
     }

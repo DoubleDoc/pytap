@@ -124,3 +124,24 @@ def test_coordinator_keeps_last_valid_temperature_and_rssi(hass) -> None:
     assert (node["temperature"], node["rssi"]) == (35.0, 120)
     node = feed(36.0, 118)
     assert (node["temperature"], node["rssi"]) == (36.0, 118)
+
+
+def test_flag_bytes_reach_the_event_and_decode_bit_by_bit() -> None:
+    """status/jstatus are passed through and decoded as bitfields in diagnostics."""
+    from custom_components.pytap.diagnostics import describe_flags
+
+    parser = _parser()
+    data = bytearray(_report(status=0x66))
+    data[7] = 0x00
+    (event,) = parser._handle_power_report(1, 5, bytes(data))
+    assert (event.status, event.jstatus) == (0x66, 0x00)
+
+    flags = describe_flags(0xE4, 0x83)
+    assert flags["low_input_voltage"] is True
+    assert flags["state_field"] == 0b01
+    assert flags["idle_pass_through"] is False
+    assert flags["producing"] is True
+    assert flags["jstatus_level"] == 3
+    assert describe_flags(0x66, 0x00)["idle_pass_through"] is True
+    assert describe_flags(0x68, 0x82)["state_field"] == 0b10
+    assert describe_flags(None, None) is None

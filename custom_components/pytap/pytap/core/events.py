@@ -36,6 +36,10 @@ class PowerReportEvent(Event):
     temperature: float | None
     dc_dc_duty_cycle: float
     rssi: int | None
+    # Raw flag bytes, decoded bit by bit elsewhere (see docs/protocol-status-bits.md):
+    # status = report bytes 8-9, jstatus = byte 7. None when unknown.
+    status: int | None
+    jstatus: int | None
 
     def __init__(
         self,
@@ -49,7 +53,9 @@ class PowerReportEvent(Event):
         temperature: float | None,
         dc_dc_duty_cycle: float,
         rssi: int | None,
-        timestamp: datetime
+        timestamp: datetime,
+        status: int | None = None,
+        jstatus: int | None = None,
     ):
         super().__init__(event_type="power_report", timestamp=timestamp)
         self.gateway_id = gateway_id
@@ -65,6 +71,8 @@ class PowerReportEvent(Event):
         self.temperature = temperature
         self.dc_dc_duty_cycle = dc_dc_duty_cycle
         self.rssi = rssi
+        self.status = status
+        self.jstatus = jstatus
 
 
 @dataclass

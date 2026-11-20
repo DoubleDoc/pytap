@@ -813,6 +813,8 @@ class Parser:
             temperature=report.temperature,
             dc_dc_duty_cycle=report.duty_cycle,
             rssi=report.rssi,
+            status=report.status,
+            jstatus=report.jstatus,
             timestamp=timestamp,
         )
         return [event]

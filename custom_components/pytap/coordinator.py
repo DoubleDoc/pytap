@@ -1607,6 +1607,10 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "temperature": temperature,
             "dc_dc_duty_cycle": event.dc_dc_duty_cycle,
             "rssi": rssi,
+            # Latest raw flag bytes (decoded in diagnostics; see
+            # docs/protocol-status-bits.md).
+            "status": getattr(event, "status", None),
+            "jstatus": getattr(event, "jstatus", None),
             "daily_energy_wh": round(acc.daily_energy_wh, 2),
             "total_energy_wh": round(acc.total_energy_wh, 2),
             "readings_today": acc.readings_today,
