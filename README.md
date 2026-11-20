@@ -5,9 +5,17 @@
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Validate](https://github.com/DoubleDoc/pytap/actions/workflows/validate.yml/badge.svg)](https://github.com/DoubleDoc/pytap/actions/workflows/validate.yml)
 
-> **This is a fork** of [azebro/pytap](https://github.com/azebro/pytap) by Adam Zebrowski, which built the integration: the protocol parser, the Home Assistant integration and the original dashboards. This fork adds per-panel data validity and health tracking, estimates for silent optimizers, a bus status sensor, lower database load, energy bridging across short gaps and restarts, and the single-view [PV Panels dashboard](dashboards/pv_panels.md). See the [changelog](CHANGELOG.md) for everything that differs, and [Acknowledgements](#acknowledgements) for credits.
+> **This is a fork** of [azebro/pytap](https://github.com/azebro/pytap) by Adam Zebrowski, who built the integration: the protocol parser, the Home Assistant integration and the original dashboards. What the fork changes for you:
+>
+> - **Easier setup and maintenance.** Optimizers can be discovered automatically, so setup can finish without typing in barcodes. Panel entity IDs are the optimizer's barcode (`sensor.tigo_4_5db467z_power`), so moving panels between strings or inverters, or renaming them, never breaks dashboards or history; device names follow every change. One CCA serving several inverters can name each string's inverter and gets a total per inverter.
+> - **More ways to connect.** Besides an RS-485 to TCP converter, a serial adapter on the Home Assistant host or an ESPHome serial proxy.
+> - **Readings you can trust.** Per-panel data validity and health, estimates for silent optimizers, a bus status sensor, sun-aware night handling with a choice of what stale readings show, and energy bridged across short gaps and restarts. String and total energy never jump when modules move, and a malformed bus frame can't crash the parser.
+> - **Robust over time.** Clean stops and reloads, saved energy that is never overwritten by unreadable state, a DST-safe midnight reset, and much lower database load.
+> - **The single-view [PV Panels dashboard](dashboards/pv_panels.md).**
+>
+> Many of these come from [Tim Laing](https://github.com/timlaing)'s upstream pull requests [#32](https://github.com/azebro/pytap/pull/32)–[#37](https://github.com/azebro/pytap/pull/37), adopted here. See the [changelog](CHANGELOG.md) for everything that differs, and [Acknowledgements](#acknowledgements) for credits.
 
-A Home Assistant custom integration for monitoring **Tigo TS4 optimizers** locally, without Tigo's cloud. PyTap listens to the RS-485 bus between a Tigo CCA and its TAP through an RS-485 to TCP converter, and exposes real-time per-optimizer sensors: power, voltage, current, temperature, energy and more.
+A Home Assistant custom integration for monitoring **Tigo TS4 optimizers** locally, without Tigo's cloud. PyTap listens to the RS-485 bus between a Tigo CCA and its TAP, through an RS-485 to TCP converter, a serial adapter or an ESPHome serial proxy, and exposes real-time per-optimizer sensors: power, voltage, current, temperature, energy and more.
 
 ## See every panel at once
 
@@ -585,6 +593,8 @@ Run `./deploy/deploy.sh --help` for all options.
 ## Acknowledgements
 
 **PyTap is the work of [Adam Zebrowski](https://github.com/azebro)** ([azebro/pytap](https://github.com/azebro/pytap)), and this fork stands entirely on it. Adam wrote the integration from the ground up: the embedded Python parser for the Tigo gateway protocol, the push-based coordinator that turns bus traffic into Home Assistant entities, node-table and barcode mapping that survives restarts, per-optimizer energy integration, the string and installation totals, the configuration flow, and the PV Production dashboard and its Grafana version. Everything this fork adds builds on that foundation, and it's a pleasure to build on: a clean design, thorough tests and careful documentation. Thank you, Adam.
+
+**[Tim Laing](https://github.com/timlaing)** wrote a careful series of upstream pull requests that this fork has adopted, fitting each to the fork's design: parser hardening against invalid slot counters ([#32](https://github.com/azebro/pytap/pull/32)); the reliability work that separates the listener's state from Home Assistant's, bounds shutdown and fixes lifecycle edge cases ([#33](https://github.com/azebro/pytap/pull/33)); configurable stale-reading behaviour ([#34](https://github.com/azebro/pytap/pull/34)); aggregate energy that survives membership changes ([#35](https://github.com/azebro/pytap/pull/35)); serial and ESPHome serial-proxy connections ([#36](https://github.com/azebro/pytap/pull/36)); and passive module discovery with module editing ([#37](https://github.com/azebro/pytap/pull/37)). The series is thoughtfully designed and thoroughly tested, and it made PyTap sturdier, easier to set up and easier to maintain. Thank you, Tim.
 
 [Kyrill](https://github.com/poolski) contributed the averaged reporting interval upstream: the configurable write interval and the time-weighted averaging of readings across it, which this fork now uses by default.
 
