@@ -12,8 +12,11 @@ PyTap is configured entirely through the Home Assistant UI — no YAML needed.
    - **Serial port or ESPHome serial proxy**: pick the port or proxy from the list; the **baud rate** is 38400 unless you know otherwise.
 3. Optionally enter an **Inverter name**, such as `Master`. Leave it blank if you have one inverter; see [Device naming](entities.md#device-naming).
 
-> **Note:** The connection test only warns. If the converter can't be reached
-> yet, setup continues and PyTap connects when it becomes available.
+> **Note:** PyTap tests the connection when you submit. If the converter
+> can't be reached (for example it's powered off right now), the form shows
+> **Could not connect**: check the settings, or submit the same settings again
+> to save them anyway. PyTap then keeps retrying in the background and connects
+> when the converter becomes available.
 
 ## Step 2: Add Modules
 
@@ -66,7 +69,7 @@ INFO: Discovered unconfigured Tigo optimizer barcode: A-9999999Z
       (gateway=1, node=55). Add it to your PyTap module list to start tracking.
 ```
 
-With [module discovery](#step-2-add-modules) on, they're added automatically instead. Barcodes are discovered from the node table, so they appear in the log after the first node table is seen, normally the first morning after setup (see [First start: what to expect](#first-start-what-to-expect)).
+With [module discovery](#step-2-add-modules) on, they're added automatically instead, and the log says `Automatically tracking Tigo optimizer A-9999999Z`. Barcodes are discovered from the node table, so they appear in the log after the first node table is seen, normally the first morning after setup (see [First start: what to expect](#first-start-what-to-expect)).
 
 ## Managing Modules After Setup
 
@@ -77,7 +80,7 @@ Go to **Settings → Devices & Services → PyTap → Configure** to:
 - **Change stale reading behaviour** — What an optimizer's live sensors show at night and when silent by day (see [When readings stop](readings.md#when-readings-go-to-0-or-unavailable)).
 - **Change inverter name** — Set or clear the inverter name used in device names.
 - **Add** new optimizer modules (if the barcode was previously seen on the bus, it resolves instantly).
-- **Change module discovery** — Turn automatic discovery on or off (see [Step 2](#step-2-add-modules)).
+- **Change module discovery** — Turn automatic discovery on or off (see [Step 2](#step-2-add-modules)). Turning it on also adds optimizers PyTap logged earlier in manual mode; turning it off keeps the ones already tracked.
 - **Edit** a module's string, name or peak power (0 = unknown), including discovered optimizers. The barcode can't be edited; remove and re-add the module to replace an optimizer.
   Entity IDs never change (see [Device naming](entities.md#device-naming)).
 - **Set a string's inverter** — For one CCA serving several inverters: name the inverter a string is wired to (see [Device naming](entities.md#device-naming)).

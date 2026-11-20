@@ -1,713 +1,268 @@
-# PyTap — Home Assistant Custom Component Architecture
+# PyTap architecture
+
+[← PyTap README](../README.md) · [Development](development.md)
+
+How the integration is built, for people changing it. For using it, see the [README](../README.md) and the topic pages in this folder.
 
 ## Overview
 
-PyTap is a Home Assistant custom component that passively monitors Tigo TAP solar energy systems via the RS-485 bus. It connects to a Tigo gateway (over TCP or serial), parses the proprietary protocol in real time, and exposes per-optimizer sensor entities — power, voltage, current, temperature, and more — directly in Home Assistant.
-
-The integration embeds the `pytap` protocol parser library and bridges its event-driven output into Home Assistant's entity/device model using an async coordinator pattern.
-
----
-
-## System Context
+PyTap passively monitors Tigo TS4 optimizers by listening to the RS-485 bus between a Tigo CCA and its TAP(s). One PyTap config entry handles one CCA (one bus). For each entry, a listener thread reads the bus through an RS-485 to TCP converter, a serial adapter or an ESPHome serial proxy, parses the proprietary protocol with the embedded `pytap` library, and keeps its own state. Home Assistant entities only ever read published copies of that state.
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                       Home Assistant Instance                       │
-│                                                                     │
-│   ┌───────────────────────────────────────────────────────────┐     │
-│   │  custom_components/pytap  (this integration)              │     │
-│   │                                                           │     │
-│   │   Config Flow ─► Coordinator ─► Sensor Entities           │     │
-│   │                      │                                    │     │
-│   │                      ▼                                    │     │
-│   │               pytap library                               │     │
-│   │           (embedded protocol parser)                      │     │
-│   └──────────────────────┬────────────────────────────────────┘     │
-│                          │ TCP / Serial                             │
-└──────────────────────────┼──────────────────────────────────────────┘
-                           │
-                           ▼
-               ┌───────────────────────┐
-               │   Tigo TAP Gateway    │
-               │   (RS-485 bus master) │
-               └───────────┬───────────┘
-                           │ RS-485
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-         ┌─────────┐ ┌─────────┐ ┌─────────┐
-         │TS4 Node │ │TS4 Node │ │TS4 Node │  ... (PV optimizers)
-         └─────────┘ └─────────┘ └─────────┘
+                 Tigo CCA ◄──── RS-485 (GATEWAY A/B) ────► TAP(s) ◄── 2.4 GHz ──► TS4 optimizers
+                    │
+                    │ the same two wires, listen-only
+                    ▼
+   RS-485 to TCP converter │ serial adapter │ ESPHome serial proxy
+                    │
+┌───────────────────┼─────────────────────────────────────────────────────────┐
+│ Home Assistant    ▼                                                         │
+│   connection.py ── open_source() ──► ByteSource.read()                      │
+│                                          │                                  │
+│   coordinator.py  listener thread ◄──────┘                                  │
+│     ├─ packet capture (optional, raw bytes before parsing)                  │
+│     ├─ pytap.Parser.feed(bytes) → events                                    │
+│     ├─ barcode filter, discovery, plausibility check                        │
+│     ├─ listener state (_state), energy integration, Store saves             │
+│     └─ _publish() ──► numbered copy ──► event loop: coordinator.data        │
+│                                                │                            │
+│   sensor.py / binary_sensor.py entities ◄──────┘  (refresh only if affected)│
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
----
+The parser library (`custom_components/pytap/pytap/`) has no Home Assistant imports; it can be used on its own, and the offline tools in `scripts/` use it that way.
 
-## Project Structure
+## Modules
 
-```
-pytap/                              # Repository root
-├── docs/
-│   └── architecture.md             # This file
-├── config/                         # HA dev config directory
-│   ├── configuration.yaml
-│   └── custom_components → ../custom_components  (symlink)
-├── custom_components/
-│   └── pytap/                      # HA custom component
-│       ├── __init__.py             # Integration setup / teardown
-│       ├── config_flow.py          # UI-based configuration
-│       ├── const.py                # Domain, defaults, config keys
-│       ├── coordinator.py          # DataUpdateCoordinator (async bridge)
-│       ├── diagnostics.py          # HA diagnostics platform download
-│       ├── energy.py               # Pure energy accumulation helpers
-│       ├── sensor.py               # Sensor entities (power, voltage, etc.)
-│       ├── manifest.json           # HA integration metadata
-│       ├── strings.json            # UI strings (source)
-│       ├── translations/
-│       │   └── en.json             # English translations
-│       └── pytap/                  # Embedded protocol parser library
-│           ├── __init__.py         # Library re-exports
-│           ├── api.py              # Public API (create_parser, parse_bytes, connect)
-│           ├── core/
-│           │   ├── parser.py       # Protocol parser (bytes → events)
-│           │   ├── types.py        # Protocol types & constants
-│           │   ├── events.py       # Event dataclasses
-│           │   ├── state.py        # SlotClock, NodeTableBuilder, PersistentState
-│           │   ├── source.py       # TcpSource, SerialSource
-│           │   ├── crc.py          # CRC-16-CCITT
-│           │   └── barcode.py      # Tigo barcode encode/decode
-├── tests/
-│   ├── conftest.py                 # HA test fixtures
-│   ├── test_config_flow.py         # Config flow tests
-│   ├── test_coordinator_persistence.py  # Coordinator & persistence tests
-│   ├── test_diagnostics.py         # Diagnostics platform tests
-│   ├── test_energy.py              # Energy accumulation unit tests
-│   ├── test_migration.py           # Entity migration tests
-│   └── test_sensor.py              # Sensor platform tests
-└── pytest.ini                      # Test configuration
-```
-
----
-
-## Component Architecture
-
-### Layer Diagram
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                    Home Assistant Core                        │
-│  (event loop, entity registry, device registry, frontend)    │
-└───────────┬───────────────────────────────┬──────────────────┘
-            │ async_setup_entry             │ entity updates
-            ▼                               ▲
-┌───────────────────────────────────────────────────────────────┐
-│  Integration Layer  (custom_components/pytap/)                │
-│                                                               │
-│  ┌──────────────┐  ┌───────────────────┐  ┌───────────────┐  │
-│  │  Config Flow  │  │   Coordinator     │  │   Sensors     │  │
-│  │              │  │                   │  │               │  │
-│  │  • User form │  │  • Async bridge   │  │  • Per-node   │  │
-│  │  • Validate  │  │  • Thread mgmt   │  │    entities   │  │
-│  │    connection│  │  • Event routing  │  │  • Device     │  │
-│  │  • Store     │  │  • State cache    │  │    grouping   │  │
-│  │    config    │  │                   │  │  • Unit       │  │
-│  │              │  │                   │  │    conversion │  │
-│  └──────┬───────┘  └────────┬──────────┘  └───────┬───────┘  │
-│         │                   │                     │          │
-│         │ ConfigEntry       │ pytap.Parser         │ reads    │
-│         │                   │ (in executor thread) │ coord    │
-│         └───────────────────┘                     │ .data    │
-│                             │                     │          │
-└─────────────────────────────┼─────────────────────┼──────────┘
-                              │                     │
-                              ▼                     │
-┌─────────────────────────────────────────────────────────────┐
-│  Parser Library  (pytap/pytap/)                              │
-│                                                              │
-│  pytap.api.create_parser() → Parser                          │
-│  parser.feed(bytes) → list[Event]                            │
-│  pytap.api.connect(config) → Source                          │
-│                                                              │
-│  No HA dependency — pure protocol logic, stdlib only         │
-└──────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Component Modules
-
-### 1. `__init__.py` — Integration Setup
-
-Entry point for Home Assistant. Implements the two required lifecycle hooks:
-
-| Function | Purpose |
+| Module | Responsibility |
 | --- | --- |
-| `async_setup_entry(hass, entry)` | Create coordinator, start data streaming, forward platform setup |
-| `async_unload_entry(hass, entry)` | Stop coordinator, unload platforms, clean up |
-
-**Setup flow:**
-1. Instantiate `PyTapDataUpdateCoordinator` with host/port from `ConfigEntry`.
-2. Call `coordinator.async_config_entry_first_refresh()` to establish the initial connection and validate it works.
-3. Store coordinator in `hass.data[DOMAIN][entry.entry_id]`.
-4. Forward setup to the `sensor` platform.
-
-**Teardown flow:**
-1. Unload platforms.
-2. Coordinator cancels its background listener task.
-3. Remove coordinator from `hass.data`.
-
-### 2. `config_flow.py` — Configuration UI
-
-Implements a multi-step `ConfigFlow` to collect connection parameters and module barcodes via the HA frontend:
-
-| Step | Fields | Validation |
-| --- | --- | --- |
-| `user` | `host` (required), `port` (default: 502) | Attempt TCP connection to validate reachability |
-| `modules_menu` | Menu (`add_module` / `finish`) | Ensures explicit module-by-module setup |
-| `add_module` | `string` (required), `name` (required), `barcode` (required), `peak_power` (optional, default: 455 Wp) | Non-empty fields, barcode format, duplicate prevention, peak power range 1–1000 |
-
-**Step 1 — Connection:** The user provides the gateway host and port. Validation opens a short-lived TCP connection using `pytap.api.connect()` (run in the executor). On success, proceeds to step 2. On failure, shows "cannot_connect".
-
-**Step 2 — Modules:** The user adds modules one at a time from a menu-driven flow:
-
-- **`STRING`** — Required string/group name (e.g., `A`, `B`, `East`, `West`).
-- **`NAME`** — Required user-friendly name for the optimizer (e.g., `Panel_01`, `Roof_North_3`).
-- **`BARCODE`** — Required Tigo barcode from the module sticker (e.g., `S-1234567A`).
-
-Barcodes are validated against the `X-NNNNNNNC` format and duplicates are rejected. The module list is stored in `ConfigEntry.data["modules"]` as:
-
-```python
-[
-    {"string": "A", "name": "Panel_01", "barcode": "A-1234567B", "peak_power": 455},
-    {"string": "A", "name": "Panel_02", "barcode": "C-2345678D", "peak_power": 455},
-    {"string": "B", "name": "Panel_03", "barcode": "E-3456789F", "peak_power": 400},
-]
-```
-
-**Unique ID:** Based on `host:port` to prevent duplicate entries for the same gateway.
-
-**Options Flow:** The module list can be edited after setup via an Options Flow without removing the integration. This allows adding/removing optimizers as the installation evolves.
-
-### 3. `const.py` — Constants
-
-```python
-DOMAIN = "pytap"
-DEFAULT_PORT = 502           # Tigo TAP default Modbus/TCP port
-DEFAULT_SCAN_INTERVAL = 30   # Coordinator poll fallback (seconds)
-CONF_MODULE_PEAK_POWER = "peak_power"
-DEFAULT_PEAK_POWER = 455     # Wp (watts peak) — STC rating
-CONF_LIVE_REPORTING = "live_reporting"
-DEFAULT_LIVE_REPORTING = True  # Push every reading as it arrives (default)
-CONF_WRITE_INTERVAL = "write_interval"
-DEFAULT_WRITE_INTERVAL = 60   # Seconds between averaged pushes (interval mode)
-```
-
-### 4. `coordinator.py` — Data Update Coordinator
-
-The coordinator is the central bridge between the blocking `pytap` parser and Home Assistant's async event loop. It uses a **push-based streaming model** rather than the typical polling pattern.
-
-#### Architecture
-
-```
-┌─────────────────────────────────────────────────┐
-│  PyTapDataUpdateCoordinator                     │
-│                                                 │
-│  Main thread (HA event loop):                   │
-│    • Exposes self.data to sensor entities        │
-│    • Calls async_set_updated_data() on events   │
-│    • Manages lifecycle (start/stop)              │
-│                                                 │
-│  Executor thread (blocking I/O):                │
-│    • pytap.api.connect() → Source               │
-│    • parser.feed(source.read()) → Events        │
-│    • Schedules callbacks back to event loop      │
-│                                                 │
-│  ┌──────────────────────────────────────────┐   │
-│  │  self.data (dict[str, Any])              │   │
-│  │                                          │   │
-│  │  {                                       │   │
-│  │    "gateways": {                         │   │
-│  │      1: { "address": "...", "version": "1.2" }│
-│  │    },                                    │   │
-│  │    "nodes": {                            │   │
-│  │      "S-1234567A": {                     │   │
-│  │        "gateway_id": 1,                  │   │
-│  │        "node_id": 42,                    │   │
-│  │        "barcode": "S-1234567A",          │   │
-│  │        "name": "Panel_01",               │   │
-│  │        "string": "A",                    │   │
-│  │        "peak_power": 455,                │   │
-│  │        "power": 343.0,                   │   │
-│  │        "performance": 75.38,             │   │
-│  │        "voltage_in": 38.5,               │   │
-│  │        "voltage_out": 39.2,              │   │
-│  │        "current": 8.75,                  │   │
-│  │        "temperature": 45.2,              │   │
-│  │        "dc_dc_duty_cycle": 0.78,         │   │
-│  │        "rssi": -65,                      │   │
-│  │        "last_update": datetime(...)       │   │
-│  │      }                                   │   │
-│  │    },                                    │   │
-│  │    "counters": { ... },                  │   │
-│  │    "discovered_barcodes": ["S-9999999Z"] │   │
-│  │  }                                       │   │
-│  └──────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────┘
-```
-
-#### Threading Model
-
-The `pytap` library uses blocking I/O (`socket.recv`, `serial.read`). Since Home Assistant's core runs on `asyncio`, the coordinator must bridge the two worlds:
-
-1. **Background listener task** — An `asyncio.Task` created at setup that runs the blocking `_listen()` method in the executor via `hass.async_add_executor_job()`.
-2. **Event dispatch** — When the executor thread receives parsed events, it schedules `coordinator.async_set_updated_data()` back on the event loop via `hass.loop.call_soon_threadsafe()`.
-3. **Midnight reset timer** — A `call_later` timer on the event loop fires at local midnight to proactively reset daily accumulators, ensuring daily sensors zero at exactly midnight even when no power reports arrive overnight.
-4. **Cancellation** — On unload, the task is cancelled, the midnight timer is cancelled, and the source connection is closed, which unblocks the `read()` call.
-
-```
- HA Event Loop (main thread)          Executor Thread
- ─────────────────────────            ────────────────
-        │                                    │
-        │  async_setup_entry()               │
-        │  ─► create coordinator             │
-        │  ─► start listener task ──────────►│
-        │  ─► schedule midnight reset        │
-        │                                    │ source = connect(config)
-        │                                    │ parser = create_parser()
-        │                                    │
-        │                                    │ loop:
-        │                                    │   data = source.read(4096)
-        │                                    │   events = parser.feed(data)
-        │  ◄── call_soon_threadsafe ─────────│   for event in events:
-        │      async_set_updated_data(...)   │     dispatch(event)
-        │                                    │
-        │  [midnight] _perform_midnight_     │
-        │    reset() → zero daily accum.     │
-        │    → push update to sensors        │
-        │    → reschedule for next midnight  │
-        │                                    │
-        │  entities read coordinator.data    │
-        │  and update their state            │
-        │                                    │
-        │  async_unload_entry()              │
-        │  ─► cancel midnight timer          │
-        │  ─► cancel task ──────────────────►│ (source.close() → unblocks read)
-        │                                    │ exits
-```
+| `__init__.py` | Setup, unload, removal, config entry migration, device removal from the UI, orphan device cleanup, registering the capture actions |
+| `config_flow.py` | Config flow (connection, discovery, modules) and options flow (connection, reporting, stale readings, inverter, discovery, modules, strings) |
+| `connection.py` | Validating TCP and serial settings, opening a byte source, titles and log labels that never show proxy URLs |
+| `coordinator.py` | The listener thread, listener-owned state, publishing, persistence, energy, reading health, estimates, discovery, barcode claims, capture control |
+| `energy.py` | Pure energy accumulation (trapezoidal Wh integration, midnight reset) |
+| `sensor.py` | Optimizer sensors, String / inverter / Total aggregates, Node mapping, Bus status, Module discovery, flag sensors |
+| `binary_sensor.py` | Flag binary sensors and Reading fault |
+| `entity.py` | Shared optimizer device info and the flag entity base class |
+| `naming.py` | Device names, barcode entity IDs, string inverters |
+| `diagnostics.py` | Diagnostics download (redacted) |
+| `capture_services.py` | The `pytap.*_capture` actions |
+| `pytap/core/` | Parser, events, protocol types, state (slot clock, node tables), TCP source, capture writer, replay, flag decoding |
 
-#### Reconnection
+## Lifecycle (`__init__.py`)
 
-The coordinator handles connection failures and source timeouts with automatic reconnection:
+**`async_setup`** registers the capture actions once for the domain.
 
-- **Initial connection failure** — Raises `UpdateFailed`, HA marks the integration as unavailable and retries using its standard backoff.
-- **Mid-stream disconnection** — The listener task catches the exception, logs a warning, waits `RECONNECT_DELAY` seconds, and re-establishes the connection.
-- **Silence timeout** — If no data arrives for `RECONNECT_TIMEOUT` seconds, the coordinator assumes the connection is stale and reconnects.
-
-#### Reporting Modes — Live vs. Averaged Interval
-
-The coordinator delivers readings to Home Assistant in one of two user-selectable modes (set via the options flow's *Change reporting settings* step and stored as `live_reporting` / `write_interval` in `ConfigEntry.data`):
-
-| Mode | `live_reporting` | Behavior |
-| --- | --- | --- |
-| **Live (default)** | `True` | Every event that changes node data triggers an immediate `async_set_updated_data` push — sub-second latency. |
-| **Averaged interval** | `False` | Readings are buffered per barcode with monotonic timestamps. Once per `write_interval` seconds (5–300, default 60; new entries start in this mode) the coordinator pushes a **time-weighted average** of the buffered readings via `_build_averaged_snapshot()`. |
-
-Time-weighted averaging weights each buffered reading by the duration it remained the latest value (the time until the next reading, or until the flush for the final reading). This yields a physically representative average when readings arrive at uneven intervals, unlike a plain arithmetic mean.
-
-Averaging applies only to the instantaneous fields pushed to entities (power, voltage in/out, current in/out, temperature, DC-DC duty cycle, RSSI); `performance` is recomputed from the averaged power. Energy accumulation and persisted node snapshots always use the raw readings, so daily/total energy stays accurate regardless of reporting mode.
-
-#### Data Merging Strategy
+**`async_setup_entry`**:
 
-The coordinator maintains a cumulative state dictionary. Incoming events are merged, not replaced:
+1. If a previous coordinator for this entry is still *parked* (its listener didn't stop in time), wait for it to stop; if it still won't, raise `ConfigEntryNotReady` so a new listener never shares the connection.
+2. Clean up legacy entity unique IDs from before 0.2.0.
+3. Create the coordinator. Invalid saved connection settings raise `ConfigEntryError` (the user is asked to fix them rather than retried forever).
+4. Load the Store, start the listener (`async_start_listener`).
+5. If the Store was read without error, remove devices of excluded optimizers and empty strings (nothing is removed if saved state couldn't be read, since discovered optimizers would then be unknown).
+6. Set `entry.runtime_data`, stop the listener on `EVENT_HOMEASSISTANT_STOP` (entries aren't unloaded at shutdown), forward the `binary_sensor` and `sensor` platforms, and reload on options changes.
 
-- **`PowerReportEvent`** — If the event's `barcode` matches a configured module, upserts into `data["nodes"][barcode]` with all power fields + `last_update` timestamp. Events for unconfigured barcodes are **discarded** (but logged at DEBUG level for discovery — see below).
-- **`InfrastructureEvent`** — Replaces `data["gateways"]` and rebuilds the barcode→node_id mapping from scratch. The first infrastructure event in a session may arrive without barcodes (gateway identity only — node table not yet received); barcode resolution activates once the gateway sends the full node table. Subsequent events log the match count and any configured barcodes not found in the node table.
-- **`TopologyEvent`** — Updates topology fields for matched nodes only.
-- **`StringEvent`** — Logged for diagnostics; not stored in entity state.
+A setup that fails part-way stops (or parks) its listener again.
 
-#### Persistence
+**`async_unload_entry`** stops the listener within `LISTENER_STOP_TIMEOUT` (15 s), interrupting a blocked read. If it doesn't stop in time, the coordinator is *parked* (`parked_coordinators(hass)`) and finishes its own cleanup when the thread exits. Barcode claims are released once it has stopped.
 
-All persistent state is consolidated into a single **HA Store** (`<config>/.storage/pytap_<entry_id>_coordinator`), written via `homeassistant.helpers.storage.Store` (version 2). The store contains:
+**`async_remove_entry`** stops any parked listener (discarding state, so a late final save can't recreate the file), deletes the entry's packet captures and its Store.
 
-- **`barcode_to_node`** — Barcode↔node_id mappings learned from infrastructure events.
-- **`discovered_barcodes`** — Set of unconfigured barcodes seen on the bus.
-- **`parser_state`** — Serialised parser infrastructure state (gateway identities, versions, node tables) via `PersistentState.to_dict()`.
-- **`energy_data`** — Per-barcode accumulator state (`daily_energy_wh`, `daily_reset_date`, `total_energy_wh`, `readings_today`, `last_power_w`, `last_reading_ts`).
+**`async_remove_config_entry_device`** lets users delete an optimizer device (its barcode is removed from the module list and excluded from discovery) or an empty string or inverter device; the Total device and strings with modules can't be deleted.
 
-Saves are debounced (10s delay) to avoid excessive writes. On shutdown, any pending unsaved changes are flushed immediately.
-
-On startup, the coordinator loads all state from the HA Store. The parser receives a shared `PersistentState` object (deserialized from the store) which it mutates in memory as new infrastructure events arrive. The coordinator owns persistence — the parser never performs file I/O.
-
-This single-store approach ensures:
-- No raw file I/O on the event loop (HA Store is fully async).
-- Automatic cleanup when a config entry is removed.
-- Proper inclusion in HA backups.
-- Version migration support via the Store's built-in versioning.
-
-#### Barcode Filtering & Discovery Logging
-
-The coordinator builds a **barcode allowlist** from `ConfigEntry.data["modules"]` at startup. Only events whose `barcode` field matches the allowlist are forwarded to entity state.
-
-For unconfigured barcodes, the coordinator logs a message at `INFO` level:
+### Config entry versions
 
-```
-INFO: Discovered unconfigured Tigo optimizer barcode: S-9999999Z (gateway=1, node=55). Add it to your PyTap module list to start tracking.
-```
-
-This approach mirrors the [taptap add-on](https://github.com/litinoveweedle/hassio-addons) pattern: users can monitor the HA log for unconfigured barcodes and add them via the Options Flow. Since barcode discovery messages (`InfrastructureEvent`) from the Tigo gateway can be infrequent (sometimes only during overnight enumeration cycles), users should allow up to 24 hours for full discovery.
-
-The coordinator also maintains a `data["discovered_barcodes"]` set of all seen-but-unconfigured barcodes, persisted to the HA Store for survival across restarts. Discovered barcodes are persisted alongside barcode↔node_id mappings so that when a user later adds a previously-discovered barcode via the Options Flow, it can be resolved immediately from saved state without waiting for the next infrastructure event.
-
-#### Module Reconfiguration
-
-When the user adds or removes modules via the Options Flow, the integration reloads. On reload, the newly-created coordinator loads saved barcode↔node_id mappings from the HA Store. If a newly-added barcode already exists in the saved mappings, a placeholder entry is created in coordinator data so that sensor entities can bind immediately — no need to wait for the next power report or infrastructure event.
-
-### 5. `sensor.py` — Sensor Platform
-
-Creates sensor entities **only** for optimizer modules explicitly listed in the user's configuration. No auto-discovery — the user provides the list of barcodes they want to track.
-
-#### Entity Model
-
-Each configured Tigo TS4 optimizer module becomes a **device** in the HA device registry, with 12 measurement sensor entities plus a diagnostic **Data validity** sensor (see *Entity Availability*):
-
-```
-Device: "Tigo TS4 Panel_01" (user-defined name from config)
-  ├── Sensor: Performance      (%)   — SensorStateClass.MEASUREMENT
-  ├── Sensor: Power            (W)   — SensorDeviceClass.POWER
-  ├── Sensor: Voltage In       (V)   — SensorDeviceClass.VOLTAGE
-  ├── Sensor: Voltage Out      (V)   — SensorDeviceClass.VOLTAGE
-  ├── Sensor: Current In       (A)   — SensorDeviceClass.CURRENT
-  ├── Sensor: Current Out      (A)   — SensorDeviceClass.CURRENT
-  ├── Sensor: Temperature      (°C)  — SensorDeviceClass.TEMPERATURE
-  ├── Sensor: DC-DC Duty Cycle (%)   — SensorStateClass.MEASUREMENT
-  ├── Sensor: RSSI             (dBm) — SensorDeviceClass.SIGNAL_STRENGTH
-  ├── Sensor: Daily Energy     (Wh)  — SensorDeviceClass.ENERGY
-  ├── Sensor: Total Energy     (Wh)  — SensorDeviceClass.ENERGY
-  └── Sensor: Readings Today   (—)   — EntityCategory.DIAGNOSTIC, SensorStateClass.TOTAL
-```
-
-Aggregate virtual devices are also created:
-
-- `Tigo String <name>`: 4 sensors (`performance`, `power`, `daily_energy`, `total_energy`)
-- `Tigo Installation`: 4 sensors (`performance`, `power`, `daily_energy`, `total_energy`)
-
-#### Device Info
-
-Devices are identified by barcode (stable across gateway restarts and node_id reassignments):
-
-```python
-DeviceInfo(
-    identifiers={(DOMAIN, barcode)},   # e.g. ("pytap", "S-1234567A")
-    name=f"Tigo TS4 {module_config['name']}",  # user-defined name
-    manufacturer="Tigo Energy",
-    model="TS4",
-    serial_number=barcode,
-)
-```
-
-#### Entity Creation — Barcode-Driven (No Auto-Discovery)
-
-Unlike auto-discovery integrations, entities are created **deterministically** from the configured module list:
-
-1. At `async_setup_entry`, the sensor platform reads `ConfigEntry.data["modules"]`.
-2. For each configured module, it creates the full set of 12 per-optimizer sensor entities immediately.
-3. It also creates aggregate sensors per distinct string and for the whole installation.
-4. Entities start in an **unavailable** state until the first matching `PowerReportEvent` arrives from the bus.
-5. When the coordinator receives a `PowerReportEvent` with a barcode matching a configured module, the corresponding entities become available and display live data.
-
-This approach is inspired by the [taptap HA add-on](https://github.com/litinoveweedle/hassio-addons) which similarly requires users to define `taptap_modules` as `STRING:NAME:SERIAL` triplets.
-
-**Rationale for explicit configuration over auto-discovery:**
-
-- **Predictable entity IDs** — Users know exactly which entities will exist, enabling dashboards and automations to be set up before the first data arrives.
-- **No phantom entities** — Auto-discovery can create entities for neighbor nodes on adjacent installations sharing the same RS-485 bus. Explicit barcodes prevent this.
-- **User-friendly names** — Names are defined by the user (e.g., "Roof_East_Panel_03") rather than opaque node IDs.
-- **String grouping** — The required `string` field powers deterministic per-string aggregate entities.
-
-#### Barcode-to-Node Matching
-
-The Tigo protocol identifies nodes by `node_id` (a transient 16-bit integer) and `barcode` (a stable hardware identifier). The mapping between them is learned from `InfrastructureEvent`s (gateway enumeration).
-
-```
-  Config:  ["S-1234567A", "S-1234568B", ...]    (user-provided barcodes)
-                  │
-                  ▼
-  Coordinator:  barcode → node_id mapping         (learned from InfrastructureEvent)
-                  │
-                  ▼
-  PowerReportEvent(node_id=42, barcode="S-1234567A")
-                  │
-                  ▼
-  Coordinator:  barcode in allowlist? → YES → update data["nodes"]["S-1234567A"]
-                                       NO  → log discovery, discard
-```
-
-If the parser already resolves barcodes in `PowerReportEvent.barcode` (via its internal node table), the coordinator matches directly. For events where the barcode is `None` (node table not yet populated), the coordinator uses its own `node_id → barcode` mapping built from prior `InfrastructureEvent`s.
-
-#### Entity Updates
-
-Sensor entities inherit from `CoordinatorEntity` and implement `_handle_coordinator_update()`:
-
-```python
-@callback
-def _handle_coordinator_update(self) -> None:
-    node_data = self.coordinator.data.get("nodes", {}).get(self._barcode)
-    if node_data:
-        self._attr_native_value = node_data.get(self._value_key)
-        self._attr_available = True
-    else:
-        self._attr_available = False
-    self.async_write_ha_state()
-```
-
-#### Entity Availability
-
-Entities are unavailable until the node's barcode has been seen on the bus (or a value was restored). After that, `coordinator.reading_state(barcode)` decides how live readings (power, voltage, current, performance, duty cycle, temperature, RSSI) are shown. Energy and readings-today sensors are never affected.
-
-| State | Condition | Live readings |
+| Version | Change |
+| --- | --- |
+| 1 → 2 | Voltage and current sensors split into In and Out (legacy entities cleaned up at setup) |
+| 2 → 3 | String labels mandatory |
+| 3 → 4 | Peak power added (default 455 Wp) |
+| 4 → 5 | Live reporting setting added (existing entries keep live mode) |
+| 5–7 → 8 | Missing settings added, existing ones never overwritten: inverter name (blank), connection type (TCP), discovery off, no exclusions. Versions 6 and 7 meant different things in this fork and in Tim Laing's upstream PR stack (his v6 = serial, v7 = discovery), so they all migrate the same way and a serial entry stays serial. |
+
+A version newer than the code knows is refused. Entity IDs are never changed by a migration.
+
+### Config entry data
+
+| Key | Meaning |
+| --- | --- |
+| `connection_type` | `tcp` or `serial` |
+| `host`, `port` | TCP converter (port default 502) |
+| `serial_port`, `baud_rate` | Serial device path or `esphome-hass://` proxy URL; baud rate default 38400 |
+| `inverter` | Optional inverter name of the entry, used in device names |
+| `modules` | `[{"string", "name", "barcode", "peak_power"}]`; `peak_power` 0 means unknown |
+| `auto_discovery`, `excluded_barcodes` | Passive discovery on/off; barcodes the user removed |
+| `string_inverters` | `{string: inverter}` for one CCA serving several inverters |
+| `live_reporting`, `write_interval` | Reporting mode; entries without the key keep live mode, new entries start averaged at 60 s |
+| `estimate_silent` | Estimate silent optimizers in aggregates (default on) |
+| `night_action`, `silent_action`, `silent_minutes` | What an optimizer's live sensors show when asleep (zero/hold) or silent by day (unavailable/hold/zero), and after how long |
+
+## Connections (`connection.py`)
+
+`normalize_connection()` validates saved or entered settings and raises `InvalidConnectionSettings` with the offending field. Serial ports must be character devices under `/dev` (not `/dev/fd`, `/dev/std*` and similar) or Home Assistant-managed `esphome-hass://` URLs without credentials and with a port filter. `open_source(loop, data)` returns a `ByteSource`:
+
+- **TCP:** `pytap.core.source.TcpSource`, a blocking socket with a read timeout.
+- **Serial / ESPHome proxy:** `SerialProxySource`, which opens `serialx`'s async serial transport on Home Assistant's event loop and bridges it to the listener thread with bounded, timed reads. It never writes and never changes DTR/RTS.
+
+A port is exclusive to one entry (`serial_port_claimed()`, comparing resolved paths). Titles and log labels (`connection_title()`, `endpoint_label`) never contain proxy URLs.
+
+The config and options flows test a connection when submitted (`connection_errors()`): an unreachable converter shows *Could not connect*, and submitting the same settings again saves them anyway, since a converter may simply be off.
+
+## The coordinator (`coordinator.py`)
+
+`PyTapDataUpdateCoordinator` is push-based: it never polls. Its pieces:
+
+### Listener thread and listener-owned state
+
+`async_start_listener()` runs `_listen()` in the executor. The thread loops: open the source, create a parser with the saved `PersistentState`, read up to 4096 bytes at a time, record them to an active capture, feed the parser, process the events, and publish. On errors it records the outage cause, backs off (`RECONNECT_DELAY` 5 s up to `RECONNECT_MAX_DELAY` 60 s) and reconnects; no bytes for `RECONNECT_TIMEOUT` (60 s) also forces a reconnect. Outages are logged once, then at debug level until data has flowed for `STABLE_CONNECTION_SECONDS`.
+
+The thread owns `self._state` (nodes, gateways, counters, discovered barcodes) and the energy accumulators, guarded by `_state_lock` (an `RLock`). Home Assistant never reads them directly.
+
+### Publishing
+
+`_publish()` builds a copy of the state, numbers it (`_publish_seq`) and hands it to the event loop with `call_soon_threadsafe`; `_async_apply_snapshot()` drops a copy older than one already applied, so a queued snapshot can't undo a newer one (for example the midnight reset). `_publish_patch()` changes fields of the published data directly (used by the midnight reset, so averaged values aren't replaced by raw ones).
+
+Each publish carries the set of changed barcodes (`_mark_changed`; `None` means everything). Entities call `coordinator.affects(barcodes)` and skip updates for other panels, so a report from one panel re-renders only its entities and the String and Total devices containing it.
+
+### Reporting modes
+
+| Mode | Behaviour |
+| --- | --- |
+| Averaged interval (new entries) | Readings are buffered per barcode with monotonic timestamps; once per `write_interval` (5–300 s, default 60) a **time-weighted average** of `_AVERAGED_FIELDS` is published (each reading weighted by how long it remained the latest). Performance is recomputed from the averaged power. Home Assistant never sees a raw reading between flushes. |
+| Live | Every change is published as it arrives. |
+
+Energy is always integrated from the raw readings, and persisted snapshots hold raw values, whatever the mode.
+
+### Processing a power report
+
+1. **Barcode.** From the parser, or from the coordinator's node ID → barcode map learned from infrastructure events (node tables).
+2. **Tracked?** A configured or discovered optimizer continues. An unknown barcode is logged once (`Discovered unconfigured Tigo optimizer barcode …`) and, with discovery on, admitted (below); otherwise dropped.
+3. **Plausibility** (`reading_faults()`): output more than 2 V above input, a voltage outside 0–100 V, or a valid temperature outside −40…125 °C. An impossible report sets `reading_fault`, `fault_reasons` and `last_fault_at` on the node and is otherwise discarded: no values replaced, no energy, no freshness.
+4. **Freshness:** `_last_report[barcode]` (monotonic) for reading health and estimates.
+5. **Energy:** `accumulate_energy()` integrates power into daily and lifetime Wh (trapezoids, gaps over `ENERGY_GAP_THRESHOLD_SECONDS` (120 s) not integrated, but bridged as estimated energy in some cases; see Estimates).
+6. **Node update:** measurements, performance (only with a known rating), temperature and RSSI only when valid, the raw `status` and `jstatus` flag bytes, `reading_fault: False`.
+
+### Discovery and barcode claims
+
+With `auto_discovery` on, `_add_discovered_module()` admits a barcode seen in a node table or power report, unless it's excluded or already tracked: name empty, string `Discovered`, `peak_power` 0. Discovered modules live in the coordinator (and the Store, as `auto_modules`), not in the config entry, so admitting one doesn't reload the entry; the platforms add entities from a coordinator listener. Saving the options flow moves them into `modules`.
+
+`BarcodeClaims` (one per Home Assistant instance) lets only one entry track a barcode, so two entries on one bus can't create clashing entities. Configured modules are claimed at setup, discovered ones as they appear; claims are released on unload.
+
+### Reading health
+
+A health check runs every `HEALTH_CHECK_INTERVAL_SECONDS` (60 s): it refreshes the sun position, updates estimates, logs state changes and publishes only the panels whose state changed. `reading_state(barcode)`:
+
+| State | Condition | Optimizer's live readings |
 | --- | --- | --- |
 | `ok` | Reporting, or quiet for less than the limits below | Last value |
-| `asleep` | Sun below `LOW_SUN_ELEVATION` (10°) and quiet for `NIGHT_QUIET_SECONDS` (10 min); or daylight but no report since before daylight began | 0 (temperature and RSSI keep their last value) |
-| `silent` | Daylight and quiet for `SILENT_UNAVAILABLE_SECONDS` (30 min), counted from the later of the last report and the start of daylight | Unavailable |
-| `offline` | Bus status not normal: no bytes for `LINK_DOWN_SECONDS` (5 min) | Unavailable |
+| `asleep` | Sun below `LOW_SUN_ELEVATION` (10°) and quiet for `NIGHT_QUIET_SECONDS` (10 min); or daylight but no report since before daylight began | `night_action`: 0 (default) or last value; temperature and RSSI keep their last value |
+| `silent` | Daylight and quiet for `silent_minutes` (default 30), counted from the later of the last report and the start of daylight | `silent_action`: unavailable (default), last value or 0 |
+| `offline` | No bytes from the converter for `LINK_DOWN_SECONDS` (5 min) | Unavailable |
 
-The daytime limit is deliberately long: optimizers can drop off the 2.4 GHz link to the TAP for minutes at a time and recover by themselves (upstream issue #17), so holding the last value through short gaps is better than zeroing a producing panel. A health check runs every `HEALTH_CHECK_INTERVAL_SECONDS` (60 s); it refreshes the sun position, logs state changes and pushes an update to the sensors when any state changes.
+After a restart, quiet time is counted from when PyTap started (saved report times aren't used yet), so at night panels show their last values for up to 10 minutes before reading 0.
 
-#### Estimating silent optimizers
+The daytime limit is deliberately long: optimizers can drop off the TAP's radio link for minutes and recover by themselves. Without a Home Assistant location, PyTap never assumes it's night.
 
-The String and Total devices' sensors can estimate an optimizer that has gone quiet (option `estimate_silent`, default on). `coordinator._update_estimates()` runs in the health check:
+`bus_status` is `normal` while bytes arrive within `LINK_DOWN_SECONDS`, otherwise the cause the listener saw last: `converter_unreachable` (connect failed or the socket dropped) or `bus_quiet` (connected, no bytes). The CCA polls the bus day and night, so a quiet bus is never normal.
+
+### Estimates
+
+The String and Total devices can estimate an optimizer that has gone quiet (`estimate_silent`, default on); `_update_estimates()` runs in the health check:
 
 - **Share.** While an optimizer and at least `ESTIMATE_MIN_PEER_FRACTION` (half) of the rest of its string have reported within `ESTIMATE_AFTER_SECONDS` (120 s), and their average is at least `SHARE_MIN_PEER_POWER_W`, its power ÷ their average is folded into an exponential moving average (`SHARE_SMOOTHING` 0.2 per minute, capped at `SHARE_MAX`).
 - **Estimate.** Quiet for `ESTIMATE_AFTER_SECONDS` with enough reporting neighbours: share (default 1.0) × their average power. Optimizers in a series string carry the same current, so the estimate falls if the string's output collapses.
-- **Energy.** The estimate is integrated into `EnergyAccumulator.estimated_daily_wh` / `estimated_total_wh`, starting from the last report (at most `ESTIMATE_AFTER_SECONDS` + one check interval back, which matches the gap the trapezoidal integration discards) and ending at the first new report, recorded by the listener in `_est_close`. These fields are persisted and reset at midnight with the daily energy. A gap longer than `ENERGY_GAP_THRESHOLD_SECONDS` that ends before the health check starts estimating (at most `ESTIMATE_AFTER_SECONDS` + one check interval, with no `_est_cursor`) would otherwise be lost: `accumulate_energy` returns the discarded trapezoid (`discarded_wh`, `gap_seconds`) and the listener adds it as estimated energy when estimating is on. The same applies to a **restart gap** of up to `RESTART_BRIDGE_MAX_SECONDS` (600 s): every state save records `saved_at`, which the next start loads as `_stopped_at`; an optimizer's first reading since start (`_seen_since_start`) whose previous reading is no more than `ESTIMATE_AFTER_SECONDS` before `_stopped_at` (so none of the gap was estimated before the stop) has its discarded trapezoid bridged too.
-- **Where it is used.** `PyTapAggregateSensor` uses `estimated_power()` for power and performance, and adds `estimated_energy()` to daily and total energy. Optimizer sensors never include estimates.
+- **Energy.** The estimate is integrated into `estimated_daily_wh` / `estimated_total_wh` from the last report to the first new one. A gap that ends before the health check starts estimating would otherwise be lost: `accumulate_energy` returns the discarded trapezoid and the listener adds it as estimated energy. The same applies to a **restart gap** of up to `RESTART_BRIDGE_MAX_SECONDS` (600 s): each save records `saved_at`, loaded as `_stopped_at`, and an optimizer's first reading since start whose previous reading was at most `ESTIMATE_AFTER_SECONDS` before the stop has its gap bridged.
+- **Use.** Aggregates use `estimated_power()` for power and performance and add `estimated_energy()` to energy. Optimizer sensors never include estimates.
 
-Aggregate power per constituent: the estimate if there is one; otherwise 0 when asleep; when silent, left out (estimating on) or its last value (estimating off); nothing when offline. Power and performance are unavailable when the converter is offline or no constituent contributes.
+Aggregate power per member: the estimate if there is one; otherwise 0 when asleep; when silent, left out (estimating on) or its last value (estimating off); nothing when offline.
 
-`PyTapDataValiditySensor` (enum, diagnostic, one per optimizer) shows `coordinator.data_validity()`: `reporting`, `holding`, `estimated`, `silent_estimated` (silent for `SILENT_UNAVAILABLE_SECONDS`, own live readings unavailable, still estimated in aggregates), `asleep` or `silent`. It is unavailable while the bus status isn't normal. At low sun, `asleep` takes precedence over `estimated`: at dusk the last awake optimizers in a string report about 0 W, so an optimizer quiet for `NIGHT_QUIET_SECONDS` shows `asleep` even while its string still estimates it (at about 0 W). By day, an optimizer not heard from since daylight began still shows `estimated` while its string is producing.
+`data_validity(barcode)` (the Data validity sensor): `reporting`, `holding`, `estimated`, `silent_estimated`, `asleep` or `silent`; unavailable while the bus status isn't normal. At low sun, `asleep` takes precedence over `estimated`.
 
-`PyTapBusStatusSensor` (enum, diagnostic, one per entry on the Total device) shows `coordinator.bus_status`: `normal` while bytes arrive within `LINK_DOWN_SECONDS`, otherwise the cause the listener last saw: `converter_unreachable` (connect failed or the socket dropped) or `bus_quiet` (connected, but no bytes for `RECONNECT_TIMEOUT`). The CCA polls the bus continuously, day and night, so a quiet bus is never normal.
+### Midnight reset
 
-### 6. `manifest.json` — Integration Metadata
+`async_track_time_change` at local midnight (DST-safe) resets daily accumulators and the published daily values with `_publish_patch()`.
 
-```json
-{
-  "domain": "pytap",
-  "name": "PyTap",
-  "codeowners": ["@azebro"],
-  "config_flow": true,
-  "documentation": "https://github.com/azebro/pytap",
-  "integration_type": "hub",
-  "iot_class": "local_push",
-  "requirements": [],
-  "version": "0.3.0"
-}
-```
+### Persistence
 
-Key choices:
-- **`integration_type: "hub"`** — A single gateway entry manages multiple downstream devices (optimizer nodes).
-- **`iot_class: "local_push"`** — Data is pushed from the device in real time (not polled). The coordinator streams events as they arrive from the bus.
-- **`requirements: []`** — The `pytap` parser library is embedded, not installed from PyPI. No external dependencies beyond stdlib.
+One Home Assistant Store per entry, `.storage/pytap_<entry_id>_coordinator` (version 2, migrating older data as-is):
 
----
+| Key | Contents |
+| --- | --- |
+| `saved_at` | When it was saved (roughly when PyTap stopped hearing the bus, for restart gaps) |
+| `barcode_to_node` | Node ID mappings learned from node tables |
+| `discovered_barcodes` | Barcodes seen but not tracked |
+| `auto_modules` | Discovered modules not yet saved into the entry |
+| `parser_state` | `PersistentState`: gateway identities and versions, node tables, optimizer hardware IDs |
+| `energy_data` | Per barcode: daily and lifetime Wh, reset date, readings today, last power and time, estimated Wh |
+| `node_snapshots` | The last readings, flag bytes and reading fault of each tracked optimizer |
 
-## Data Flow — End to End
+Saves are throttled: written within `SAVE_DELAY_SECONDS` (10 s) of the first change, posted to the event loop once per cycle, and a final save runs when the listener stops. If the Store can't be read, the coordinator starts without it and sets `_save_blocked`, so it never replaces lifetime energy with empty state; the next reload tries again. Removing the entry blocks all saves before deleting the Store.
 
-```
- Tigo Gateway (RS-485 bus master)
-     │
-     │  TCP stream (port 502)
-     ▼
- pytap TcpSource.read(4096)
-     │
-     │  raw bytes
-     ▼
- pytap Parser.feed(bytes)
-     │
-     │  Frame accumulator state machine
-     │  CRC validation
-     │  Frame dispatch by type
-     │  Transport correlation (request/response pairing)
-     │  PV packet extraction
-     │  Slot clock → timestamp mapping
-     │  Barcode resolution
-     │
-     │  list[Event]
-     ▼
- Coordinator._process_event(event)
-     │
-     │  Barcode in configured allowlist?
-     │  ├── YES → Merge into self.data["nodes"][barcode]
-     │  └── NO  → Log discovery, add to discovered_barcodes set, discard
-     │
-     │  async_set_updated_data()
-     ▼
- Home Assistant Entity Registry
-     │
-     │  CoordinatorEntity._handle_coordinator_update()
-     │  → updates native_value, availability (keyed by barcode)
-     ▼
- HA Frontend / Automations / History
-     │
-     │  • Real-time dashboard cards (power, voltage, temp)
-     │  • History graphs
-     │  • Automations (e.g., alert on low power / high temp)
-     │  • Energy dashboard integration
-```
+String and Total energy are not in the Store: each aggregate energy sensor keeps its own running total of its members' increases (`_AggregateEnergyData`, restored through Home Assistant's extra restore data), so membership changes never add a member's lifetime energy or look like a meter reset.
 
----
+### Packet capture
 
-## Key Design Decisions
+`async_start_capture()` creates a `CaptureWriter` (`pytap/core/capture.py`) under `/config/pytap_captures/<entry_id>/`. The listener hands it every block of bytes it reads, before parsing, plus connection open/close/error markers; the writer queues them, writes 16 MiB raw segments, a 32-byte-per-read timing index and a checksummed manifest, and stops (never deletes) at its duration or storage budget. Captures are finalised before the listener's thread references are dropped on stop, so a timed-out stop stays recoverable. `capture_services.py` exposes the admin-only actions; exports and deletions are tracked across reloads. `pytap/core/replay.py` scans captures frame by frame (flagging frames the live parser would drop) and replays them through the parser with a recorded clock (`Parser(clock=…)`); `iter_simple_recording()` reads simple timestamped recordings made by other tools.
 
-### 1. Embedded Parser Library (No PyPI Dependency)
+## Entities (`sensor.py`, `binary_sensor.py`, `entity.py`, `naming.py`)
 
-The `pytap` parser library is bundled inside the custom component at `custom_components/pytap/pytap/`. This means:
+Platforms create entities from `coordinator.modules` and register a coordinator listener that adds entities for newly discovered modules (cheaply skipped while `module_count` is unchanged).
 
-- **Zero external dependencies** — Easier to install (just copy the folder into `custom_components/`).
-- **Version lock** — The parser version always matches the integration version.
-- **No PyPI publishing required** — Reduces release complexity for a niche integration.
+### Per optimizer
 
-The library maintains a clean boundary: it has **no Home Assistant imports** and can be used standalone (scripts, other platforms). Persistence is handled externally — the parser accepts a `PersistentState` object and mutates it in memory; the caller owns serialization.
-
-### 2. Push-Based Streaming (Not Polling)
-
-Unlike most HA integrations that poll an API on an interval, PyTap uses a continuous streaming model:
-
-| Aspect | Polling | Streaming (PyTap) |
+| Entities | Class | Notes |
 | --- | --- | --- |
-| Latency | `scan_interval` seconds | Sub-second |
-| Bandwidth | Redundant requests | Only new data |
-| HA CPU | Timer fires + HTTP call | Idle until event arrives |
-| Complexity | Simple `_async_update_data` | Background task + thread bridging |
+| Performance, Power, Voltage In/Out, Current In/Out, Temperature, DC-DC duty cycle, RSSI, Daily energy, Total energy, Readings today | `PyTapSensor` (`RestoreSensor`) | Live readings follow `reading_state()` and the stale-reading settings; energy never does. States are rounded, and no attribute changes per reading, so unchanged values add no recorder rows. |
+| Data validity | `PyTapDataValiditySensor` | Enum, diagnostic |
+| Status, State field, jstatus level | `PyTapFlagSensor` | From the raw flag bytes, decoded by `pytap/core/flags.py`; the last two disabled by default |
+| Low input voltage, Producing, Idle pass-through, Reading fault | `PyTapBinarySensor` | Idle pass-through disabled by default; Reading fault is a problem sensor that ignores reading health |
 
-Streaming is the correct choice because the Tigo bus produces a continuous flow of power reports (~1 per optimizer per 5-second slot cycle), and the bus protocol is already push-based.
+Flag entities derive from `PyTapFlagEntity`: they write state only when it changes, stay visible while reporting or asleep, and follow `silent_action` when silent. Performance entities are disabled by the integration while a covered panel has no rating, and re-enabled when it gets one (a user's own disabling is respected).
 
-### 3. Thread Bridging via Executor
+### Devices and names
 
-The `pytap` library uses blocking `socket.recv()` / `serial.read()` calls. Rather than rewriting the library with `asyncio`, the coordinator runs the blocking listener in the HA executor thread pool:
-
-```python
-self._listener_task = entry.async_create_background_task(
-    hass,
-    hass.async_add_executor_job(self._listen),
-    name="pytap_listener",
-)
-```
-
-This keeps the parser library simple and portable while integrating cleanly with HA's async architecture.
-
-### 4. Explicit Barcode Configuration (No Auto-Discovery)
-
-Rather than auto-discovering nodes from the bus, users explicitly configure which optimizer barcodes to track. This is modeled after the [taptap HA add-on's](https://github.com/litinoveweedle/hassio-addons) `taptap_modules` pattern. Benefits:
-
-- **No phantom entities** from neighbor installations sharing the RS-485 bus.
-- **Predictable entity IDs** that can be referenced in automations before the first data arrives.
-- **User-defined names** instead of opaque node IDs.
-- **Discovery logging** surfaces unconfigured barcodes in the HA log so users can add them.
-
-### 5. Device Hierarchy (Gateway → Nodes)
-
-The HA device registry mirrors the physical topology:
-
-```
-Gateway 1 (via_device: None)
-  ├── Node 42 (via_device: Gateway 1)
-  ├── Node 43 (via_device: Gateway 1)
-  └── Node 44 (via_device: Gateway 1)
-
-Gateway 2 (via_device: None)
-  ├── Node 101 (via_device: Gateway 2)
-  └── Node 102 (via_device: Gateway 2)
-```
-
-This allows users to see which gateway each optimizer is connected through, matching the physical wiring.
-
-### 6. Coordinator Data as Flat Dict
-
-The coordinator stores node data as a flat dictionary keyed by `barcode` (not `node_id`), since barcodes are stable identifiers while node IDs can change across gateway restarts. This makes entity lookups O(1) and avoids coupling entities to the `pytap` event type hierarchy.
-
----
-
-## Configuration
-
-### User-Facing Config (via Config Flow)
-
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `host` | string | (required) | IP address or hostname of the Tigo gateway |
-| `port` | int | 502 | TCP port for the gateway's RS-485 bridge |
-| `modules` | list | (required) | List of optimizer modules as `STRING:NAME:BARCODE:PEAK_POWER` dicts |
-| `live_reporting` | bool | `True` | Push every reading immediately (default) vs. averaged interval mode |
-| `write_interval` | int | 30 | Seconds between time-weighted averaged pushes when `live_reporting` is off (5–300) |
-
-**Module format:** Each module is a dict with fields:
-- `STRING` — Required group name (e.g., `A`, `East`).
-- `NAME` — Required user-friendly label.
-- `BARCODE` — Required Tigo barcode (e.g., `S-1234567A`).
-- `PEAK_POWER` — Optional peak panel power in Wp (default: 455).
-
-Example: `A:Panel_01:S-1234567A, A:Panel_02:S-1234568B, B:Panel_03:S-2345678C`
-
-### Internal Constants
-
-| Constant | Value | Description |
+| Device | Identifier | Name |
 | --- | --- | --- |
-| `RECONNECT_TIMEOUT` | 60s | Seconds of silence before reconnecting |
-| `RECONNECT_DELAY` | 5s | Delay between reconnection attempts |
-| `RECONNECT_RETRIES` | 0 | Max retries (0 = infinite) |
+| Optimizer | barcode | `Tigo [inverter] [string] <position or barcode>` |
+| String | `<entry_id>_string_<string>` | `Tigo [inverter] String <string>` |
+| Inverter total (one CCA, several inverters) | `<entry_id>_inverter_<inverter>` | `Tigo <inverter> Total` |
+| Total (the CCA) | `<entry_id>_installation` | `Tigo [inverter] Total`, or `… CCA Total` once strings feed several inverters |
 
-### Options Flow
+Optimizer devices link to their string's device by `via_device_id`: the sensor platform registers each string device first to get its registry ID (Home Assistant 2026.11 deprecated linking by identifier). Names are display-only and follow every edit.
 
-Configurable at runtime without removing the integration:
+**Entity IDs.** Unique IDs are `pytap_<barcode>_<key>` for optimizer entities and `pytap_<entry_id>_<string|inverter|installation>_…` for aggregates. Optimizer entity IDs are set explicitly from the barcode (`sensor.tigo_4_5db467z_power`, `naming.optimizer_object_id()`), so moving, renaming or re-stringing a panel never changes them; inverter totals use `sensor.tigo_inverter_<name>_…` so they can't collide with the entry's Total. Existing entity IDs are never renamed.
 
-- **Module list** — Add or remove optimizer barcodes as the installation evolves.
-- **Connection settings** — Change the gateway host and port without reconfiguring.
-- **Reporting settings** — Toggle live reporting, or set the averaged reporting interval (5–300 s) used when live reporting is off. The interval is collected on a follow-up step shown only when live reporting is turned off, so it stays hidden while live reporting is enabled.
+## Key design decisions
 
-Changes trigger a full integration reload. Previously-discovered barcode mappings are persisted and survive the reload.
+1. **Embedded parser, stdlib only.** The `pytap` library is bundled and has no Home Assistant imports; the only external requirement is `serialx` (for serial connections). The parser takes a `PersistentState` object and an optional clock; the caller owns persistence and time.
+2. **Push, not poll.** The bus streams power reports continuously (each optimizer about every few seconds), so a listener thread feeding a push coordinator is the natural fit; `iot_class` is `local_push`.
+3. **Listen-only.** PyTap never transmits, so it can't disturb the CCA; the cost is learning node tables only when the CCA reads them (at sunrise) and losing whatever happens while Home Assistant is down.
+4. **Listener-owned state, published copies.** The thread never shares mutable state with the event loop; numbered snapshots make ordering explicit.
+5. **Barcodes are identity.** Node IDs can change; barcodes don't. State, unique IDs and entity IDs are keyed by barcode.
+6. **Sun-aware staleness.** Silence means different things at night and by day; the defaults zero sleeping panels and make long daytime silence visible, both configurable.
+7. **Database restraint.** Averaged reporting by default, rounded states, no per-reading attributes, flags written on change, and targeted entity refreshes.
 
----
+## Error handling
 
-## Error Handling
-
-| Scenario | Behavior |
+| Scenario | Behaviour |
 | --- | --- |
-| Gateway unreachable at setup | Config flow warns but proceeds (non-blocking) |
-| Connection lost mid-stream | Coordinator reconnects automatically with backoff |
-| CRC error in protocol data | Parser increments `counters["crc_errors"]`, skips frame |
-| Malformed frame (runt/giant) | Parser increments counter, resumes at next frame boundary |
-| Node table page with trailing bytes | Parser tolerates trailing bytes on sentinel (count=0) and data pages; parses the declared entries and ignores extra bytes |
-| Node address with bit-15 flag set | Parser masks node addresses to 15 bits (`& 0x7FFF`) when parsing node table entries; bit 15 is a protocol flag (router/repeater) not part of the node ID |
-| No data for `RECONNECT_TIMEOUT` | Coordinator reconnects (stale connection detection) |
-| Node stops reporting | Entity holds last received value and remains available |
-| Barcode not yet identified | Entity stays unavailable until gateway enumeration resolves the barcode |
-| Unconfigured barcode seen | Logged at INFO level for discovery; event data discarded |
-| First infra event without node table | Logged at INFO; barcode resolution deferred until node table arrives |
+| Converter unreachable when configuring | *Could not connect*; submitting again saves anyway |
+| Invalid saved settings | `ConfigEntryError`, user asked to fix them |
+| Connection lost, or no bytes for 60 s | Reconnect with back-off; logged once per outage; Bus status shows the cause after 5 min |
+| CRC error, runt or giant frame | Counted, frame skipped; over 2% failing logs a warning (at most hourly) |
+| Invalid slot counter | Reports kept only when the frame parses exactly; counted (`invalid_slots`, …) |
+| Impossible reading | Discarded; Reading fault on; warning logged |
+| Node table not seen yet | Reports dropped; Node mapping sensor shows *Waiting for node table* |
+| Saved state unreadable | Start without it; never overwritten until the next reload |
+| Listener won't stop | Parked; setup waits (`ConfigEntryNotReady`) until it has released the connection |
+| Bug in processing | Logged once with a traceback; reconnects |
 
----
+## Testing
 
-## Testing Strategy
-
-### Unit Tests (`tests/`)
-
-| Test File | Scope |
+| Where | What |
 | --- | --- |
-| `test_config_flow.py` | Config flow form rendering, validation, error handling (16 tests) |
-| `test_coordinator_persistence.py` | Event processing, persistence, barcode mapping lifecycle (32 tests) |
-| `test_migration.py` | Config entry migration and legacy entity cleanup (11 tests) |
-| `test_sensor.py` | Entity creation, state updates, availability (30 tests) |
+| `tests/` (pytest, `pytest-homeassistant-custom-component`, HA 2026.10.4) | Config and options flows, migration, lifecycle and shutdown, publishing, persistence, energy and aggregate energy, reading health, stale actions, estimates, discovery, naming and string inverters, serial, flags and faults, capture (integrity, scanner, services), diagnostics |
+| `tests/core_smoke.py` (unittest, real HA 2026.11.0, CI job *HA 2026.11 smoke tests*) | Flows, migration, serial transport and proxy stub, discovery, capture, and device linking on the minimum supported Home Assistant, without the harness |
+| `custom_components/pytap/pytap/tests/` | Parser: frames, slot clock, node tables, power report decoding, invalid slots, API, replay tools |
 
-### Parser Tests (`custom_components/pytap/pytap/tests/`)
-
-| Test File | Scope |
-| --- | --- |
-| `test_parser.py` | End-to-end byte → event parsing with captured data |
-| `test_types.py` | Protocol type construction and validation |
-| `test_crc.py` | CRC calculation against known vectors |
-| `test_barcode.py` | Barcode encode/decode round-trips |
-| `test_api.py` | Public API function tests |
-
-### Integration Testing
-
-- **Dev container** — The repository includes a dev container with HA installed. Run `python3 -m homeassistant --config config/ --debug` to test the full integration locally.
-- **Mock source** — For automated tests, the coordinator can be tested with a mock `Source` that replays captured byte sequences.
-
-
+Real captures aren't committed (they contain barcodes); tests use synthetic data. Changes that affect live behaviour are also replayed against local captures in a throwaway Home Assistant before release.

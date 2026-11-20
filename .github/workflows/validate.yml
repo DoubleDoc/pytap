@@ -36,7 +36,7 @@ jobs:
         with:
           python-version: "3.14"
       - run: pip install ruff
-      - run: ruff check custom_components/pytap/ tests/
+      - run: ruff check custom_components/pytap/ tests/ scripts/
 
   tests:
     name: Tests
@@ -48,3 +48,16 @@ jobs:
           python-version: "3.14"
       - run: pip install -r requirements-test.txt
       - run: python -m pytest -vv --tb=short  # pytest.ini testpaths: tests/ and the parser's tests
+
+  supported-core:
+    # The main suite's harness pins HA 2026.10.4; PyTap requires 2026.11, so
+    # these harness-free smoke tests run on the minimum supported version.
+    name: HA 2026.11 smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pip install 'homeassistant==2026.11.0' 'serialx==1.15.1' 'aiousbwatcher==1.1.2' 'aiohasupervisor==0.8.1'
+      - run: python -m unittest discover -s tests -p core_smoke.py -v

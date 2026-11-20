@@ -24,7 +24,7 @@ PyTap listener thread (one per CCA)
 
 PyTap runs a background listener thread per CCA that reads the bus, parses protocol frames and keeps its own state; Home Assistant only ever sees published copies of it. Only tracked optimizers (configured, or added by discovery) create or update entities. In the default **averaged interval** mode, readings are buffered and published as a time-weighted average once per interval (60 s by default); in **live reporting** mode each reading is published as it arrives (see [Reporting modes](configuration.md#reporting-modes)).
 
-On startup, PyTap restores persisted state (barcode mappings, discovered optimizers, energy accumulators, the last readings and flags of each optimizer). Sensor entities also use Home Assistant restore fallback if needed, so a restart during low/no production does not force entities into unavailable when prior data exists.
+On startup, PyTap restores persisted state (barcode mappings, discovered optimizers, energy accumulators, the last readings and flags of each optimizer). If the saved state can't be read, PyTap logs a warning, starts without it, and doesn't overwrite the file until the next reload, so lifetime energy totals are never replaced by empty state. Each publish refreshes only the entities of panels whose data changed (and the String and Total devices containing them). Sensor entities also use Home Assistant restore fallback if needed, so a restart during low/no production does not force entities into unavailable when prior data exists.
 
 ## Future work
 

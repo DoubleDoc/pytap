@@ -7,7 +7,7 @@
 
 **Local monitoring of Tigo TS4 optimizers in Home Assistant, without Tigo's cloud.** PyTap listens to the RS-485 bus between your Tigo CCA and its TAP and gives every panel its own live sensors: power, voltage, current, temperature, energy and health.
 
-> An independently maintained fork of [azebro/pytap](https://github.com/azebro/pytap) by Adam Zebrowski, who built the integration. See the [changelog](https://github.com/DoubleDoc/pytap/blob/main/CHANGELOG.md) for what differs and [credits](#credits) for everyone whose work it includes.
+> An unofficial community integration, not affiliated with or endorsed by Tigo Energy. An independently maintained fork of [azebro/pytap](https://github.com/azebro/pytap) by Adam Zebrowski, who built the integration. See the [changelog](https://github.com/DoubleDoc/pytap/blob/main/CHANGELOG.md) for what differs and [credits](#credits) for everyone whose work it includes.
 
 ![PV Panels dashboard: every panel as a tile laid out like the roof, showing power, today's energy and readings, coloured by energy](https://raw.githubusercontent.com/DoubleDoc/pytap/main/dashboards/images/panels-view-energy-midday.png)
 
@@ -80,4 +80,4 @@ What each contributed, in detail: [Credits](https://github.com/DoubleDoc/pytap/b
 
 ## License
 
-[MIT](https://github.com/DoubleDoc/pytap/blob/main/LICENSE). © Adam Zebrowski, and © DoubleDoc for the fork's changes.
+[MIT](https://github.com/DoubleDoc/pytap/blob/main/LICENSE). © Adam Zebrowski; © Tim Laing for his adopted contributions; © DoubleDoc for the fork's changes.

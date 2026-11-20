@@ -24,9 +24,28 @@ All actions are admin-only. Run them from the **Actions** tab of Home Assistant'
 4. **`pytap.list_captures`**: the latest 20 captures of an instance, with their `capture_id`.
 5. **`pytap.export_capture`** (optional): checks a stopped capture and writes a private ZIP next to it, to copy off with Samba or a file manager add-on. It isn't offered for download over the web on purpose.
 
-**Size:** measured over one morning, about **10–12 MB an hour per gateway** (6 and 12 optimizers), so plan on up to about 300 MB a day per gateway; the default 1 GiB budget lasts about 3 days. Night-time traffic hasn't been measured yet.
+**Size:** measured on two gateways (6 and 12 optimizers), the raw bus runs about **10–12 MB an hour**, and the timing index adds 17–76% more depending on how the converter delivers bytes (many small reads make a bigger index): about **14–17 MB an hour** in all, so 330–420 MB a day per gateway. A 24-hour capture fits the default 1 GiB budget. Check `pytap.capture_status` rather than assuming a long capture fits: a capture that reaches its budget stops.
 
-**Privacy:** captures contain your optimizers' barcodes and everything on the bus. Files are readable only by Home Assistant, and contain no host names, IP addresses or credentials, but share a capture only deliberately.
+**Privacy:** captures contain your optimizers' barcodes and everything on the bus. Files are readable only by Home Assistant, and contain no host names, IP addresses or credentials, but share a capture only deliberately. Never move captures into `/config/www` (anything there is served over the web) or have them uploaded automatically.
+
+**Tips:**
+
+- **Include a sunrise.** The node table that links optimizers to their barcodes is broadcast when the optimizers power up in the morning. A capture that includes one can be fully decoded on its own.
+- **One capture per gateway.** Each PyTap entry (CCA) records its own bus; start one on each if you have several.
+- **Stopping isn't losing.** A restart, reload or shutdown stops and finalises a capture cleanly; start a new one afterwards if you need more.
+
+## What's in a capture
+
+Each capture is a folder named by its `capture_id` (UTC start time plus a random suffix):
+
+| File | Contents |
+| --- | --- |
+| `bus-000000.bin`, … | The bytes exactly as read, including noise, bad checksums and unknown frames; a new file every 16 MiB |
+| `chunks-000000.bin`, … | A timing index: when each read returned (UTC and monotonic), its offset, length and connection (32 bytes per read) |
+| `events.jsonl` | Connection opened, closed or failed (error type only, no addresses) |
+| `manifest.json` | Software versions, the starting node table, SHA-256 checksums and sizes of every file, and whether the capture finished cleanly |
+
+Timestamps are when PyTap's read returned, not the exact time each byte crossed the wire. A capture that stopped unexpectedly (for example a power cut) can still be exported and replayed up to where it ends; its ZIP includes a `recovery.json` describing what couldn't be verified.
 
 ## When you're done: delete the files
 
@@ -58,6 +77,10 @@ Two scripts in [`scripts/`](../scripts/) read captures without Home Assistant (r
   python scripts/capture_reports.py /path/to/capture --output reports.csv --summary
   ```
 
-- **`replay_capture.py`** checks a capture and exports its index, every frame (including ones the live parser would drop, and why) and every decoded event as JSON lines, with a summary.
+- **`replay_capture.py`** checks a capture and writes to a new folder: `chunks.jsonl` (the timing index, readable), `frames.jsonl` (every frame, including noise and ones the live parser would drop, with the reason, such as `crc_mismatch`), `events.jsonl` (every decoded event at its recorded time) and `summary.json` (completeness, losses and counts). Add `--allow-incomplete` for a capture that didn't finish cleanly.
+
+  ```sh
+  python scripts/replay_capture.py /path/to/capture --output /path/to/new-folder
+  ```
 
 `capture_reports.py` also reads simple recordings made by other tools: a file of records, each an 8-byte big-endian Unix time, a 4-byte big-endian length and that many raw bytes. The output CSV contains barcodes too: keep it private and delete it when done.

@@ -47,17 +47,23 @@ python3 -m homeassistant --config config/ --debug
 Install the test dependencies first (`pip install -r requirements-test.txt`; CI uses Python 3.14).
 
 ```bash
-# Integration tests (config flow + sensor platform)
-python3 -m pytest tests/ -vv --tb=short
-
-# Parser library tests
-python3 -m pytest custom_components/pytap/pytap/tests/ -vv
+# Integration and parser tests (pytest.ini covers both)
+python3 -m pytest -vv --tb=short
 ```
+
+The main suite uses `pytest-homeassistant-custom-component`, whose current release pins Home Assistant 2026.10.4, older than PyTap's minimum (2026.11). So CI also runs **smoke tests on real Home Assistant 2026.11.0**, without that harness, in a separate environment:
+
+```bash
+pip install 'homeassistant==2026.11.0' 'serialx==1.15.1' 'aiousbwatcher==1.1.2' 'aiohasupervisor==0.8.1'
+python -m unittest discover -s tests -p core_smoke.py -v
+```
+
+Real captures aren't committed (they contain optimizer barcodes): tests use synthetic data. Before a release, changes that affect live behaviour are also replayed against local captures in a throwaway Home Assistant instance.
 
 ## Linting
 
 ```bash
-python3 -m ruff check custom_components/pytap/
+python3 -m ruff check custom_components/pytap/ tests/ scripts/
 ```
 
 ## Deploying to a Home Assistant instance
@@ -93,5 +99,6 @@ Run `./deploy/deploy.sh --help` for all options.
 
 ## Design documents
 
-- **[Architecture](architecture.md)** — System design, module responsibilities, data flow, and design decisions.
-- **[Implementation](implementation.md)** — Current implementation state, module details, test coverage, and development history.
+- **[Architecture](architecture.md)** — How the code works now: modules, lifecycle, the listener and publishing, persistence, entities, design decisions, error handling and tests.
+- **[Implementation history](implementation.md)** — How PyTap was built, phase by phase, from upstream's first version to the fork's latest work.
+- **[Protocol status bits](protocol-status-bits.md)** — What the power report's flag bytes mean, and the evidence.

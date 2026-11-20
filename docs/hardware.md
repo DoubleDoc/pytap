@@ -12,7 +12,29 @@ PyTap reads the RS-485 bus between your Tigo CCA and its TAP(s). It only listens
 | **Serial RS-485 adapter** | A USB (or other serial) RS-485 adapter on the Home Assistant host, when the host is near the CCA. | *Serial port or ESPHome serial proxy*: pick the port |
 | **ESPHome serial proxy** | An ESPHome device with `serial_proxy` and an RS-485 module next to the CCA, connected to Home Assistant over the network. | *Serial port or ESPHome serial proxy*: pick the proxy |
 
-Serial ports and proxies are opened at 38400 baud, 8N1; PyTap never changes DTR/RTS and never transmits. One port can be used by only one PyTap entry. Serial and ESPHome connections need Home Assistant 2026.11 or later (from [Tim Laing](https://github.com/timlaing)'s upstream [PR #36](https://github.com/azebro/pytap/pull/36)). For background on the bus, see [taptap](https://github.com/willglynn/taptap#connecting).
+Serial ports and proxies are opened at 38400 baud, 8N1; PyTap never changes DTR/RTS and never transmits. Serial and ESPHome connections need Home Assistant 2026.11 or later (from [Tim Laing](https://github.com/timlaing)'s upstream [PR #36](https://github.com/azebro/pytap/pull/36)). For background on the bus, see [taptap](https://github.com/willglynn/taptap#connecting).
+
+> **Keep the receiver passive.** PyTap never transmits, but only the hardware
+> can guarantee nothing is driven onto the bus. Use a proper RS-485 transceiver
+> (never wire ESP or other GPIO pins straight to the A/B lines), and keep its
+> transmit driver disabled: on an ESPHome board, wire only the receive side.
+
+### Serial and ESPHome notes
+
+- **One entry per port.** A port, or an ESPHome proxy, can be used by only one PyTap entry. A `/dev/serial/by-id/…` link counts as the same port as the device it points to, and a port still held by a PyTap entry that is shutting down counts as in use until it's released.
+- **Permissions.** A local USB or serial adapter must be passed through to the Home Assistant host or container with access to the device.
+- **Pick the discovered port.** Choose the port from Home Assistant's list rather than typing a path, so its identity is kept if device names change.
+- **A missing proxy is retried**, never swapped for a different port. If you remove and re-add the ESPHome device in Home Assistant, pick its port again under **Configure → Change connection settings**.
+- **No data at night is normal** and doesn't mean the settings are wrong.
+
+### ESPHome serial proxy
+
+The ESPHome device needs a UART on the RS-485 transceiver's receive pin and ESPHome's [`serial_proxy`](https://esphome.io/components/serial_proxy/) component (marked experimental by ESPHome) at 38400 baud, 8N1, with UART logging turned off so log output never reaches the bus. Add the device to Home Assistant, then pick its port in PyTap. Tim Laing's README has a complete example configuration: [ESPHome serial-proxy example](https://github.com/timlaing/pytap#esphome-serial-proxy-example).
+
+> **Not yet tested on real hardware here.** The serial and ESPHome connections
+> are covered by automated tests; this project's own installation uses TCP
+> converters. Reports of working setups are welcome in the
+> [issues](https://github.com/DoubleDoc/pytap/issues).
 
 ## Wiring
 

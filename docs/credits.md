@@ -2,7 +2,7 @@
 
 [← PyTap README](../README.md)
 
-PyTap is an independently maintained fork of [azebro/pytap](https://github.com/azebro/pytap). It builds on the work of the people below.
+PyTap is an independently maintained fork of [azebro/pytap](https://github.com/azebro/pytap). It builds on the work of the people below. It's an unofficial community project, not affiliated with or endorsed by Tigo Energy; Tigo and TS4 are Tigo Energy's trademarks, used here only to say which hardware PyTap works with.
 
 ## Adam Zebrowski — wrote PyTap
 
