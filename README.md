@@ -49,7 +49,7 @@ You need Home Assistant 2026.11 or later and a Tigo CCA with its TAP(s) and TS4 
 | | |
 | --- | --- |
 | [Hardware](https://github.com/DoubleDoc/pytap/blob/main/docs/hardware.md) | Ways to connect, wiring, Waveshare converter settings |
-| [Installation](https://github.com/DoubleDoc/pytap/blob/main/docs/installation.md) | Marketplace, HACS (older Home Assistant), manual, upgrading, removing |
+| [Installation](https://github.com/DoubleDoc/pytap/blob/main/docs/installation.md) | Marketplace, manual, upgrading, removing |
 | [Configuration](https://github.com/DoubleDoc/pytap/blob/main/docs/configuration.md) | Setup, discovery, the first morning, managing modules, reporting modes |
 | [Entities and devices](https://github.com/DoubleDoc/pytap/blob/main/docs/entities.md) | Sensors, status flags, totals, bus status, device naming, Energy dashboard |
 | [When readings stop](https://github.com/DoubleDoc/pytap/blob/main/docs/readings.md) | Night, dropouts, stale-reading settings, estimates, data validity |

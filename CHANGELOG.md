@@ -5,6 +5,7 @@
 ### Changed
 
 - **Documentation reorganised** — The README is now a short overview with screenshots, a quick start and live credits; the details moved to topic pages under [`docs/`](docs/) (hardware, installation, configuration, entities, readings, capture, troubleshooting, how it works, development, credits). Reviewed throughout: serial and ESPHome connections, discovery, flag entities and the averaged default are described everywhere they apply.
+- **Installation docs cover the Marketplace only** — PyTap 1.5 and later need Home Assistant 2026.11, where the Marketplace replaced HACS, so the HACS instructions for older versions were removed.
 - **This fork is the maintainer of record** — The Marketplace now shows DoubleDoc as the maker, and its source and issue links go to this repository instead of upstream. Adam Zebrowski remains credited as PyTap's author, in the README, the credits page and the license.
 
 ### Fixed

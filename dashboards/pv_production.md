@@ -18,7 +18,7 @@ Home Assistant Lovelace dashboard displaying the physical solar panel layout wit
 
 ## Prerequisites
 
-**Frontend cards** (install from the Marketplace on Home Assistant 2026.11+, or from HACS on earlier versions):
+**Frontend cards** (install from the Marketplace):
 
 - **[custom:button-card](https://github.com/custom-cards/button-card)** — tile rendering with JS templates for dynamic styling
 - **[custom:layout-card](https://github.com/thomasloven/lovelace-layout-card)** — CSS Grid layout for precise column positioning

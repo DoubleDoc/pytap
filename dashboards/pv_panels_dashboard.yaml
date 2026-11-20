@@ -8,7 +8,7 @@
 # are tigo_<barcode>_power; the barcodes here are made up.
 #
 # Needs:
-#   - custom:button-card 7+ and custom:layout-card (HACS or the Marketplace)
+#   - custom:button-card 7+ and custom:layout-card (from the Marketplace)
 #   - the max sensors from tigo.yaml
 #   - the helper input_select.tigo_tile_colour (options Power, Energy); see pv_panels.md
 #

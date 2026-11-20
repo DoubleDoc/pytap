@@ -63,7 +63,7 @@ The switch is a Home Assistant helper, so the choice is shared: switching on a p
 
 ## Installing
 
-1. **Frontend cards** — install from the Marketplace on Home Assistant 2026.11+, or from HACS on earlier versions:
+1. **Frontend cards** — install from the Marketplace:
    - [custom:button-card](https://github.com/custom-cards/button-card) 7 or later
    - [custom:layout-card](https://github.com/thomasloven/lovelace-layout-card)
 2. **Max sensors** — add [`tigo.yaml`](tigo.yaml) as described in the [classic dashboard's prerequisites](pv_production.md#prerequisites). They find your panels themselves and need no editing.
