@@ -289,10 +289,30 @@ def test_data_validity_sensor(hass: HomeAssistant) -> None:
     assert attrs["share"] == pytest.approx(0.5, abs=0.01)
     assert attrs["estimated_energy_today"] > 0
     assert attrs["last_report"] is not None
-    # While reporting, no last_report: it would change with every reading.
+    # The estimate the String and Total devices use, for dashboards.
+    assert attrs["estimated_power"] == round(coordinator.estimated_power(A), 1)
+    assert attrs["estimated_power"] > 0
+    # While reporting, neither: last_report would change with every reading.
     _report(coordinator, A, 100.0)
     assert sensor.native_value == VALIDITY_REPORTING
     assert "last_report" not in sensor.extra_state_attributes
+    assert "estimated_power" not in sensor.extra_state_attributes
+
+
+def test_data_validity_sensor_estimated_power_when_silent(hass: HomeAssistant) -> None:
+    coordinator = _coordinator(hass)
+    _learn_shares(coordinator)
+    _quiet(coordinator, A, SILENT_UNAVAILABLE_SECONDS + 1)
+    coordinator._update_estimates(time.monotonic())
+    sensor = PyTapDataValiditySensor(coordinator, MODULES[0], "Master")
+    assert sensor.native_value == VALIDITY_SILENT_ESTIMATED
+    assert sensor.extra_state_attributes["estimated_power"] > 0
+    # Holding (quiet, estimating off): no estimate to show.
+    coordinator._estimate_enabled = False
+    _quiet(coordinator, A, 200)
+    coordinator._update_estimates(time.monotonic())
+    assert sensor.native_value == VALIDITY_HOLDING
+    assert "estimated_power" not in sensor.extra_state_attributes
 
 
 def test_estimated_energy_resets_daily() -> None:

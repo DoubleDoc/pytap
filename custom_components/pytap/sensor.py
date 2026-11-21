@@ -60,7 +60,9 @@ from .const import (
     READING_SILENT,
     STALE_UNAVAILABLE,
     STALE_ZERO,
+    VALIDITY_ESTIMATED,
     VALIDITY_REPORTING,
+    VALIDITY_SILENT_ESTIMATED,
     VALIDITY_STATES,
 )
 from .coordinator import PyTapConfigEntry, PyTapDataUpdateCoordinator
@@ -1374,8 +1376,9 @@ class PyTapDataValiditySensor(
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the learned share, estimated energy and, once the optimizer
-        has stopped reporting, when it last reported."""
+        """Return the learned share, estimated energy, the estimated power
+        while estimated and, once the optimizer has stopped reporting, when
+        it last reported."""
         share = self.coordinator.share(self._barcode)
         attrs: dict[str, Any] = {
             "share": round(round(share * 20) / 20, 2) if share is not None else None,
@@ -1383,7 +1386,15 @@ class PyTapDataValiditySensor(
                 self.coordinator.estimated_energy(self._barcode)[0], 1
             ),
         }
-        if self.native_value not in (None, VALIDITY_REPORTING):
+        validity = self.native_value
+        if validity in (VALIDITY_ESTIMATED, VALIDITY_SILENT_ESTIMATED):
+            # The optimizer's own Power sensor keeps what it reported; this is
+            # the estimate the String and Total devices use. It changes at
+            # most once a minute (each health check).
+            estimate = self.coordinator.estimated_power(self._barcode)
+            if estimate is not None:
+                attrs["estimated_power"] = round(estimate, 1)
+        if validity not in (None, VALIDITY_REPORTING):
             node = self.coordinator.data.get("nodes", {}).get(self._barcode) or {}
             attrs["last_report"] = node.get("last_update")
         return attrs

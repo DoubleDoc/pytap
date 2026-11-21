@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Estimated power per optimizer** — While an optimizer is estimated from its string, its Data validity sensor has an `estimated_power` attribute: the estimate the String and Total devices are using. Its own Power sensor still shows only what it reported. The estimate changes at most once a minute, so it adds little to the database.
+
+### Changed
+
+- **PV Panels dashboard** — Tiles show watts in every state that has them: `0 W` with a sleep icon while asleep (it said *Asleep*, with no power figure) and `~85 W` while estimated (it said *Est.*). With PyTap 1.6.1 or older, estimated tiles still say *Est.* A night screenshot was added to the dashboard's page.
+
 ## [1.6.1] - 2026-11-20
 
 ### Changed
