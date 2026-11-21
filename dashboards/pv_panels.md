@@ -25,7 +25,7 @@ This dashboard is new in this fork. It replaces the three separate views of the 
 | Line | Shows | Source |
 |---|---|---|
 | Name | The panel's position name | the card's `name` |
-| Power | Live watts (`312 W`), or the panel's state: `Asleep`, `Est.` (estimated), `Silent`, `No data`; `312 W*` while holding its last value | `_power` and `_data_validity` |
+| Power | Live watts (`312 W`); asleep panels show `0 W` with a sleep icon (`Zz`); otherwise the panel's state replaces the watts: `Est.` (estimated), `Silent`, `No data`; `312 W*` while holding its last value | `_power` and `_data_validity` |
 | Energy | Today's energy: `838 Wh` below 1,000 Wh, `1.61 kWh` from there | `_daily_energy` |
 | Readings | Readings received today, after an antenna icon | `_readings_today` |
 

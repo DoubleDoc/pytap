@@ -35,7 +35,7 @@ button_card_templates:
         const v = states[base + '_data_validity']?.state;
         const w = `${Math.round(parseFloat(entity.state) || 0)} W`;
         let p = w;
-        if (v === 'asleep') p = 'Asleep';
+        if (v === 'asleep') p = `<ha-icon icon="mdi:sleep" style="--mdc-icon-size:1em;vertical-align:-2px"></ha-icon> ${w}`;
         else if (v === 'estimated' || v === 'silent_estimated') p = 'Est.';
         else if (v === 'silent') p = 'Silent';
         else if (v === 'unavailable' || v === 'unknown') p = 'No data';
