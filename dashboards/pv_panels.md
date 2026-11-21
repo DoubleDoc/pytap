@@ -53,6 +53,10 @@ Problems show the same way in both modes, so a silent panel is red whichever you
 
 *Two minutes later P03 is estimated too. As the light fades, a string drops out one panel at a time, usually starting with the panel that gets the least light, and each panel turns Asleep once it has been quiet for 10 minutes with the sun below 10°. The bottom bars stay green: these panels reported well all day.*
 
+![PV Panels view at night coloured by power: every tile dark, showing the sleep icon and 0 W](images/panels-view-power-night.png)
+
+*About 20:00, after dark, coloured by power. Every panel is asleep: its tile is dark and shows `0 W` with the sleep icon. The day's totals stay on the tiles until midnight: 798–838 Wh per panel on the 6-panel string, 1.43–1.65 kWh on the 12-panel string, and about 17,300–18,500 readings each. Coloured by energy, the same tiles keep the day's green.*
+
 ![PV Panels view coloured by energy: 6-panel string still dark at dawn, 12-panel string green](images/panels-view-energy.png)
 
 *About 08:25 on a 6 + 12 panel installation, coloured by energy. The 12-panel string has started producing; the 6-panel string faces differently and hasn't yet, so its tiles are dark. Every panel's connectivity bar (bottom edge) is green.*
