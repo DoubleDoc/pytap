@@ -30,11 +30,11 @@ Each optimizer also has **flag entities** from its power reports' flag bytes, an
 | --- | --- | --- | --- | --- |
 | Status | sensor | status byte | The whole byte, e.g. `0x64`; its bits decoded as attributes | yes |
 | Low input voltage | binary | status bit 7 | The optimizer's input voltage is low (around 15 V on average when set) | yes |
-| High output mode | binary | jstatus bit 7 | **Tentative:** set in nearly every report above about 0.5 A input current, rarely below 0.25 A (name from Tim Laing's PR #39) | yes |
+| High output mode | binary | jstatus bit 7 | **Tentative:** never below 0.1 A and almost always above 3 A; in between it latches, switching about 20 times a day (name from Tim Laing's PR #39) | yes |
 | Reading fault | binary (problem) | — | The latest report was physically impossible (see below) | yes |
-| Idle pass-through | binary | status bit 1 | **Tentative:** an idle state passing input straight through, which only some optimizers enter | no |
+| Idle pass-through | binary | status bit 1 | **Tentative:** an idle state passing input straight through, which only some optimizers enter, only in the morning | no |
 | State field | sensor | status bits 3–2 | Always 1 or 2 so far; **meaning open** | no |
-| jstatus level | sensor | jstatus bits 0–6 | **Tentative:** 1–4 while producing, following how hard the optimizer converts | no |
+| jstatus level | sensor | jstatus bits 0–6 | 0–4; follows how hard the optimizer converts at low current only; **meaning open** | no |
 
 Enable the disabled ones on the optimizer's device page if you want to follow them. Flag entities record a state only when their value changes. They show the latest report's flags while the optimizer reports and while it's asleep at night (its last report then shows its idle state); when it goes silent in daylight they become unavailable, unless the stale-reading settings hold or zero the readings, in which case they keep the last flags.
 
