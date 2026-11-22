@@ -47,7 +47,7 @@ Problems show the same way in both modes, so a silent panel is red whichever you
 
 ![PV Panels view at dusk coloured by energy: P01 and P02 of the 12-panel string amber, P03 holding](images/panels-view-energy-dusk-holding.png)
 
-*About 17:17 at dusk, coloured by energy. On the 12-panel string, P01 and P02 have stopped reporting while the rest of their string still reports, so their share of the string total is estimated: the tiles are amber and show `Est.`. P03 missed its latest report and shows its last value as `1 W*` (holding).*
+*About 17:17 at dusk, coloured by energy. On the 12-panel string, P01 and P02 have stopped reporting while the rest of their string still reports, so their share of the string total is estimated: the tiles are amber. (This screenshot predates PyTap 1.6.2; estimated tiles now show the estimate, such as `~85 W`, instead of `Est.`) P03 missed its latest report and shows its last value as `1 W*` (holding).*
 
 ![Two minutes later: P01 to P03 amber](images/panels-view-energy-dusk-estimated.png)
 
