@@ -79,14 +79,14 @@ Shows the live power output per panel using `sensor.tigo_ts4_<panel>_power`, col
 |---|---|---|
 | Reporting | Green, alpha 0–0.7 relative to `sensor.tigo_max_power` (at least 20 W, so ~1 W at dusk stays dark), with an inner glow | Power, e.g. `312 W` |
 | Holding last value | Same green, from the held value | `312 W (held)` |
-| Estimated / Silent, estimated in string | Amber | `Estimated` |
+| Estimated / Silent, estimated in string | Amber | The estimate, e.g. `~85 W` (`Estimated` with PyTap 1.6.1 or older) |
 | Silent | Red | `Silent` |
-| Asleep | Dark (no overlay) | `Asleep` |
+| Asleep | Dark (no overlay) | `0 W` with a sleep icon |
 | Unavailable (bus status not normal) | Grey | `No data` |
 
 ![Panel Power view at night: every panel dark and labelled Asleep](images/power-view-asleep.png)
 
-*At night, on an installation with a 6-panel and a 12-panel string (laid out to match that roof): every panel is asleep.*
+*At night, on an installation with a 6-panel and a 12-panel string (laid out to match that roof): every panel is asleep. (Taken before PyTap 1.6.2: asleep tiles now show `0 W` with a sleep icon.)*
 
 ![Panel Power view at dawn: the 6-panel string reporting 0 W, the 12-panel string at 3-4 W](images/power-view-dawn.png)
 

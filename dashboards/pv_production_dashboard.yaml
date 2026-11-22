@@ -728,8 +728,11 @@ views:
                     const vid = entity.entity_id.replace(/_power$/, '_data_validity');
                     const v = states[vid]?.state;
                     const w = `${Math.round(parseFloat(entity.state) || 0)} W`;
-                    if (v === 'asleep') return 'Asleep';
-                    if (v === 'estimated' || v === 'silent_estimated') return 'Estimated';
+                    if (v === 'asleep') return `<ha-icon icon="mdi:sleep" style="--mdc-icon-size:1em;vertical-align:-2px"></ha-icon> ${w}`;
+                    if (v === 'estimated' || v === 'silent_estimated') {
+                      const est = parseFloat(states[vid]?.attributes?.estimated_power);
+                      return isNaN(est) ? 'Estimated' : `~${Math.round(est)} W`;
+                    }
                     if (v === 'silent') return 'Silent';
                     if (v === 'unavailable' || v === 'unknown') return 'No data';
                     if (v === 'holding') return `${w} (held)`;

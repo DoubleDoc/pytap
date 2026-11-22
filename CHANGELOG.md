@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **PV Production (classic) dashboard** — Panel Power tiles match PV Panels: `0 W` with a sleep icon while asleep, the estimate (`~85 W`) while estimated.
+- **README** — The front screenshots show the current tiles (a night view replaces the dusk view and the classic dashboard).
+
 ## [1.6.2] - 2026-11-21
 
 ### Added
