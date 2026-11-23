@@ -63,10 +63,3 @@ barcode,name,string,peak_power,inverter
 3. **Time and day boundaries:** the device needs reliable time (NTP) for daily counters and midnight resets.
 4. **Updates and safety:** OTA updates, and a hardware guarantee that it can't transmit (receive-only transceiver, or the driver-enable line tied off), as with the converter today.
 5. **Hardware (the current blocker):** no suitable ready-made device found yet. Concerns: packaging, durability, isolation and protection, power, cost, and the processor and storage (type and capacity). Choose hardware with room to grow: the same device could later become a **CCA replacement**, managing the TAPs itself instead of only listening (see upstream [discussion #27](https://github.com/azebro/pytap/discussions/27)). That would be a separate, much larger step.
-
-**Steps:**
-
-1. Survey hardware against question 5.
-2. Run tigo_server's ESPHome variant alongside PyTap on one gateway (it only listens, so both can share the bus), and compare readings, energy and dropouts with PyTap and the inverter, using the daily captures as the reference.
-3. Decide the device protocol (question 1).
-4. Build the PyTap side: the device as a new connection type, energy authority, migration.
