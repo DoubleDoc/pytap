@@ -55,8 +55,12 @@ Most Tigo installations already have this data in a spreadsheet: the installer's
    4-000016P,P01,2,455,Slave
    ```
 3. Go to **Settings → Devices & services → PyTap → Configure → Import modules from CSV**, paste the CSV text, and submit.
+
+   <img src="images/import-csv.png" width="460" alt="The Import modules from CSV step with example CSV text pasted in">
 4. Fix anything listed: every problem is shown with its line number (a mistyped barcode, a duplicate, a rating out of range, two inverters for one string), and nothing is applied until the whole sheet is valid.
 5. Check the preview (new, changed, unchanged) and submit, then select **Save and close**.
+
+   <img src="images/import-csv-preview.png" width="460" alt="The Confirm import step: 3 new, 0 changed, 0 unchanged, listing the new barcodes">
 
 You can import before the panels have ever been heard: the barcodes are tracked from then on and resolve at the first node table, normally the next morning (see [First start](#first-start-what-to-expect)). You can also import again at any time, for example after maintenance: only the columns in the sheet are changed, optimizers not in it are left alone, and entity IDs never change. **Configure → Export modules as CSV** gives the current assignments in the same format, as a backup or a starting point.
 
@@ -112,7 +116,20 @@ With [module discovery](#automatic-discovery) on, they're added automatically in
 
 ## Managing Modules After Setup
 
-Go to **Settings → Devices & Services → PyTap → Configure** to:
+Go to **Settings → Devices & services → PyTap → Configure** (the gear next to the hub) to:
+
+<table>
+  <tr>
+    <td width="50%"><img src="images/options-menu.png" alt="PyTap Options: the module list and the first settings"></td>
+    <td width="50%"><img src="images/options-menu-modules.png" alt="PyTap Options further down: module actions, Import and Export modules as CSV, Save and close"></td>
+  </tr>
+  <tr>
+    <td><sub>The module list, then the settings</sub></td>
+    <td><sub>Module actions, the CSV import and export, and Save and close</sub></td>
+  </tr>
+</table>
+
+The screenshots use made-up barcodes.
 
 - **Change connection settings** — Switch between an RS-485 to TCP converter and a serial port or ESPHome serial proxy, or change the address, port or baud rate. Entities and energy history are kept.
 - **Change reporting settings** — Toggle live reporting, set the averaged reporting interval (see [Reporting modes](#reporting-modes)), and turn estimating silent optimizers on or off.

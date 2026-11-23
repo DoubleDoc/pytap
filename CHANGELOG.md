@@ -4,6 +4,8 @@
 
 ### Changed
 
+- **Configuration screenshots** — The options menu and the CSV import and preview steps are shown in [Configuration](docs/configuration.md) (made-up barcodes).
+- **CSV import text says Save and close** — The import steps told you to select *Done*; the menu item is **Save and close**.
 - **Setup docs lead with the CSV import** — Assigning modules from the installation's spreadsheet is now the recommended route in [Configuration](docs/configuration.md#step-2-assign-your-modules) and the README's quick start; discovery and one-at-a-time forms follow as the alternatives. Examples use made-up barcodes.
 - **Dashboard screenshots** — New example-data screenshots of estimated tiles (`~347 W` at midday, `~2 W` at dusk) replace the dusk screenshots from before 1.6.2, and the estimated view joins the README's front row.
 
