@@ -68,5 +68,5 @@ barcode,name,string,peak_power,inverter
 
 1. Survey hardware against item 5 (enclosed, PoE, wired, isolated receive-only RS-485).
 2. Run tigo_server's ESPHome variant alongside PyTap on one gateway (it only listens, so both can share the bus), and compare readings, energy and dropouts with PyTap and the inverter, using the daily captures as the reference.
-3. Decide the device protocol (question 1) with Tim Laing and Bobsilvio.
+3. Decide the device protocol (question 1).
 4. Build the PyTap side: the device as a new connection type, energy authority, migration.
