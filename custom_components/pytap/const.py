@@ -54,6 +54,12 @@ CONF_NIGHT_ACTION = "night_action"  # asleep: "zero" or "hold"
 CONF_SILENT_ACTION = "silent_action"  # silent by day: "unavailable", "hold", "zero"
 CONF_SILENT_MINUTES = "silent_minutes"
 
+# Packet captures older than this many days are deleted automatically (0 keeps
+# them): forgotten captures end up in every backup (review of azebro/pytap#38).
+CONF_CAPTURE_KEEP_DAYS = "capture_keep_days"
+DEFAULT_CAPTURE_KEEP_DAYS = 14
+MAX_CAPTURE_KEEP_DAYS = 365
+
 # Passive module discovery (adapted from Tim Laing's upstream PR azebro/pytap#37).
 CONF_AUTO_DISCOVERY = "auto_discovery"
 CONF_EXCLUDED_BARCODES = "excluded_barcodes"

@@ -85,6 +85,38 @@ async def test_impossible_reading_is_discarded_and_flagged(hass: HomeAssistant) 
     assert cleared["voltage_in"] == 31.0
 
 
+async def test_bad_temperature_keeps_power_and_energy(hass: HomeAssistant) -> None:
+    """An implausible temperature drops only the temperature (review of azebro/pytap#39)."""
+    coordinator = _coordinator(hass)
+    coordinator._process_event(_report(temperature=25.0))
+    before = dict(coordinator._state["nodes"][A])
+
+    coordinator._process_event(_report(vin=31.0, vout=30.5, temperature=130.0))
+    node = coordinator._state["nodes"][A]
+    assert node["reading_fault"] is True
+    assert node["fault_reasons"] == ["temperature_out_of_range"]
+    assert node["last_fault_at"]
+    assert node["temperature"] == 25.0  # last valid temperature kept
+    # The electrical values are used: new voltage, counted reading, fresh.
+    assert node["voltage_in"] == 31.0
+    assert node["readings_today"] == before["readings_today"] + 1
+    assert coordinator.reading_state(A) == READING_OK
+
+    coordinator._process_event(_report(vin=31.0, vout=30.5, temperature=26.0))
+    cleared = coordinator._state["nodes"][A]
+    assert cleared["reading_fault"] is False and cleared["temperature"] == 26.0
+
+
+async def test_electrical_fault_wins_over_temperature(hass: HomeAssistant) -> None:
+    coordinator = _coordinator(hass)
+    coordinator._process_event(_report())
+    before = dict(coordinator._state["nodes"][A])
+    coordinator._process_event(_report(vin=69.7, vout=154.3, temperature=130.0))
+    node = coordinator._state["nodes"][A]
+    assert node["fault_reasons"] == ["voltage_out_out_of_range", "voltage_out_above_input"]
+    assert node["readings_today"] == before["readings_today"]  # whole report discarded
+
+
 async def test_flags_and_faults_survive_a_restart(hass: HomeAssistant) -> None:
     coordinator = _coordinator(hass)
     coordinator._process_event(_report(status=0xE4, jstatus=0x00))
@@ -206,5 +238,6 @@ async def test_binary_sensor_platform_uses_barcode_ids(hass: HomeAssistant) -> N
         for e in added
         if e.entity_description.entity_registry_enabled_default is False
     }
-    assert disabled == {"idle_pass_through"}
+    # jstatus bit 7 (key "producing") is disabled by default since 1.6.3.
+    assert disabled == {"idle_pass_through", "producing"}
     assert {e.device_info["name"] for e in added} == {"Tigo Master A Panel_01"}

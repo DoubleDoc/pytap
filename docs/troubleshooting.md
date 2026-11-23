@@ -22,6 +22,7 @@ Every PyTap line starts with the inverter name (or the converter's address when 
 - **N of M RS-485 frames failed their checks**: more than 2% of frames are corrupted, so readings are being lost; check the wiring, termination and the converter's serial settings. Repeated at most hourly.
 - **Configured barcodes NOT found in node table**: a configured barcode doesn't exist on the bus; check it for typos.
 - **Discarded impossible reading from P03 (…)**: a report was physically impossible (for example output voltage above input) and was ignored; Reading fault turns on until the next valid report (see [Status flags and reading faults](entities.md#status-flags-and-reading-faults)). An occasional one is a corrupted frame; frequent ones point at wiring or the converter.
+- **Ignored implausible temperature from P03 (… °C); its power and energy are kept**: the optimizer reported a temperature outside −40…125 °C, for example from a failed sensor. Only the temperature is ignored; Reading fault turns on until a report with a plausible temperature.
 - **Unexpected error while processing data**: a bug. It is logged once with a traceback; please report it.
 
 ## Debug logging

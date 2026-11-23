@@ -298,3 +298,24 @@ def test_remove_capture_root(tmp_path):
     with pytest.raises(CaptureError):
         remove_capture_root(link)
     assert (target / "keep").is_file()
+
+
+def test_symlinked_parent_of_capture_root_is_refused(tmp_path):
+    """A symlinked pytap_captures folder must not redirect writes or deletes
+    outside the config directory (review of azebro/pytap#38)."""
+    outside = tmp_path / "outside"
+    (outside / "entry").mkdir(parents=True)
+    (outside / "entry" / "keep").write_text("keep")
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / "pytap_captures").symlink_to(outside, target_is_directory=True)
+    root = config / "pytap_captures" / "entry"
+    writer = CaptureWriter(root, {"source": {"connection_type": "tcp"}})
+    with pytest.raises(CaptureError) as err:
+        writer.start()
+    assert err.value.translation_key == "capture_unsafe"
+    for call in (list_captures, remove_capture_root):
+        with pytest.raises(CaptureError) as err:
+            call(root)
+        assert err.value.translation_key == "capture_unsafe"
+    assert sorted(p.name for p in (outside / "entry").iterdir()) == ["keep"]

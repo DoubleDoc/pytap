@@ -48,6 +48,7 @@ from .connection import (
 from .const import (
     CONF_AUTO_DISCOVERY,
     CONF_BAUD_RATE,
+    CONF_CAPTURE_KEEP_DAYS,
     CONF_CONNECTION_TYPE,
     CONF_ESTIMATE_SILENT,
     CONF_EXCLUDED_BARCODES,
@@ -67,6 +68,7 @@ from .const import (
     CONNECTION_SERIAL,
     CONNECTION_TCP,
     DEFAULT_BAUD_RATE,
+    DEFAULT_CAPTURE_KEEP_DAYS,
     DEFAULT_ESTIMATE_SILENT,
     DEFAULT_INVERTER,
     DEFAULT_LIVE_REPORTING,
@@ -77,6 +79,7 @@ from .const import (
     DEFAULT_SILENT_MINUTES,
     DEFAULT_WRITE_INTERVAL,
     DOMAIN,
+    MAX_CAPTURE_KEEP_DAYS,
     MAX_SILENT_MINUTES,
     MAX_WRITE_INTERVAL,
     MIN_SILENT_MINUTES,
@@ -460,6 +463,9 @@ class PyTapOptionsFlow(OptionsFlow):
             m[CONF_MODULE_BARCODE]: dict(m) for m in self._modules
         }
         self._auto_discovery: bool = config_entry.data.get(CONF_AUTO_DISCOVERY, False)
+        self._capture_keep_days: int = int(
+            config_entry.data.get(CONF_CAPTURE_KEEP_DAYS, DEFAULT_CAPTURE_KEEP_DAYS)
+        )
         self._excluded: set[str] = set(config_entry.data.get(CONF_EXCLUDED_BARCODES, []))
         self._string_inverters: dict[str, str] = dict(
             config_entry.data.get(CONF_STRING_INVERTERS, {})
@@ -491,6 +497,7 @@ class PyTapOptionsFlow(OptionsFlow):
                 "change_inverter",
                 "change_stale",
                 "change_discovery",
+                "change_captures",
                 "add_module",
                 "edit_module",
                 "rename_string",
@@ -515,6 +522,26 @@ class PyTapOptionsFlow(OptionsFlow):
             step_id="change_discovery",
             data_schema=vol.Schema(
                 {vol.Required(CONF_AUTO_DISCOVERY, default=self._auto_discovery): bool}
+            ),
+        )
+
+    async def async_step_change_captures(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """How long packet captures are kept (saved with Done)."""
+        if user_input is not None:
+            self._capture_keep_days = int(user_input[CONF_CAPTURE_KEEP_DAYS])
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="change_captures",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CAPTURE_KEEP_DAYS, default=self._capture_keep_days
+                    ): vol.All(
+                        vol.Coerce(int), vol.Range(min=0, max=MAX_CAPTURE_KEEP_DAYS)
+                    )
+                }
             ),
         )
 
@@ -548,6 +575,7 @@ class PyTapOptionsFlow(OptionsFlow):
             CONF_MODULES: modules,
             CONF_INVERTER: self._inverter,
             CONF_AUTO_DISCOVERY: self._auto_discovery,
+            CONF_CAPTURE_KEEP_DAYS: self._capture_keep_days,
             CONF_EXCLUDED_BARCODES: sorted(self._excluded),
             CONF_STRING_INVERTERS: {
                 s: inv for s, inv in self._string_inverters.items() if s in used_strings

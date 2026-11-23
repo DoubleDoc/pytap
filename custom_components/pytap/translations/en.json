@@ -238,7 +238,7 @@
         "name": "Low input voltage"
       },
       "producing": {
-        "name": "High output mode"
+        "name": "jstatus bit 7"
       },
       "idle_pass_through": {
         "name": "Idle pass-through"
@@ -264,7 +264,8 @@
           "rename_string": "Rename a string",
           "change_stale": "Change stale reading behaviour",
           "change_discovery": "Change module discovery",
-          "string_inverter": "Set a string's inverter"
+          "string_inverter": "Set a string's inverter",
+          "change_captures": "Change packet capture retention"
         }
       },
       "change_connection": {
@@ -399,6 +400,13 @@
         "data": {
           "string": "String",
           "inverter": "Inverter"
+        }
+      },
+      "change_captures": {
+        "title": "Packet capture retention",
+        "description": "Packet captures (recorded with the pytap.start_capture action) are stored in your configuration folder, so they are included in every Home Assistant backup. Captures that ended more than this many days ago are deleted automatically, at startup and every night. 0 keeps them until you delete them. The capture running now is never deleted.",
+        "data": {
+          "capture_keep_days": "Delete captures after (days)"
         }
       }
     },

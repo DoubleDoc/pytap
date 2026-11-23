@@ -30,7 +30,7 @@ Each optimizer also has **flag entities** from its power reports' flag bytes, an
 | --- | --- | --- | --- | --- |
 | Status | sensor | status byte | The whole byte, e.g. `0x64`; its bits decoded as attributes | yes |
 | Low input voltage | binary | status bit 7 | The optimizer's input voltage is low (around 15 V on average when set) | yes |
-| High output mode | binary | jstatus bit 7 | **Tentative:** never below 0.1 A and almost always above 3 A; in between it latches, switching about 20 times a day (name from Tim Laing's PR #39) | yes |
+| jstatus bit 7 | binary | jstatus bit 7 | **Meaning open:** never set below 0.1 A and almost always above 3 A; in between it latches, switching about 20 times a day, and it's often set at low output. Formerly *High output mode* (Tim Laing's name from PR #39); renamed because that name suggested more than the data supports | no |
 | Reading fault | binary (problem) | — | The latest report was physically impossible (see below) | yes |
 | Idle pass-through | binary | status bit 1 | **Tentative:** an idle state passing input straight through, which only some optimizers enter, only in the morning | no |
 | State field | sensor | status bits 3–2 | Always 1 or 2 so far; **meaning open** | no |
@@ -38,7 +38,7 @@ Each optimizer also has **flag entities** from its power reports' flag bytes, an
 
 Enable the disabled ones on the optimizer's device page if you want to follow them. Flag entities record a state only when their value changes. They show the latest report's flags while the optimizer reports and while it's asleep at night (its last report then shows its idle state); when it goes silent in daylight they become unavailable, unless the stale-reading settings hold or zero the readings, in which case they keep the last flags.
 
-**Reading fault:** a report is discarded as impossible when its output voltage is more than 2 V above its input (TS4 optimizers only step voltage down), a voltage is outside 0–100 V, or a valid temperature is outside −40…125 °C. A discarded report doesn't replace the last good values, add energy, or count as a fresh report; Reading fault turns on (attributes `fault_reasons` and `last_fault_at`) and a warning is logged, and it turns off with the next valid report. In a 99,618-report capture here, no report broke these rules.
+**Reading fault:** a report is discarded as impossible when its output voltage is more than 2 V above its input (TS4 optimizers only step voltage down) or a voltage is outside 0–100 V. A discarded report doesn't replace the last good values, add energy, or count as a fresh report. A valid temperature outside −40…125 °C only drops the temperature: the report's power, voltages and energy are still used, and the sensor keeps the last good temperature (since 1.6.3; before, the whole report was dropped, which could lose energy). Either way Reading fault turns on (attributes `fault_reasons` and `last_fault_at`) and a warning is logged, and it turns off with the next valid report. In about 795,000 reports captured here, no report broke these rules: output never exceeded input, and temperatures stayed between about 8 and 24 °C.
 
 ## How readings are decoded
 

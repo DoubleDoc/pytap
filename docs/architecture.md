@@ -215,7 +215,7 @@ Platforms create entities from `coordinator.modules` and register a coordinator 
 | Performance, Power, Voltage In/Out, Current In/Out, Temperature, DC-DC duty cycle, RSSI, Daily energy, Total energy, Readings today | `PyTapSensor` (`RestoreSensor`) | Live readings follow `reading_state()` and the stale-reading settings; energy never does. States are rounded, and no attribute changes per reading, so unchanged values add no recorder rows. |
 | Data validity | `PyTapDataValiditySensor` | Enum, diagnostic |
 | Status, State field, jstatus level | `PyTapFlagSensor` | From the raw flag bytes, decoded by `pytap/core/flags.py`; the last two disabled by default |
-| Low input voltage, High output mode, Idle pass-through, Reading fault | `PyTapBinarySensor` | Idle pass-through disabled by default; Reading fault is a problem sensor that ignores reading health |
+| Low input voltage, jstatus bit 7, Idle pass-through, Reading fault | `PyTapBinarySensor` | jstatus bit 7 and Idle pass-through disabled by default; Reading fault is a problem sensor that ignores reading health |
 
 Flag entities derive from `PyTapFlagEntity`: they write state only when it changes, stay visible while reporting or asleep, and follow `silent_action` when silent. Performance entities are disabled by the integration while a covered panel has no rating, and re-enabled when it gets one (a user's own disabling is respected).
 

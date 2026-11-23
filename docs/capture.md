@@ -49,7 +49,7 @@ Timestamps are when PyTap's read returned, not the exact time each byte crossed 
 
 ## When you're done: delete the files
 
-Captures stay until you delete them (except when the PyTap entry itself is deleted). They live in your configuration folder, under `/config/pytap_captures/<config_entry_id>/` (one folder per capture, with any ZIP exports next to it), so **they are also included in Home Assistant backups**.
+Captures live in your configuration folder, under `/config/pytap_captures/<config_entry_id>/` (one folder per capture, with any ZIP exports next to it), so **they are also included in Home Assistant backups**. Since 1.6.3, captures that ended more than **14 days** ago are deleted automatically, at startup and every night (the running capture never is). Change the number of days, or set 0 to keep captures until you delete them, under **Configure → Change packet capture retention**. To remove them sooner:
 
 1. Copy off anything you want to keep (export it first if you want a ZIP).
 2. Run **`pytap.list_captures`** for the instance to see the `capture_id`s.

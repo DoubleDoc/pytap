@@ -1,9 +1,18 @@
 # Changelog
 
-## [Unreleased]
+## [1.6.3] - 2026-11-23
+
+From [Adam Zebrowski](https://github.com/azebro)'s review of the upstream [PR #38](https://github.com/azebro/pytap/pull/38) and [PR #39](https://github.com/azebro/pytap/pull/39).
+
+### Added
+
+- **Old packet captures are deleted automatically** — Captures that ended more than 14 days ago are deleted at startup and every night, because forgotten captures end up in every Home Assistant backup. Set the number of days, or 0 to keep them, under **Configure → Change packet capture retention**. The running capture is never deleted.
 
 ### Changed
 
+- **An implausible temperature no longer discards the reading** — A temperature outside −40…125 °C now drops only the temperature: the report's power, voltages and energy are kept, and Reading fault still turns on. Before, the whole report was dropped, which could lose energy if it lasted. Impossible voltages still discard the report.
+- **jstatus bit 7 is no longer called High output mode** — Captures here and on a 26-panel installation show it set at low output too, so the entity is now named *jstatus bit 7* and is disabled by default on new installs (existing entities stay enabled; the entity ID is unchanged).
+- **Packet captures refuse a symlinked `pytap_captures` folder** — Starting, exporting, listing and deleting captures now also check the folder above each instance's capture folder, so a symlink there can't redirect writes or deletes outside the configuration directory.
 - **PV Production (classic) dashboard** — Panel Power tiles match PV Panels: `0 W` with a sleep icon while asleep, the estimate (`~85 W`) while estimated.
 - **Flag documentation: second full-day capture** — 304,850 more reports (about 795,000 in all): bit 3 is absent some days, bit 1 again only in the morning, and jstatus bit 7 is mostly set at low current too, as Adam Zebrowski also observed. The capture also confirmed PyTap's live reading counts and daily energy against the raw bus data.
 - **README** — The front screenshots show the current tiles (a night view replaces the dusk view and the classic dashboard).

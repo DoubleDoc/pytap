@@ -81,6 +81,7 @@ Go to **Settings → Devices & Services → PyTap → Configure** to:
 - **Change inverter name** — Set or clear the inverter name used in device names.
 - **Add** new optimizer modules (if the barcode was previously seen on the bus, it resolves instantly).
 - **Change module discovery** — Turn automatic discovery on or off (see [Step 2](#step-2-add-modules)). Turning it on also adds optimizers PyTap logged earlier in manual mode; turning it off keeps the ones already tracked.
+- **Change packet capture retention** — How many days [packet captures](capture.md) are kept before they're deleted automatically (default 14; 0 keeps them).
 - **Edit** a module's string, name or peak power (0 = unknown), including discovered optimizers. The barcode can't be edited; remove and re-add the module to replace an optimizer.
   Entity IDs never change (see [Device naming](entities.md#device-naming)).
 - **Set a string's inverter** — For one CCA serving several inverters: name the inverter a string is wired to (see [Device naming](entities.md#device-naming)).

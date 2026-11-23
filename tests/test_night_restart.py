@@ -106,6 +106,7 @@ async def test_start_works_out_the_sun_before_resuming(hass: HomeAssistant) -> N
         patch.object(coordinator, "_async_load_coordinator_state", return_value=None),
         patch.object(coordinator, "_update_sun", side_effect=night),
         patch.object(coordinator, "_async_listen", MagicMock()),
+        patch.object(coordinator, "async_prune_captures", MagicMock()),
     ):
         await coordinator.async_start_listener()
     try:

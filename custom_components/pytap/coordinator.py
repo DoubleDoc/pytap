@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta
+from functools import partial
 import logging
 import math
 from pathlib import Path
@@ -43,6 +44,7 @@ from .const import (
     BUS_QUIET,
     CONF_AUTO_DISCOVERY,
     CONF_BAUD_RATE,
+    CONF_CAPTURE_KEEP_DAYS,
     CONF_CONNECTION_TYPE,
     CONF_ESTIMATE_SILENT,
     CONF_EXCLUDED_BARCODES,
@@ -59,6 +61,7 @@ from .const import (
     CONF_SILENT_MINUTES,
     CONF_WRITE_INTERVAL,
     CONNECTION_TCP,
+    DEFAULT_CAPTURE_KEEP_DAYS,
     DEFAULT_DISCOVERED_STRING,
     DEFAULT_ESTIMATE_SILENT,
     DEFAULT_LIVE_REPORTING,
@@ -111,10 +114,12 @@ from .energy import (
     reset_daily,
 )
 from .pytap.core.capture import (
+    CaptureError,
     CaptureWriter,
     capture_directory,
     export_archive,
     list_captures,
+    prune_captures,
     read_manifest,
 )
 from .pytap.core.events import (
@@ -224,6 +229,10 @@ def reading_faults(event: PowerReportEvent) -> list[str]:
     ):
         faults.append("temperature_out_of_range")
     return faults
+
+
+# Faults that drop only the temperature; the rest discard the whole report.
+TEMPERATURE_FAULTS = frozenset({"temperature_out_of_range"})
 
 
 class BarcodeClaims:
@@ -430,6 +439,11 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._capture_start_future: asyncio.Future | None = None
         self._capture_export_future: asyncio.Future | None = None
         self._capture_root = Path(hass.config.path("pytap_captures", entry.entry_id))
+        # Captures older than this are deleted (0 keeps them); review of
+        # azebro/pytap#38: forgotten captures end up in every backup.
+        self._capture_keep_days: int = int(
+            entry.data.get(CONF_CAPTURE_KEEP_DAYS, DEFAULT_CAPTURE_KEEP_DAYS)
+        )
 
         # Listener worker (executor job) and stop coordination.
         self._worker_future: asyncio.Future | None = None
@@ -1273,6 +1287,35 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         own = self._capture_export_future is not None and not self._capture_export_future.done()
         return own or capture_job_running(self.hass, self._capture_root)
 
+    async def async_prune_captures(self) -> list[str]:
+        """Delete captures older than the configured number of days."""
+        if self._capture_keep_days <= 0 or self._capture_job_running():
+            return []
+        active = (
+            self._capture.capture_id
+            if self._capture is not None and self._capture_writer_running()
+            else None
+        )
+        try:
+            deleted = await self.hass.async_add_executor_job(
+                partial(
+                    prune_captures,
+                    self._capture_root,
+                    self._capture_keep_days,
+                    active=active,
+                )
+            )
+        except (CaptureError, OSError) as err:
+            self._log.debug("Capture cleanup skipped (%s)", type(err).__name__)
+            return []
+        if deleted:
+            self._log.info(
+                "Deleted %d packet capture(s) older than %d days",
+                len(deleted),
+                self._capture_keep_days,
+            )
+        return deleted
+
     def _capture_writer_running(self) -> bool:
         return (self._capture is not None and self._capture.busy) or (
             self._capture_start_future is not None and not self._capture_start_future.done()
@@ -1362,6 +1405,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name="pytap_listener",
         )
         self._schedule_midnight_reset()
+        self.config_entry.async_create_background_task(
+            self.hass, self.async_prune_captures(), name="pytap_prune_captures"
+        )
         self._health_unsub = async_track_time_interval(
             self.hass,
             self._async_health_check,
@@ -1492,6 +1538,9 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         @callback
         def _at_midnight(_now: datetime) -> None:
             self._perform_midnight_reset()
+            self.config_entry.async_create_background_task(
+                self.hass, self.async_prune_captures(), name="pytap_prune_captures"
+            )
 
         self._midnight_reset_unsub = async_track_time_change(
             self.hass, _at_midnight, hour=0, minute=0, second=0
@@ -1919,7 +1968,13 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return True
             # Newly discovered: process this first reading right away.
 
-        if faults := reading_faults(event):
+        faults = reading_faults(event)
+        # An implausible temperature alone doesn't make the electrical values
+        # wrong: keep power and energy, drop only the temperature (review of
+        # azebro/pytap#39). Only electrical faults discard the whole report.
+        temperature_faults = [f for f in faults if f in TEMPERATURE_FAULTS]
+        if electrical_faults := [f for f in faults if f not in TEMPERATURE_FAULTS]:
+            faults = electrical_faults
             # Impossible reading: keep the last good values, energy and
             # freshness; only flag the fault (azebro/pytap#39).
             previous = self._state["nodes"].get(barcode)
@@ -2024,9 +2079,19 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         previous = self._state["nodes"].get(barcode) or {}
         temperature = (
             event.temperature
-            if event.temperature is not None
+            if event.temperature is not None and not temperature_faults
             else previous.get("temperature")
         )
+        if temperature_faults and not (
+            previous.get("reading_fault")
+            and previous.get("fault_reasons") == temperature_faults
+        ):
+            self._log.warning(
+                "Ignored implausible temperature from %s (%s °C); its power "
+                "and energy are kept",
+                self._module_label(barcode),
+                event.temperature,
+            )
         rssi = event.rssi if event.rssi is not None else previous.get("rssi")
 
         self._mark_changed(barcode)
@@ -2050,9 +2115,11 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # docs/protocol-status-bits.md).
             "status": getattr(event, "status", None),
             "jstatus": getattr(event, "jstatus", None),
-            "reading_fault": False,
-            "fault_reasons": [],
-            "last_fault_at": previous.get("last_fault_at"),
+            "reading_fault": bool(temperature_faults),
+            "fault_reasons": temperature_faults,
+            "last_fault_at": (
+                now.isoformat() if temperature_faults else previous.get("last_fault_at")
+            ),
             "daily_energy_wh": round(acc.daily_energy_wh, 2),
             "total_energy_wh": round(acc.total_energy_wh, 2),
             "readings_today": acc.readings_today,

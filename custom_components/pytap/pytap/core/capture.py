@@ -75,7 +75,18 @@ def _mib(value: int) -> str:
 
 
 def _check_root(root: Path) -> None:
-    if root.is_symlink():
+    """Refuse a capture root reached through a symlink.
+
+    The root is ``<config>/pytap_captures/<entry_id>``. Both folders PyTap
+    creates must be real directories: a symlinked ``pytap_captures`` would let
+    ``mkdir``, exports and ``rmtree`` act outside the config directory (review
+    of azebro/pytap#38). The config directory itself is the owner's choice.
+    """
+    root = Path(root)
+    for path in (root, root.parent):
+        if path.is_symlink():
+            raise CaptureError("capture_unsafe", "Capture root must not be a symlink")
+    if root.exists() and root.resolve().parent != root.parent.resolve():
         raise CaptureError("capture_unsafe", "Capture root must not be a symlink")
 
 
@@ -1020,11 +1031,52 @@ def delete_capture(root: Path, capture_id: str) -> dict[str, Any]:
     return {"capture_id": capture_id, "deleted_archives": len(archives), "deleted_bytes": deleted}
 
 
+def prune_captures(
+    root: Path, keep_days: int, *, active: str | None = None, now: float | None = None
+) -> list[str]:
+    """Delete captures that ended more than ``keep_days`` days ago.
+
+    Captures are easy to forget and end up in every Home Assistant backup
+    (review of azebro/pytap#38), so old ones are removed automatically.
+    ``keep_days`` 0 keeps everything. The active session is never touched.
+    A capture's age counts from when it ended, or from its manifest's last
+    write if it never recorded an end (cut off by a restart or crash).
+    Returns the deleted capture IDs; captures that can't be deleted safely
+    are left for the user.
+    """
+    root = Path(root)
+    _check_root(root)
+    if keep_days <= 0 or not root.is_dir():
+        return []
+    cutoff = (time.time() if now is None else now) - keep_days * 86400
+    deleted: list[str] = []
+    for info in list_captures(root, limit=10_000):
+        capture_id = info.get("capture_id")
+        if not capture_id or capture_id == active:
+            continue
+        if info.get("ended_utc_ns"):
+            ended = info["ended_utc_ns"] / 1e9
+        else:
+            try:
+                ended = (root / capture_id / "manifest.json").stat().st_mtime
+            except OSError:
+                ended = (root / capture_id).stat().st_mtime
+        if info.get("state") in ("capturing", "starting", "stopping") and ended > cutoff:
+            continue
+        if ended > cutoff:
+            continue
+        try:
+            delete_capture(root, capture_id)
+        except (CaptureError, OSError):
+            continue
+        deleted.append(capture_id)
+    return deleted
+
+
 def remove_capture_root(root: Path) -> bool:
     """Delete an instance's entire capture root without following a symlinked root."""
     root = Path(root)
-    if root.is_symlink():
-        raise CaptureError("capture_unsafe", "Capture root must not be a symlink")
+    _check_root(root)
     if not root.exists():
         return False
     if not root.is_dir():
