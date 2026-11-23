@@ -58,7 +58,7 @@ barcode,name,string,peak_power,inverter
 
 **Open design questions:**
 
-1. **Device protocol:** native ESPHome entities (simplest, but every value is still an entity and the HA-side features would need the ESPHome data as input) versus an ESPHome or custom component that serves PyTap a compact feed (PyTap stays the integration, with its entity IDs, estimates and dashboards, and the device replaces the TCP converter as its source).
+1. **Device protocol:** ESPHome is a strong candidate: Home Assistant supports it natively, and it handles the connection, updates and logs. Needs research.
 2. **Energy authority:** the device's counters become the source of truth, with PyTap reading them, so a Home Assistant outage loses nothing. That needs care with counter resets, device replacement and the migration from PyTap's own counters.
 3. **Time and day boundaries:** the device needs reliable time (NTP) for daily counters and midnight resets.
 4. **Updates and safety:** OTA updates, and a hardware guarantee that it can't transmit (receive-only transceiver, or the driver-enable line tied off), as with the converter today.
