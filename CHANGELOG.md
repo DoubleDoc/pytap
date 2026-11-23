@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.7.0] - 2026-11-23
+
+Module management, from [Adam Zebrowski](https://github.com/azebro)'s review of the upstream [PR #37](https://github.com/azebro/pytap/pull/37), simplified to one rule: one entry per bus, one entry per optimizer.
+
+### Added
+
+- **Import and export module assignments as CSV** — **Configure → Import modules from CSV** sets names, strings, ratings and string inverters for many optimizers at once, at any time: `barcode` plus any of `name`, `string`, `peak_power` and `inverter`. Only the columns given change, nothing is removed, every problem is listed with its line, and a preview shows the changes first. **Export modules as CSV** gives the current assignments in the same format.
+- **Optimizers keep their lifetime energy when moved to another CCA** — When an optimizer is removed from one PyTap entry, its lifetime energy is handed over, and the entry that tracks it next continues the count, so it works like a generator's run hours. Deleting a whole entry hands over all of its optimizers.
+- **Two connections on one bus are stopped** — A second converter or proxy wired to a bus another entry already listens to is detected once a few optimizers report to both at the same time: the newer connection stops and a repair notice explains what to fix.
+
+### Changed
+
+- **One entry per optimizer, also while an entry is disabled** — Ownership now comes from every entry's saved modules, loaded or not, instead of only running entries, so a disabled entry's optimizers can't be discovered by another. A configured optimizer owned by another entry is no longer tracked a second time (it used to be, with only a log line), and adding it by hand or by CSV is refused. Optimizers heard on the wrong bus are listed in a repair notice. This replaces the barcode claims adapted from #37.
+- **The same converter can't be used twice** — Setup and *Change connection* refuse a converter address and port another entry uses (host names compared by the addresses they resolve to), as they already did for serial ports.
+
+### Fixed
+
+- **Saving the options no longer restores an optimizer deleted from its device page while the options were open.**
+- **The options dialog's barcode errors** (invalid, missing, duplicate) had no text.
+
 ## [1.6.3] - 2026-11-23
 
 From [Adam Zebrowski](https://github.com/azebro)'s review of the upstream [PR #38](https://github.com/azebro/pytap/pull/38) and [PR #39](https://github.com/azebro/pytap/pull/39).

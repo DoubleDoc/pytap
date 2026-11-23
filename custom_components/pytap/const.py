@@ -54,6 +54,12 @@ CONF_NIGHT_ACTION = "night_action"  # asleep: "zero" or "hold"
 CONF_SILENT_ACTION = "silent_action"  # silent by day: "unavailable", "hold", "zero"
 CONF_SILENT_MINUTES = "silent_minutes"
 
+# Two connections on one bus: this entry stops when at least this many optimizers
+# owned by another entry report to both within this window, and none of its own
+# do (review of azebro/pytap#37).
+DUPLICATE_BUS_MIN_OPTIMIZERS = 3
+DUPLICATE_BUS_WINDOW_SECONDS = 600
+
 # Packet captures older than this many days are deleted automatically (0 keeps
 # them): forgotten captures end up in every backup (review of azebro/pytap#38).
 CONF_CAPTURE_KEEP_DAYS = "capture_keep_days"

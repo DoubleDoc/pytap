@@ -23,6 +23,9 @@ Every PyTap line starts with the inverter name (or the converter's address when 
 - **Configured barcodes NOT found in node table**: a configured barcode doesn't exist on the bus; check it for typos.
 - **Discarded impossible reading from P03 (…)**: a report was physically impossible (for example output voltage above input) and was ignored; Reading fault turns on until the next valid report (see [Status flags and reading faults](entities.md#status-flags-and-reading-faults)). An occasional one is a corrupted frame; frequent ones point at wiring or the converter.
 - **Ignored implausible temperature from P03 (… °C); its power and energy are kept**: the optimizer reported a temperature outside −40…125 °C, for example from a failed sensor. Only the temperature is ignored; Reading fault turns on until a report with a plausible temperature.
+- **Optimizer … is heard here but another PyTap entry owns it**: an optimizer configured in another entry was heard on this bus; it isn't tracked here. A repair notice lists them. If they were moved to this bus, remove them from the other entry and this one picks them up, with their lifetime energy (see [Moving optimizers](configuration.md#moving-optimizers-or-strings-to-another-cca)).
+- **This connection hears the same Tigo bus as PyTap entry …, so it has stopped**: two connections listen to one bus (a second converter or proxy wired to it, or an entry pointed at the wrong one). This entry stopped listening so nothing is counted twice; a repair notice says the same. Remove or rewire the extra hardware, fix the connection under **Configure → Change connection**, or delete the entry you don't need.
+- **Continuing P07's lifetime energy from its previous PyTap entry**: an optimizer moved from another bus; its lifetime energy carries on.
 - **Unexpected error while processing data**: a bug. It is logged once with a traceback; please report it.
 
 ## Debug logging

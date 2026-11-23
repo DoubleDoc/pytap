@@ -87,7 +87,32 @@ Go to **Settings → Devices & Services → PyTap → Configure** to:
 - **Set a string's inverter** — For one CCA serving several inverters: name the inverter a string is wired to (see [Device naming](entities.md#device-naming)).
 - **Rename a string** for all of its modules. The String device's sensors keep their history.
 - **Remove** modules you no longer want to track. A removed optimizer is excluded, so discovery won't add it back; add it again to track it. You can also delete an optimizer's device from its device page (same effect), or an empty string device. The Total device and strings with modules can't be deleted.
+- **Import modules from CSV** — Name, assign and rate many optimizers at once, at any time. Paste CSV text whose first line names the columns: `barcode` (required) and any of `name`, `string`, `peak_power` (0 = unknown) and `inverter` (the string's inverter; needs `string`). Only the columns given are changed, optimizers not listed are left alone, and new barcodes are added. Every problem is listed with its line before anything is applied, then a preview shows what's new and what changes.
+  ```csv
+  barcode,name,string,peak_power,inverter
+  4-5C393EP,P01,2,455,Master
+  4-745B68W,P01,2,455,Slave
+  ```
+- **Export modules as CSV** — The current assignments in the same format, to keep as a backup or edit and import.
 - **Save and close** to apply changes.
+
+## One entry per bus, one bus per optimizer
+
+Each Tigo bus (one CCA and its TAPs) needs exactly one PyTap entry. Several inverters on one CCA don't need several entries: set each string's inverter instead.
+
+- **The same converter twice is refused.** Setup and *Change connection* refuse an address and port, serial port or ESPHome proxy that another PyTap entry already uses (host names are compared by the addresses they resolve to, serial ports by the device they point to).
+- **Two connections on one bus stop the newer one.** If a second converter or proxy is wired to a bus another entry already listens to, it hears that entry's optimizers report at the same time. After a few of them, it stops listening and a repair notice says so. Remove or rewire the extra hardware, fix that entry's connection, or delete the entry. A brand-new connection can only tell optimizers apart once it has the bus's node table, which the CCA sends mainly at night, so it may take until then to be detected; until then it can't identify any optimizer, so it doesn't count anything either.
+- **An optimizer belongs to one entry.** An optimizer configured or discovered in one entry isn't tracked by another, even while the first entry is disabled. If another entry hears it, a repair notice lists it there.
+
+### Moving optimizers or strings to another CCA
+
+Moving panels or whole strings between CCAs needs no special steps in Home Assistant, even after a lot of changes during powered-down maintenance:
+
+1. After power-up, the moved optimizers go quiet in their old entry, and the new entry lists them in a repair notice ("heard here, configured in …").
+2. Remove them from the old entry (**Configure → Remove a module**, or delete their devices). The old entry hands their **lifetime energy** over.
+3. The new entry picks them up (with discovery on; otherwise add them), keeping their entity IDs, history and lifetime energy, so an optimizer's lifetime energy stays a running total, like a generator's run hours. Until you edit them they're in the string *Discovered*. Assign strings with **Edit a module** or **Import modules from CSV**.
+
+String totals only count what their members produce while they're members, so nothing is counted twice or lost.
 
 Connection and reporting changes are saved as soon as you submit them. Inverter name, discovery and module changes (add, edit, rename string, remove) are saved only when you select **Save and close**; closing the dialog without it discards them.
 

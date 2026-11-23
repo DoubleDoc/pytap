@@ -11,8 +11,11 @@ Options: init (menu) → add_module / remove_module / change_connection /
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import re
+import socket
 from typing import Any
 import uuid
 
@@ -33,6 +36,8 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
     SerialPortSelector,
+    TextSelector,
+    TextSelectorConfig,
 )
 import serialx
 import voluptuous as vol
@@ -69,6 +74,7 @@ from .const import (
     CONNECTION_TCP,
     DEFAULT_BAUD_RATE,
     DEFAULT_CAPTURE_KEEP_DAYS,
+    DEFAULT_DISCOVERED_STRING,
     DEFAULT_ESTIMATE_SILENT,
     DEFAULT_INVERTER,
     DEFAULT_LIVE_REPORTING,
@@ -87,7 +93,7 @@ from .const import (
     NIGHT_ACTIONS,
     SILENT_ACTIONS,
 )
-from .coordinator import parked_coordinators
+from .coordinator import async_barcode_owners, parked_coordinators
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -137,6 +143,17 @@ ADD_MODULE_SCHEMA = vol.Schema(
 )
 
 
+async def owner_elsewhere(
+    hass: HomeAssistant, barcode: str, entry_id: str | None
+) -> str | None:
+    """Title of another PyTap entry that owns ``barcode``, if one does."""
+    owner = (await async_barcode_owners(hass)).owner(barcode)
+    if owner is None or owner == entry_id:
+        return None
+    entry = hass.config_entries.async_get_entry(owner)
+    return entry.title if entry is not None else owner
+
+
 def validate_barcode(barcode: str) -> None:
     """Validate a single barcode format."""
     if barcode and not _BARCODE_PATTERN.match(barcode):
@@ -144,6 +161,100 @@ def validate_barcode(barcode: str) -> None:
             f"Invalid barcode format: '{barcode}'. "
             "Expected format like A-1234567B (X-NNNNNNNC)."
         )
+
+
+CSV_COLUMNS = ("barcode", "name", "string", "peak_power", "inverter")
+
+
+def parse_module_csv(text: str) -> tuple[list[dict[str, Any]], list[str]]:
+    """Parse module assignments: ``barcode`` plus any of name, string,
+    peak_power and inverter. Returns (rows, problems).
+
+    Each row holds only the columns given with a value, so a sheet of just
+    barcodes and names only renames. Problems name the line they're on.
+    """
+    problems: list[str] = []
+    rows: list[dict[str, Any]] = []
+    reader = csv.DictReader(io.StringIO(text.strip()))
+    columns = [(c or "").strip().lower() for c in (reader.fieldnames or [])]
+    if "barcode" not in columns:
+        return [], ["The first line must name the columns, including barcode."]
+    if unknown := [c for c in columns if c not in CSV_COLUMNS]:
+        problems.append(f"Unknown column(s): {', '.join(unknown)}.")
+    seen: set[str] = set()
+    inverters: dict[str, str] = {}
+    for line, raw in enumerate(reader, start=2):
+        values = {
+            (key or "").strip().lower(): (value or "").strip()
+            for key, value in raw.items()
+            if key is not None
+        }
+        if not any(values.values()):
+            continue
+        barcode = values.get("barcode", "").upper()
+        if not _BARCODE_PATTERN.match(barcode):
+            problems.append(f"Line {line}: invalid barcode '{barcode}'.")
+            continue
+        if barcode in seen:
+            problems.append(f"Line {line}: {barcode} appears more than once.")
+            continue
+        seen.add(barcode)
+        row: dict[str, Any] = {CONF_MODULE_BARCODE: barcode}
+        if values.get("name"):
+            row[CONF_MODULE_NAME] = values["name"]
+        if values.get("string"):
+            row[CONF_MODULE_STRING] = values["string"]
+        if values.get("peak_power"):
+            try:
+                rating = int(values["peak_power"])
+            except ValueError:
+                rating = -1
+            if not 0 <= rating <= 1000:
+                problems.append(
+                    f"Line {line}: peak_power must be 0–1000 (0 = unknown)."
+                )
+                continue
+            row[CONF_MODULE_PEAK_POWER] = rating
+        if inverter := values.get("inverter"):
+            string = row.get(CONF_MODULE_STRING)
+            if not string:
+                problems.append(f"Line {line}: an inverter needs the string column too.")
+                continue
+            if inverters.setdefault(string, inverter) != inverter:
+                problems.append(
+                    f"Line {line}: string {string} is given two inverters "
+                    f"({inverters[string]} and {inverter})."
+                )
+                continue
+            row[CONF_INVERTER] = inverter
+        rows.append(row)
+    if not rows and not problems:
+        problems.append("No modules found.")
+    return rows, problems
+
+
+def modules_to_csv(
+    modules: list[dict[str, Any]], string_inverters: dict[str, str]
+) -> str:
+    """The current assignments in the import format (a backup and template)."""
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(CSV_COLUMNS)
+    for module in sorted(
+        modules,
+        key=lambda m: (m.get(CONF_MODULE_STRING, ""), m.get(CONF_MODULE_NAME, ""), m[CONF_MODULE_BARCODE]),
+    ):
+        string = module.get(CONF_MODULE_STRING, "")
+        writer.writerow(
+            [
+                module[CONF_MODULE_BARCODE],
+                module.get(CONF_MODULE_NAME, ""),
+                string,
+                module.get(CONF_MODULE_PEAK_POWER, DEFAULT_PEAK_POWER),
+                string_inverters.get(string, ""),
+            ]
+        )
+    return out.getvalue()
 
 
 async def validate_connection(
@@ -166,12 +277,39 @@ async def _same_serial_port(hass: HomeAssistant, first: str, second: str) -> boo
     )
 
 
-async def serial_port_claimed(
-    hass: HomeAssistant, settings: dict[str, Any], entry_id: str | None = None
+def _tcp_addresses(host: str) -> set[str]:
+    """The IP addresses a host name resolves to (blocking: run in an executor)."""
+    try:
+        return {info[4][0] for info in socket.getaddrinfo(host, None)}
+    except (OSError, UnicodeError):
+        return {host.strip().lower()}
+
+
+async def _same_tcp_endpoint(
+    hass: HomeAssistant, first: dict[str, Any], second: dict[str, Any]
 ) -> bool:
-    """Whether another PyTap entry (or a listener still stopping) uses this port."""
-    if settings.get(CONF_CONNECTION_TYPE) != CONNECTION_SERIAL:
+    """Same converter: same port and a shared address once names are resolved."""
+    if int(first.get(CONF_PORT, 0)) != int(second.get(CONF_PORT, 0)):
         return False
+    a, b = (str(first.get(CONF_HOST, "")), str(second.get(CONF_HOST, "")))
+    if a.strip().lower() == b.strip().lower():
+        return True
+    addresses = await hass.async_add_executor_job(
+        lambda: (_tcp_addresses(a), _tcp_addresses(b))
+    )
+    return bool(addresses[0] & addresses[1])
+
+
+async def endpoint_in_use(
+    hass: HomeAssistant, settings: dict[str, Any], entry_id: str | None = None
+) -> str | None:
+    """The form field to flag if another PyTap entry uses this connection.
+
+    Two entries on one converter, serial port or ESPHome proxy would track the
+    same optimizers twice. (A second converter wired to the same bus can't be
+    seen here; the listener detects that once it hears optimizers.)
+    """
+    connection_type = settings.get(CONF_CONNECTION_TYPE, CONNECTION_TCP)
     others = [
         entry.data
         for entry in hass.config_entries.async_entries(DOMAIN)
@@ -183,11 +321,16 @@ async def serial_port_claimed(
         if parked_id != entry_id
     )
     for other in others:
-        if other.get(CONF_CONNECTION_TYPE) == CONNECTION_SERIAL and await _same_serial_port(
-            hass, other.get(CONF_SERIAL_PORT, ""), settings[CONF_SERIAL_PORT]
-        ):
-            return True
-    return False
+        if other.get(CONF_CONNECTION_TYPE, CONNECTION_TCP) != connection_type:
+            continue
+        if connection_type == CONNECTION_SERIAL:
+            if await _same_serial_port(
+                hass, other.get(CONF_SERIAL_PORT, ""), settings[CONF_SERIAL_PORT]
+            ):
+                return CONF_SERIAL_PORT
+        elif await _same_tcp_endpoint(hass, other, settings):
+            return CONF_HOST
+    return None
 
 
 async def connection_errors(
@@ -201,8 +344,10 @@ async def connection_errors(
     Submitting the same settings again accepts them (the converter or proxy
     may simply be offline). ``flow._unreachable_confirm`` remembers them.
     """
-    if await serial_port_claimed(hass, settings, entry.entry_id if entry else None):
-        return {CONF_SERIAL_PORT: "serial_port_in_use"}
+    if field := await endpoint_in_use(hass, settings, entry.entry_id if entry else None):
+        return {
+            field: "serial_port_in_use" if field == CONF_SERIAL_PORT else "endpoint_in_use"
+        }
     if (
         entry is not None
         and settings[CONF_CONNECTION_TYPE] == CONNECTION_SERIAL
@@ -383,6 +528,11 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
                 m[CONF_MODULE_BARCODE] == barcode for m in self._modules
             ):
                 errors[CONF_MODULE_BARCODE] = "duplicate_barcode"
+            if not errors and (
+                owner := await owner_elsewhere(self.hass, barcode, None)
+            ):
+                errors[CONF_MODULE_BARCODE] = "barcode_owned_elsewhere"
+                self._owner_title = owner
 
             if not errors:
                 self._modules.append(
@@ -403,6 +553,7 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders={
                 "modules_list": _modules_description(self._modules),
+                "owner": getattr(self, "_owner_title", ""),
             },
         )
 
@@ -427,15 +578,17 @@ class PyTapConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_LIVE_REPORTING: False,
             CONF_WRITE_INTERVAL: DEFAULT_WRITE_INTERVAL,
         }
-        if await serial_port_claimed(self.hass, self._user_data):
-            # Another flow may have claimed the port while modules were added.
+        if field := await endpoint_in_use(self.hass, self._user_data):
+            # Another flow may have taken the connection while modules were added.
             connection_type = self._user_data[CONF_CONNECTION_TYPE]
             return self.async_show_form(
                 step_id=connection_type,
                 data_schema=connection_schema(
                     connection_type, self._user_data, with_inverter=True
                 ),
-                errors={CONF_SERIAL_PORT: "serial_port_in_use"},
+                errors={
+                    field: "serial_port_in_use" if field == CONF_SERIAL_PORT else "endpoint_in_use"
+                },
             )
         title = connection_title(self._user_data)
         return self.async_create_entry(title=title, data=data)
@@ -467,6 +620,8 @@ class PyTapOptionsFlow(OptionsFlow):
             config_entry.data.get(CONF_CAPTURE_KEEP_DAYS, DEFAULT_CAPTURE_KEEP_DAYS)
         )
         self._excluded: set[str] = set(config_entry.data.get(CONF_EXCLUDED_BARCODES, []))
+        self._excluded_initial: set[str] = set(self._excluded)
+        self._import_rows: list[dict[str, Any]] = []
         self._string_inverters: dict[str, str] = dict(
             config_entry.data.get(CONF_STRING_INVERTERS, {})
         )
@@ -503,6 +658,8 @@ class PyTapOptionsFlow(OptionsFlow):
                 "rename_string",
                 "string_inverter",
                 "remove_module",
+                "import_modules",
+                "export_modules",
                 "done",
             ],
             description_placeholders={
@@ -523,6 +680,133 @@ class PyTapOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(
                 {vol.Required(CONF_AUTO_DISCOVERY, default=self._auto_discovery): bool}
             ),
+        )
+
+    async def async_step_import_modules(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Import module assignments from CSV text (roadmap item 9)."""
+        errors: dict[str, str] = {}
+        problems = ""
+        if user_input is not None:
+            rows, found = parse_module_csv(user_input.get("csv", ""))
+            for row in rows:
+                if owner := await owner_elsewhere(
+                    self.hass, row[CONF_MODULE_BARCODE], self._config_entry.entry_id
+                ):
+                    found.append(
+                        f"{row[CONF_MODULE_BARCODE]} belongs to {owner}: remove it there first."
+                    )
+            if found:
+                errors["base"] = "csv_invalid"
+                problems = "\n".join(f"- {p}" for p in found[:15])
+                if len(found) > 15:
+                    problems += f"\n- … and {len(found) - 15} more"
+            else:
+                self._import_rows = rows
+                return await self.async_step_import_confirm()
+        return self.async_show_form(
+            step_id="import_modules",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "csv", default=(user_input or {}).get("csv", "")
+                    ): TextSelector(TextSelectorConfig(multiline=True))
+                }
+            ),
+            errors=errors,
+            description_placeholders={"problems": problems},
+        )
+
+    def _import_changes(self) -> tuple[list[str], list[str], int, dict[str, str]]:
+        """(added, changed, unchanged count, inverters) for the pending import."""
+        current = {m[CONF_MODULE_BARCODE]: m for m in self._modules}
+        added, changed, unchanged = [], [], 0
+        inverters: dict[str, str] = {}
+        for row in self._import_rows:
+            barcode = row[CONF_MODULE_BARCODE]
+            fields = {k: v for k, v in row.items() if k not in (CONF_MODULE_BARCODE, CONF_INVERTER)}
+            if inverter := row.get(CONF_INVERTER):
+                inverters[row[CONF_MODULE_STRING]] = inverter
+            if barcode not in current:
+                added.append(barcode)
+            elif any(current[barcode].get(k) != v for k, v in fields.items()):
+                changed.append(
+                    f"{barcode}: "
+                    + ", ".join(
+                        f"{k} {current[barcode].get(k, '')!s} → {v}"
+                        for k, v in fields.items()
+                        if current[barcode].get(k) != v
+                    )
+                )
+            else:
+                unchanged += 1
+        inverters = {
+            s: inv for s, inv in inverters.items() if self._string_inverters.get(s) != inv
+        }
+        return added, changed, unchanged, inverters
+
+    async def async_step_import_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show what the import changes; apply it (saved with Done)."""
+        added, changed, unchanged, inverters = self._import_changes()
+        if user_input is not None:
+            current = {m[CONF_MODULE_BARCODE]: m for m in self._modules}
+            for row in self._import_rows:
+                barcode = row[CONF_MODULE_BARCODE]
+                fields = {
+                    k: v for k, v in row.items() if k not in (CONF_MODULE_BARCODE, CONF_INVERTER)
+                }
+                if barcode in current:
+                    current[barcode].update(fields)
+                else:
+                    module = {
+                        CONF_MODULE_BARCODE: barcode,
+                        CONF_MODULE_NAME: "",
+                        CONF_MODULE_STRING: DEFAULT_DISCOVERED_STRING,
+                        CONF_MODULE_PEAK_POWER: 0,
+                        **fields,
+                    }
+                    self._modules.append(module)
+                    current[barcode] = module
+                self._excluded.discard(barcode)
+            self._string_inverters.update(inverters)
+            self._import_rows = []
+            return await self.async_step_init()
+
+        def listing(items: list[str]) -> str:
+            shown = "\n".join(f"- {item}" for item in items[:20])
+            return shown + (f"\n- … and {len(items) - 20} more" if len(items) > 20 else "")
+
+        return self.async_show_form(
+            step_id="import_confirm",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "added": str(len(added)),
+                "changed": str(len(changed)),
+                "unchanged": str(unchanged),
+                "details": listing(
+                    [f"new: {b}" for b in added]
+                    + changed
+                    + [f"string {s}: inverter {inv}" for s, inv in inverters.items()]
+                )
+                or "- nothing to change",
+            },
+        )
+
+    async def async_step_export_modules(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the current assignments as CSV, to copy as a backup or template."""
+        if user_input is not None:
+            return await self.async_step_init()
+        return self.async_show_form(
+            step_id="export_modules",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "csv": modules_to_csv(self._modules, self._string_inverters)
+            },
         )
 
     async def async_step_change_captures(
@@ -549,6 +833,17 @@ class PyTapOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Save modules and close the options flow."""
+        # Optimizers deleted elsewhere (from their device page) while this
+        # dialog was open stay deleted unless added again here; saving the
+        # dialog's older list mustn't bring them back (review of
+        # azebro/pytap#37).
+        current_excluded = set(self._config_entry.data.get(CONF_EXCLUDED_BARCODES, []))
+        added_here = {m[CONF_MODULE_BARCODE] for m in self._modules} - set(self._initial)
+        if deleted_elsewhere := (current_excluded - self._excluded_initial) - added_here:
+            self._modules = [
+                m for m in self._modules if m[CONF_MODULE_BARCODE] not in deleted_elsewhere
+            ]
+            self._excluded |= deleted_elsewhere
         # Optimizers discovered while this flow was open are kept; removals
         # are excluded so discovery doesn't add them back.
         selected = {m[CONF_MODULE_BARCODE] for m in self._modules}
@@ -1009,6 +1304,11 @@ class PyTapOptionsFlow(OptionsFlow):
                 m[CONF_MODULE_BARCODE] == barcode for m in self._modules
             ):
                 errors[CONF_MODULE_BARCODE] = "duplicate_barcode"
+            if not errors and (
+                owner := await owner_elsewhere(self.hass, barcode, self._config_entry.entry_id)
+            ):
+                errors[CONF_MODULE_BARCODE] = "barcode_owned_elsewhere"
+                self._owner_title = owner
 
             if not errors:
                 self._modules.append(
@@ -1029,6 +1329,7 @@ class PyTapOptionsFlow(OptionsFlow):
             errors=errors,
             description_placeholders={
                 "modules_list": _modules_description(self._modules),
+                "owner": getattr(self, "_owner_title", ""),
             },
         )
 

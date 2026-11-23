@@ -23,6 +23,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import (
     async_track_time_change,
     async_track_time_interval,
@@ -71,6 +72,8 @@ from .const import (
     DEFAULT_SILENT_MINUTES,
     DEFAULT_WRITE_INTERVAL,
     DOMAIN,
+    DUPLICATE_BUS_MIN_OPTIMIZERS,
+    DUPLICATE_BUS_WINDOW_SECONDS,
     ENERGY_GAP_THRESHOLD_SECONDS,
     ENERGY_LOW_POWER_THRESHOLD_W,
     ESTIMATE_AFTER_SECONDS,
@@ -235,30 +238,136 @@ def reading_faults(event: PowerReportEvent) -> list[str]:
 TEMPERATURE_FAULTS = frozenset({"temperature_out_of_range"})
 
 
-class BarcodeClaims:
-    """Domain-wide optimizer ownership, so two entries never track one barcode.
+class BarcodeOwners:
+    """Which PyTap entry owns each optimizer barcode: one entry at most.
 
-    From Tim Laing's upstream PR azebro/pytap#37.
+    Ownership comes from every entry's saved modules (configured and
+    discovered), whether or not that entry is loaded, so a disabled entry's
+    optimizers aren't taken by another one (review of azebro/pytap#37). The
+    first entry wins. An optimizer moved to another bus is tracked there once
+    it's removed from the entry that owns it.
+
+    Also holds the lifetime energy of optimizers removed from an entry
+    (``released``), so the entry that next tracks one continues its count:
+    an optimizer's lifetime energy is a maintenance indicator, like a
+    generator's run hours.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, hass: HomeAssistant | None = None) -> None:
+        self._hass = hass
         self._lock = threading.Lock()
         self._owners: dict[str, str] = {}
+        self._running: dict[str, PyTapDataUpdateCoordinator] = {}
+        self.released: dict[str, dict[str, Any]] = {}
+        self._store: Store | None = (
+            Store(hass, 1, f"{DOMAIN}_released_energy") if hass is not None else None
+        )
 
-    def claim(self, barcode: str, entry_id: str) -> bool:
-        """Claim ``barcode`` for ``entry_id``; True if it now (or already) owns it."""
+    def set_entry(self, entry_id: str, barcodes: set[str]) -> None:
+        """Make ``barcodes`` this entry's (first owner wins); drop the rest."""
+        with self._lock:
+            self._owners = {
+                b: o for b, o in self._owners.items() if o != entry_id or b in barcodes
+            }
+            for barcode in barcodes:
+                self._owners.setdefault(barcode, entry_id)
+
+    def owner(self, barcode: str) -> str | None:
+        """The entry that owns ``barcode``, if any."""
+        with self._lock:
+            return self._owners.get(barcode)
+
+    def try_take(self, barcode: str, entry_id: str) -> bool:
+        """Own ``barcode`` unless another entry does (atomic, any thread)."""
         with self._lock:
             return self._owners.setdefault(barcode, entry_id) == entry_id
 
-    def release_entry(self, entry_id: str) -> None:
-        """Release every barcode claimed by ``entry_id``."""
+    def forget_entry(self, entry_id: str) -> None:
+        """The entry was deleted: its optimizers are free."""
         with self._lock:
             self._owners = {b: o for b, o in self._owners.items() if o != entry_id}
+            self._running.pop(entry_id, None)
+
+    def register(self, entry_id: str, coordinator: PyTapDataUpdateCoordinator) -> None:
+        with self._lock:
+            self._running[entry_id] = coordinator
+
+    def unregister(self, entry_id: str, coordinator: PyTapDataUpdateCoordinator) -> None:
+        with self._lock:
+            if self._running.get(entry_id) is coordinator:
+                del self._running[entry_id]
+
+    def running(self, entry_id: str) -> PyTapDataUpdateCoordinator | None:
+        with self._lock:
+            return self._running.get(entry_id)
+
+    def release_energy(self, barcode: str, acc: EnergyAccumulator, entry_id: str) -> None:
+        """Keep a removed optimizer's lifetime energy for whoever tracks it next."""
+        with self._lock:
+            self.released[barcode] = {
+                "total_energy_wh": round(acc.total_energy_wh, 2),
+                "estimated_total_wh": round(acc.estimated_total_wh, 2),
+                "released_at": dt_util.utcnow().isoformat(),
+                "from_entry": entry_id,
+            }
+        self._schedule_save()
+
+    def take_released(self, barcode: str) -> dict[str, Any] | None:
+        """Hand a released optimizer's lifetime energy to its new entry."""
+        with self._lock:
+            carried = self.released.pop(barcode, None)
+        if carried is not None:
+            self._schedule_save()
+        return carried
+
+    def _schedule_save(self) -> None:
+        if self._store is None or self._hass is None:
+            return
+        self._hass.loop.call_soon_threadsafe(
+            self._store.async_delay_save, self._released_payload, 1
+        )
+
+    def _released_payload(self) -> dict[str, Any]:
+        with self._lock:
+            return {"released": dict(self.released)}
+
+    async def async_load_released(self) -> None:
+        if self._store is not None and (stored := await self._store.async_load()):
+            with self._lock:
+                self.released = dict(stored.get("released", {}))
 
 
-def barcode_claims(hass: HomeAssistant) -> BarcodeClaims:
-    """The shared claim map (created on the event loop before any listener)."""
-    return hass.data.setdefault(f"{DOMAIN}_barcode_claims", BarcodeClaims())
+async def async_barcode_owners(hass: HomeAssistant) -> BarcodeOwners:
+    """The shared ownership map, filled from every entry's saved modules once."""
+    key = f"{DOMAIN}_barcode_owners"
+    if (owners := hass.data.get(key)) is not None:
+        return owners
+    owners = BarcodeOwners(hass)
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        barcodes = {
+            m[CONF_MODULE_BARCODE]
+            for m in entry.data.get(CONF_MODULES, [])
+            if m.get(CONF_MODULE_BARCODE)
+        }
+        try:
+            stored = await coordinator_store(hass, entry.entry_id).async_load() or {}
+        except Exception:  # noqa: BLE001 - an unreadable store just adds nothing
+            stored = {}
+        excluded = set(entry.data.get(CONF_EXCLUDED_BARCODES, []))
+        barcodes |= {
+            m[CONF_MODULE_BARCODE]
+            for m in stored.get("auto_modules", [])
+            if isinstance(m, dict) and m.get(CONF_MODULE_BARCODE)
+        } - excluded
+        owners.set_entry(entry.entry_id, barcodes)
+    await owners.async_load_released()
+    # Another setup may have finished first while this one awaited.
+    return hass.data.setdefault(key, owners)
+
+
+def barcode_owners(hass: HomeAssistant) -> BarcodeOwners:
+    """The ownership map (async_barcode_owners runs first, in entry setup)."""
+    return hass.data.setdefault(f"{DOMAIN}_barcode_owners", BarcodeOwners(hass))
 
 
 class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -295,7 +404,8 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._auto_discovery: bool = bool(entry.data.get(CONF_AUTO_DISCOVERY, False))
         self._excluded_barcodes: set[str] = set(entry.data.get(CONF_EXCLUDED_BARCODES, []))
         self._auto_modules: dict[str, dict[str, Any]] = {}
-        self._foreign_barcodes: set[str] = set()
+        # Optimizers owned by another PyTap entry: barcode -> that entry's ID.
+        self._foreign_barcodes: dict[str, str] = {}
         self._live_reporting: bool = entry.data.get(
             CONF_LIVE_REPORTING, DEFAULT_LIVE_REPORTING
         )
@@ -326,15 +436,24 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if m.get(CONF_MODULE_BARCODE)
         }
 
-        # A barcode belongs to one PyTap entry at most (claimed on the loop
-        # here, atomically from the listener later).
-        self._claims = barcode_claims(hass)
+        # A barcode belongs to one PyTap entry at most: a configured optimizer
+        # that another entry owns isn't tracked here (no entities, no energy);
+        # a repair issue says to remove it there first (an optimizer moved to
+        # this bus) or that two connections hear the same bus.
+        self._owners = barcode_owners(hass)
         for barcode in sorted(self._configured_barcodes):
-            if not self._claims.claim(barcode, entry.entry_id):
-                self._log.warning(
-                    "Optimizer %s is configured here but another PyTap entry tracks it",
-                    barcode,
-                )
+            owner = self._owners.owner(barcode)
+            if owner not in (None, entry.entry_id):
+                self._foreign_barcodes[barcode] = owner
+                self._configured_barcodes.discard(barcode)
+                self._module_lookup.pop(barcode, None)
+        self._modules = [
+            m for m in self._modules if m.get(CONF_MODULE_BARCODE) not in self._foreign_barcodes
+        ]
+        self._owners.set_entry(entry.entry_id, set(self._configured_barcodes))
+        # Owned-elsewhere optimizers also heard here: barcode -> monotonic time.
+        self._foreign_heard: dict[str, float] = {}
+        self._duplicate_of: str | None = None
 
         # Barcode ↔ node_id mapping learned from InfrastructureEvents
         self._barcode_to_node: dict[str, int] = {}
@@ -628,9 +747,131 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Saved state, including discovered modules, was restored."""
         return self._store_restored
 
-    def release_barcode_claims(self) -> None:
-        """Let other entries track this entry's optimizers (unload or removal)."""
-        self._claims.release_entry(self.config_entry.entry_id)
+    @property
+    def duplicate_of(self) -> str | None:
+        """Entry ID of another entry hearing the same bus (listener stopped)."""
+        return self._duplicate_of
+
+    @property
+    def foreign_barcodes(self) -> dict[str, str]:
+        """Optimizers owned by another entry: barcode -> that entry's ID."""
+        return dict(self._foreign_barcodes)
+
+    def _accumulator(self, barcode: str, today: str) -> EnergyAccumulator:
+        """This optimizer's energy counters; a new one continues a released
+        lifetime count (an optimizer moved here from another entry)."""
+        acc = self._energy_state.get(barcode)
+        if acc is None:
+            acc = EnergyAccumulator(daily_reset_date=today)
+            if carried := self._owners.take_released(barcode):
+                acc.total_energy_wh = float(carried.get("total_energy_wh", 0.0))
+                acc.estimated_total_wh = float(carried.get("estimated_total_wh", 0.0))
+                self._log.info(
+                    "Continuing %s's lifetime energy from its previous PyTap entry (%.1f Wh)",
+                    self._module_label(barcode),
+                    acc.total_energy_wh,
+                )
+            self._energy_state[barcode] = acc
+        return acc
+
+    def last_report_mono(self, barcode: str) -> float | None:
+        """When ``barcode`` last reported here (monotonic), if it has."""
+        return self._last_report.get(barcode)
+
+    def _entry_title(self, entry_id: str) -> str:
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        return entry.title if entry is not None else entry_id
+
+    def _note_owned_elsewhere(self, barcode: str, owner: str) -> None:
+        """An optimizer owned by another entry was heard here (listener thread).
+
+        It isn't tracked; a repair issue lists it. If at least a few of them
+        are reporting to their owner at the same time, while none of this
+        entry's own optimizers report, this connection hears the same bus as
+        that entry (a second converter or proxy on one bus): its listener
+        stops until the connection is fixed (review of azebro/pytap#37).
+        """
+        now = time.monotonic()
+        first = barcode not in self._foreign_heard
+        self._foreign_heard[barcode] = now
+        self._foreign_barcodes.setdefault(barcode, owner)
+        if first:
+            self._log.warning(
+                "Optimizer %s is heard here but another PyTap entry owns it; "
+                "remove it from that entry to track it here",
+                barcode,
+            )
+            self.hass.loop.call_soon_threadsafe(self._async_update_owned_elsewhere_issue)
+        if self._duplicate_of is not None or (other := self._owners.running(owner)) is None:
+            return
+        window = DUPLICATE_BUS_WINDOW_SECONDS
+        concurrent = [
+            b
+            for b, heard in self._foreign_heard.items()
+            if self._foreign_barcodes.get(b) == owner
+            and now - heard < window
+            and (last := other.last_report_mono(b)) is not None
+            and now - last < window
+        ]
+        own_recent = any(
+            now - self._last_report.get(b, -window) < window for b in self._configured_barcodes
+        )
+        needed = min(DUPLICATE_BUS_MIN_OPTIMIZERS, max(1, other.module_count))
+        if len(concurrent) >= needed and not own_recent:
+            self._duplicate_of = owner
+            self.hass.loop.call_soon_threadsafe(self._async_stop_duplicate)
+
+    @callback
+    def _async_update_owned_elsewhere_issue(self) -> None:
+        """List the owned-elsewhere optimizers heard here in a repair issue."""
+        issue_id = f"owned_elsewhere_{self.config_entry.entry_id}"
+        by_owner: dict[str, list[str]] = {}
+        for barcode in sorted(self._foreign_heard):
+            if owner := self._foreign_barcodes.get(barcode):
+                by_owner.setdefault(owner, []).append(barcode)
+        if not by_owner:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="optimizers_owned_elsewhere",
+            translation_placeholders={
+                "entry": self.config_entry.title,
+                "optimizers": "\n".join(
+                    f"- {self._entry_title(owner)}: {', '.join(barcodes)}"
+                    for owner, barcodes in by_owner.items()
+                ),
+            },
+        )
+
+    @callback
+    def _async_stop_duplicate(self) -> None:
+        """Stop listening: this connection hears another entry's bus."""
+        if self._duplicate_of is None:
+            return
+        other = self._entry_title(self._duplicate_of)
+        self._log.error(
+            "This connection hears the same Tigo bus as PyTap entry %s, so it "
+            "has stopped. Remove or rewire the extra converter or proxy, or "
+            "fix this entry's connection settings",
+            other,
+        )
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            f"duplicate_bus_{self.config_entry.entry_id}",
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key="duplicate_bus",
+            translation_placeholders={"entry": self.config_entry.title, "other": other},
+        )
+        self.config_entry.async_create_background_task(
+            self.hass, self.async_stop_listener(), name="pytap_duplicate_bus_stop"
+        )
 
     def _add_discovered_module(
         self, barcode: str, node_id: int | None = None, restored: dict[str, Any] | None = None
@@ -645,10 +886,12 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
         if not self._auto_discovery and restored is None:
             return False
-        if not self._claims.claim(barcode, self.config_entry.entry_id):
-            if barcode not in self._foreign_barcodes:
-                self._foreign_barcodes.add(barcode)
-                self._log.info("Not tracking %s: another PyTap entry tracks it", barcode)
+        if not self._owners.try_take(barcode, self.config_entry.entry_id):
+            if (owner := self._owners.owner(barcode)) is not None:
+                if restored is None:  # heard just now
+                    self._note_owned_elsewhere(barcode, owner)
+                else:  # only remembered: keep its energy here, don't report it
+                    self._foreign_barcodes.setdefault(barcode, owner)
             return False
         module: dict[str, Any] = {
             CONF_MODULE_BARCODE: barcode,
@@ -674,6 +917,10 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._state["nodes"].setdefault(barcode, payload)
             self._mark_changed(None)  # platforms add the new entities
         self._schedule_save()
+        if self._foreign_heard.pop(barcode, None) is not None:
+            # It was owned elsewhere and has been released there.
+            self.hass.loop.call_soon_threadsafe(self._async_update_owned_elsewhere_issue)
+        self._foreign_barcodes.pop(barcode, None)
         self._log.info("Automatically tracking Tigo optimizer %s", barcode)
         return True
 
@@ -883,9 +1130,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 energy_wh += new_est[barcode] * max(0.0, now - cursor) / 3600
                 self._est_cursor[barcode] = now
             if energy_wh > 0:
-                acc = self._energy_state.setdefault(
-                    barcode, EnergyAccumulator(daily_reset_date=today)
-                )
+                acc = self._accumulator(barcode, today)
                 add_estimated_energy(acc, energy_wh, today)
                 self._schedule_save()
 
@@ -1951,6 +2196,11 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Check if this barcode is in our configured allowlist
         if barcode not in self._configured_barcodes:
+            owner = self._owners.owner(barcode)
+            if owner not in (None, self.config_entry.entry_id):
+                # Another entry owns it: moved here, or a duplicate connection.
+                self._note_owned_elsewhere(barcode, owner)
+                return True
             if barcode not in self._discovered_barcodes:
                 self._discovered_barcodes.add(barcode)
                 self._state["discovered_barcodes"] = sorted(self._discovered_barcodes)
@@ -2019,10 +2269,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             performance = (max(event.power, 0.0) / peak_power) * 100.0
         now = dt_util.now()
 
-        acc = self._energy_state.setdefault(
-            barcode,
-            EnergyAccumulator(daily_reset_date=now.date().isoformat()),
-        )
+        acc = self._accumulator(barcode, now.date().isoformat())
         previous_ts = acc.last_reading_ts
         first_since_start = barcode not in self._seen_since_start
         self._seen_since_start.add(barcode)
@@ -2539,6 +2786,27 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 estimated_total_wh=float(energy_data.get("estimated_total_wh", 0.0)),
             )
 
+        # Optimizers removed from this entry hand their lifetime energy over,
+        # so the entry that tracks them next continues the count. Ones that
+        # are still configured but owned elsewhere keep theirs here.
+        released = [
+            barcode
+            for barcode in self._energy_state
+            if barcode not in self._configured_barcodes
+            and barcode not in self._foreign_barcodes
+        ]
+        for barcode in released:
+            self._owners.release_energy(
+                barcode, self._energy_state.pop(barcode), self.config_entry.entry_id
+            )
+        if released:
+            self._log.info(
+                "Released the lifetime energy of %d removed optimizer(s) for the "
+                "entry that tracks them next",
+                len(released),
+            )
+            self._schedule_save()
+
         # Restore last known node snapshots for configured barcodes, and
         # merge energy accumulator values where available.
         node_snapshots = stored.get("node_snapshots", {})
@@ -2722,10 +2990,7 @@ class PyTapDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if barcode not in self._state["nodes"]:
                 module_meta = self._module_lookup.get(barcode, {})
                 now = dt_util.now()
-                acc = self._energy_state.setdefault(
-                    barcode,
-                    EnergyAccumulator(daily_reset_date=now.date().isoformat()),
-                )
+                acc = self._accumulator(barcode, now.date().isoformat())
                 self._state["nodes"][barcode] = {
                     "gateway_id": None,
                     "node_id": self._barcode_to_node[barcode],

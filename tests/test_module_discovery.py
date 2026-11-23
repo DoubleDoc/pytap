@@ -31,7 +31,10 @@ from custom_components.pytap.const import (
     DEFAULT_PORT,
     DOMAIN,
 )
-from custom_components.pytap.coordinator import PyTapDataUpdateCoordinator
+from custom_components.pytap.coordinator import (
+    PyTapDataUpdateCoordinator,
+    barcode_owners,
+)
 from custom_components.pytap.pytap.core.events import (
     InfrastructureEvent,
     PowerReportEvent,
@@ -92,7 +95,6 @@ async def test_manual_mode_and_exclusions_are_respected(hass) -> None:
     manual = _coordinator(hass, entry_id="m", auto=False)
     _hear(manual)
     assert NEW not in manual.configured_barcodes
-    manual.release_barcode_claims()
     excluded = _coordinator(hass, entry_id="x", excluded=[NEW])
     _hear(excluded)
     assert NEW not in excluded.configured_barcodes
@@ -105,9 +107,11 @@ async def test_one_entry_per_barcode(hass) -> None:
     _hear(second)
     assert NEW in first.configured_barcodes
     assert NEW not in second.configured_barcodes
-    first.release_barcode_claims()
+    # Unloading doesn't free it (review of azebro/pytap#37); removing it does.
+    barcode_owners(hass).set_entry("one", {KNOWN})
     _hear(second, node_id=8)
     assert NEW in second.configured_barcodes
+    assert NEW not in second.foreign_barcodes
 
 
 async def test_discovered_modules_survive_a_restart(hass) -> None:
@@ -115,7 +119,6 @@ async def test_discovered_modules_survive_a_restart(hass) -> None:
     _hear(coordinator)
     with coordinator._state_lock:
         saved = coordinator._save_payload()
-    coordinator.release_barcode_claims()
 
     restored = _coordinator(hass, auto=False)  # even with discovery now off
     restored._store = MagicMock()

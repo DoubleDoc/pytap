@@ -88,7 +88,9 @@
       "invalid_serial_port": "Choose a serial device under /dev or a Home Assistant serial proxy.",
       "invalid_baud_rate": "Enter a baud rate from 1 to 4000000.",
       "unsupported_serial_settings": "The serial port doesn’t support these settings.",
-      "invalid_connection_type": "Unknown connection type."
+      "invalid_connection_type": "Unknown connection type.",
+      "endpoint_in_use": "Another PyTap entry already uses this converter (same address and port).",
+      "barcode_owned_elsewhere": "This optimizer belongs to {owner}. Remove it there first."
     },
     "abort": {
       "already_configured": "This gateway is already configured."
@@ -265,7 +267,9 @@
           "change_stale": "Change stale reading behaviour",
           "change_discovery": "Change module discovery",
           "string_inverter": "Set a string's inverter",
-          "change_captures": "Change packet capture retention"
+          "change_captures": "Change packet capture retention",
+          "import_modules": "Import modules from CSV",
+          "export_modules": "Export modules as CSV"
         }
       },
       "change_connection": {
@@ -408,6 +412,21 @@
         "data": {
           "capture_keep_days": "Delete captures after (days)"
         }
+      },
+      "import_modules": {
+        "title": "Import modules from CSV",
+        "description": "Paste CSV text. The first line names the columns: `barcode` (required) and any of `name`, `string`, `peak_power` (0 = unknown) and `inverter` (the string's inverter; needs `string`). Only the columns given are changed. Optimizers not listed are left alone, and new barcodes are added. You'll see the changes before anything is applied, and they're saved with **Done**. Entity IDs don't change.\n\n```\nbarcode,name,string,peak_power,inverter\n4-5C393EP,P01,2,455,Master\n```\n\n{problems}",
+        "data": {
+          "csv": "CSV"
+        }
+      },
+      "import_confirm": {
+        "title": "Confirm import",
+        "description": "**{added}** new, **{changed}** changed, **{unchanged}** unchanged.\n\n{details}\n\nSubmit to apply, then select **Done** to save."
+      },
+      "export_modules": {
+        "title": "Module assignments (CSV)",
+        "description": "Copy this as a backup, or edit it and use **Import modules from CSV**.\n\n```\n{csv}```"
       }
     },
     "error": {
@@ -422,7 +441,13 @@
       "invalid_baud_rate": "Enter a baud rate from 1 to 4000000.",
       "unsupported_serial_settings": "The serial port doesn’t support these settings.",
       "invalid_connection_type": "Unknown connection type.",
-      "no_modules": "Add at least one module, or turn on discovery."
+      "no_modules": "Add at least one module, or turn on discovery.",
+      "invalid_barcode": "Invalid barcode format. Expected format like A-1234567B.",
+      "missing_barcode": "Barcode is required.",
+      "duplicate_barcode": "This barcode has already been added.",
+      "endpoint_in_use": "Another PyTap entry already uses this converter (same address and port).",
+      "barcode_owned_elsewhere": "This optimizer belongs to {owner}. Remove it there first.",
+      "csv_invalid": "The CSV has problems; nothing was imported:\n{problems}"
     }
   },
   "exceptions": {
@@ -494,6 +519,16 @@
         "hold": "Hold last value",
         "zero": "Zero"
       }
+    }
+  },
+  "issues": {
+    "optimizers_owned_elsewhere": {
+      "title": "Optimizers heard on {entry} belong to another PyTap entry",
+      "description": "These optimizers are heard on **{entry}** but are configured in another PyTap entry, so {entry} doesn't track them:\n\n{optimizers}\n\nIf they were moved to this bus, remove them from the other entry (Configure → Remove a module, or delete their devices). {entry} then picks them up, keeping their lifetime energy; set their string with Edit a module or Import modules from CSV. If they weren't moved, two connections may be hearing the same bus."
+    },
+    "duplicate_bus": {
+      "title": "{entry} hears the same Tigo bus as {other}",
+      "description": "**{entry}** receives the same optimizers' reports as **{other}** at the same time: two connections are listening to one Tigo bus. {entry} has stopped listening so nothing is counted twice.\n\nRemove or rewire the extra RS-485 converter or proxy, or fix {entry}'s connection (Configure → Change connection), or delete the entry you don't need. Fixing the connection restarts it."
     }
   }
 }

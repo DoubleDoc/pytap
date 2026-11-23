@@ -39,7 +39,7 @@ The parser library (`custom_components/pytap/pytap/`) has no Home Assistant impo
 | `__init__.py` | Setup, unload, removal, config entry migration, device removal from the UI, orphan device cleanup, registering the capture actions |
 | `config_flow.py` | Config flow (connection, discovery, modules) and options flow (connection, reporting, stale readings, inverter, discovery, modules, strings) |
 | `connection.py` | Validating TCP and serial settings, opening a byte source, titles and log labels that never show proxy URLs |
-| `coordinator.py` | The listener thread, listener-owned state, publishing, persistence, energy, reading health, estimates, discovery, barcode claims, capture control |
+| `coordinator.py` | The listener thread, listener-owned state, publishing, persistence, energy, reading health, estimates, discovery, barcode ownership and energy hand-off, duplicate-bus detection, capture control |
 | `energy.py` | Pure energy accumulation (trapezoidal Wh integration, midnight reset) |
 | `sensor.py` | Optimizer sensors, String / inverter / Total aggregates, Node mapping, Bus status, Module discovery, flag sensors |
 | `binary_sensor.py` | Flag binary sensors and Reading fault |
@@ -104,7 +104,7 @@ A version newer than the code knows is refused. Entity IDs are never changed by 
 - **TCP:** `pytap.core.source.TcpSource`, a blocking socket with a read timeout.
 - **Serial / ESPHome proxy:** `SerialProxySource`, which opens `serialx`'s async serial transport on Home Assistant's event loop and bridges it to the listener thread with bounded, timed reads. It never writes and never changes DTR/RTS.
 
-A port is exclusive to one entry (`serial_port_claimed()`, comparing resolved paths). Titles and log labels (`connection_title()`, `endpoint_label`) never contain proxy URLs.
+A connection is exclusive to one entry (`endpoint_in_use()`: serial ports by resolved path, TCP by port and resolved addresses). Titles and log labels (`connection_title()`, `endpoint_label`) never contain proxy URLs.
 
 The config and options flows test a connection when submitted (`connection_errors()`): an unreachable converter shows *Could not connect*, and submitting the same settings again saves them anyway, since a converter may simply be off.
 
@@ -142,11 +142,13 @@ Energy is always integrated from the raw readings, and persisted snapshots hold 
 5. **Energy:** `accumulate_energy()` integrates power into daily and lifetime Wh (trapezoids, gaps over `ENERGY_GAP_THRESHOLD_SECONDS` (120 s) not integrated, but bridged as estimated energy in some cases; see Estimates).
 6. **Node update:** measurements, performance (only with a known rating), temperature and RSSI only when valid, the raw `status` and `jstatus` flag bytes, `reading_fault: False`.
 
-### Discovery and barcode claims
+### Discovery and barcode ownership
 
 With `auto_discovery` on, `_add_discovered_module()` admits a barcode seen in a node table or power report, unless it's excluded or already tracked: name empty, string `Discovered`, `peak_power` 0. Discovered modules live in the coordinator (and the Store, as `auto_modules`), not in the config entry, so admitting one doesn't reload the entry; the platforms add entities from a coordinator listener. Saving the options flow moves them into `modules`.
 
-`BarcodeClaims` (one per Home Assistant instance) lets only one entry track a barcode, so two entries on one bus can't create clashing entities. Configured modules are claimed at setup, discovered ones as they appear; claims are released on unload.
+`BarcodeOwners` (one per Home Assistant instance, `async_barcode_owners()`) records which entry owns each barcode. It's filled once from every PyTap entry's saved modules, configured (`modules`) and discovered (the Store's `auto_modules`), whether or not the entry is loaded, in entry order: the first entry wins. Ownership lasts until the barcode is removed from that entry or the entry is deleted, not just until it unloads (review of azebro/pytap#37). A configured barcode owned elsewhere isn't tracked (no entities, no energy); discovery takes a barcode atomically (`try_take()`). A barcode owned elsewhere that's heard here goes in `_foreign_barcodes` and the `owned_elsewhere_<entry>` repair issue. If at least `DUPLICATE_BUS_MIN_OPTIMIZERS` (3) of them also report to their owning entry within `DUPLICATE_BUS_WINDOW_SECONDS` (10 min), while none of this entry's own optimizers report, the connection hears the same bus as that entry: its listener stops and raises `duplicate_bus_<entry>`. Setup and the connection options refuse an endpoint another entry uses (`endpoint_in_use()`).
+
+**Lifetime energy hand-off.** Energy counters are kept per entry, by barcode, in that entry's Store. When an entry loads and has energy for a barcode it no longer tracks (removed), it moves the lifetime figures into `BarcodeOwners.released` (its own Store, `pytap_released_energy`); deleting an entry releases all of its optimizers. An entry starting a counter for a barcode (`_accumulator()`) first takes a released record, so the count continues on the new bus.
 
 ### Reading health
 

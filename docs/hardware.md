@@ -21,7 +21,7 @@ Serial ports and proxies are opened at 38400 baud, 8N1; PyTap never changes DTR/
 
 ### Serial and ESPHome notes
 
-- **One entry per port.** A port, or an ESPHome proxy, can be used by only one PyTap entry. A `/dev/serial/by-id/…` link counts as the same port as the device it points to, and a port still held by a PyTap entry that is shutting down counts as in use until it's released.
+- **One entry per port.** A port, or an ESPHome proxy, can be used by only one PyTap entry (and a converter's address and port likewise; see [One entry per bus](configuration.md#one-entry-per-bus-one-bus-per-optimizer)). A `/dev/serial/by-id/…` link counts as the same port as the device it points to, and a port still held by a PyTap entry that is shutting down counts as in use until it's released.
 - **Permissions.** A local USB or serial adapter must be passed through to the Home Assistant host or container with access to the device.
 - **Pick the discovered port.** Choose the port from Home Assistant's list rather than typing a path, so its identity is kept if device names change.
 - **A missing proxy is retried**, never swapped for a different port. If you remove and re-add the ESPHome device in Home Assistant, pick its port again under **Configure → Change connection settings**.

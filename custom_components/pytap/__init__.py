@@ -16,6 +16,7 @@ from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.typing import ConfigType
 
 from .capture_services import async_remove_captures, register_capture_services
@@ -47,9 +48,12 @@ from .const import (
 from .coordinator import (
     PyTapConfigEntry,
     PyTapDataUpdateCoordinator,
+    async_barcode_owners,
+    barcode_owners,
     coordinator_store,
     parked_coordinators,
 )
+from .energy import EnergyAccumulator
 from .naming import string_inverter
 
 _LOGGER = logging.getLogger(__name__)
@@ -115,10 +119,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: PyTapConfigEntry) -> boo
             )
         if parked.get(entry.entry_id) is previous:
             del parked[entry.entry_id]
-        previous.release_barcode_claims()
+        barcode_owners(hass).unregister(entry.entry_id, previous)
 
     # --- Legacy entity migration (voltage/current → voltage_in/out, current_in/out) ---
     await _async_cleanup_legacy_entities(hass, entry)
+
+    # Which entry owns each optimizer, from every entry's saved modules
+    # (loaded or not). Repair issues are raised again if they still apply.
+    owners = await async_barcode_owners(hass)
+    for issue in ("owned_elsewhere", "duplicate_bus"):
+        ir.async_delete_issue(hass, DOMAIN, f"{issue}_{entry.entry_id}")
 
     try:
         coordinator = PyTapDataUpdateCoordinator(hass, entry)
@@ -133,6 +143,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: PyTapConfigEntry) -> boo
     try:
         # Validates that the coordinator can be initialised; does not block on data
         await coordinator.async_config_entry_first_refresh()
+        owners.register(entry.entry_id, coordinator)
         await coordinator.async_start_listener()
         # Skipped if saved state couldn't be read: discovered modules unknown.
         if coordinator.store_loaded:
@@ -206,7 +217,7 @@ async def _async_stop_or_park(
         stopped = await coordinator.async_stop_listener()
     finally:
         if stopped:
-            coordinator.release_barcode_claims()
+            barcode_owners(hass).unregister(entry_id, coordinator)
         else:
             _async_park(hass, entry_id, coordinator)
     return stopped
@@ -228,7 +239,7 @@ def _async_park(
         if parked.get(entry_id) is coordinator and await coordinator.async_stop_listener():
             if parked.get(entry_id) is coordinator:
                 del parked[entry_id]
-                coordinator.release_barcode_claims()
+                barcode_owners(hass).unregister(entry_id, coordinator)
 
     @callback
     def _async_listener_exited() -> None:
@@ -250,9 +261,28 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
             _LOGGER.warning(
                 "PyTap listener is still stopping; deleting its captures and saved state anyway"
             )
-        coordinator.release_barcode_claims()
     await async_remove_captures(hass, entry.entry_id)
-    await coordinator_store(hass, entry.entry_id).async_remove()
+    store = coordinator_store(hass, entry.entry_id)
+    # Hand every optimizer's lifetime energy over before the state is
+    # deleted, so an entry that tracks them later continues the count.
+    owners = await async_barcode_owners(hass)
+    try:
+        stored = await store.async_load() or {}
+    except Exception:  # noqa: BLE001 - nothing to hand over
+        stored = {}
+    for barcode, energy in stored.get("energy_data", {}).items():
+        try:
+            acc = EnergyAccumulator(
+                total_energy_wh=float(energy.get("total_energy_wh", 0.0)),
+                estimated_total_wh=float(energy.get("estimated_total_wh", 0.0)),
+            )
+        except (TypeError, ValueError, AttributeError):
+            continue
+        owners.release_energy(barcode, acc, entry.entry_id)
+    owners.forget_entry(entry.entry_id)
+    for issue in ("owned_elsewhere", "duplicate_bus"):
+        ir.async_delete_issue(hass, DOMAIN, f"{issue}_{entry.entry_id}")
+    await store.async_remove()
 
 
 async def async_remove_config_entry_device(
