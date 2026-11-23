@@ -45,9 +45,13 @@ The W and Wh units tell power and energy apart, and the readings count has its o
 
 Problems show the same way in both modes, so a silent panel is red whichever you're looking at.
 
-![PV Panels view at dusk coloured by energy: P01 and P02 of the 12-panel string amber, P03 holding](images/panels-view-energy-dusk-holding.png)
+![PV Panels view at midday coloured by power: P05 of the 12-panel string amber, estimated at about 347 W](images/panels-view-power-estimated.png)
 
-*About 17:17 at dusk, coloured by energy. On the 12-panel string, P01 and P02 have stopped reporting while the rest of their string still reports, so their share of the string total is estimated: the tiles are amber. (This screenshot predates PyTap 1.6.2; estimated tiles now show the estimate, such as `~85 W`, instead of `Est.`) P03 missed its latest report and shows its last value as `1 W*` (holding).*
+*Midday, coloured by power (example data). P05 on the 12-panel string has stopped reporting for a few minutes while its neighbours make 349–361 W, so PyTap estimates it from them: the tile is amber and shows the estimate, `~347 W`. Its own Power sensor keeps its last reading; the string and total use the estimate.*
+
+![PV Panels view at dusk coloured by energy: P01 and P02 of the 12-panel string amber at about 2 W, P03 holding at 1 W*](images/panels-view-energy-dusk-holding.png)
+
+*Dusk, coloured by energy (example data, matching what happens here around 17:15). On the 12-panel string, P01 and P02 have stopped reporting while the rest of their string still reports, so their share is estimated: the tiles are amber and show the estimate, `~2 W`. P03 missed its latest report and shows its last value as `1 W*` (holding).*
 
 ![Two minutes later: P01 to P03 amber](images/panels-view-energy-dusk-estimated.png)
 

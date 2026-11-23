@@ -13,11 +13,13 @@
 
 <table>
   <tr>
-    <td width="50%"><img src="https://raw.githubusercontent.com/DoubleDoc/pytap/main/dashboards/images/panels-view-power-midday.png" alt="The PV Panels view coloured by power at midday"></td>
-    <td width="50%"><img src="https://raw.githubusercontent.com/DoubleDoc/pytap/main/dashboards/images/panels-view-power-night.png" alt="At night, coloured by power: every panel asleep at 0 W, with the day's energy and readings"></td>
+    <td width="33%"><img src="https://raw.githubusercontent.com/DoubleDoc/pytap/main/dashboards/images/panels-view-power-midday.png" alt="The PV Panels view coloured by power at midday"></td>
+    <td width="33%"><img src="https://raw.githubusercontent.com/DoubleDoc/pytap/main/dashboards/images/panels-view-power-estimated.png" alt="A panel that stopped reporting at midday, shown amber with its estimate of about 347 W"></td>
+    <td width="33%"><img src="https://raw.githubusercontent.com/DoubleDoc/pytap/main/dashboards/images/panels-view-power-night.png" alt="At night, coloured by power: every panel asleep at 0 W, with the day's energy and readings"></td>
   </tr>
   <tr>
     <td><sub>Coloured by power</sub></td>
+    <td><sub>A quiet panel estimated from its string (example data)</sub></td>
     <td><sub>At night: asleep at 0 W, the day's totals kept</sub></td>
   </tr>
 </table>

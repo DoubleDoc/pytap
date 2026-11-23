@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Dashboard screenshots** — New example-data screenshots of estimated tiles (`~347 W` at midday, `~2 W` at dusk) replace the dusk screenshots from before 1.6.2, and the estimated view joins the README's front row.
+
 ## [1.7.0] - 2026-11-23
 
 Module management, from [Adam Zebrowski](https://github.com/azebro)'s review of the upstream [PR #37](https://github.com/azebro/pytap/pull/37), simplified to one rule: one entry per bus, one entry per optimizer.
