@@ -4,6 +4,7 @@
 
 ### Changed
 
+- **Setup docs lead with the CSV import** — Assigning modules from the installation's spreadsheet is now the recommended route in [Configuration](docs/configuration.md#step-2-assign-your-modules) and the README's quick start; discovery and one-at-a-time forms follow as the alternatives. Examples use made-up barcodes.
 - **Dashboard screenshots** — New example-data screenshots of estimated tiles (`~347 W` at midday, `~2 W` at dusk) replace the dusk screenshots from before 1.6.2, and the estimated view joins the README's front row.
 
 ## [1.7.0] - 2026-11-23
@@ -103,7 +104,7 @@ The changes below are ported from [Tim Laing](https://github.com/timlaing)'s ups
 
 ### Changed
 
-- **Optimizer entity IDs are the barcode** — New optimizer entities are named `sensor.tigo_<barcode>_<measurement>` (`sensor.tigo_4_5db467z_power`), so moving a module to another string or inverter, or renaming it, never changes them. Device names (and so entity names) still read `Tigo [inverter] [string] [module]` and follow every change. Existing entity IDs are not changed.
+- **Optimizer entity IDs are the barcode** — New optimizer entities are named `sensor.tigo_<barcode>_<measurement>` (`sensor.tigo_4_000010j_power`), so moving a module to another string or inverter, or renaming it, never changes them. Device names (and so entity names) still read `Tigo [inverter] [string] [module]` and follow every change. Existing entity IDs are not changed.
 - **Inverter per string** — For one CCA serving several inverters, **Configure → Set a string's inverter** names the inverter each string is wired to. Strings left unset feed the entry's inverter. Device names follow; once strings feed more than one inverter, each inverter gets its own Total device (power, energy, performance; entity IDs `sensor.tigo_inverter_<name>_…`) and the entry's Total becomes the CCA total (`Tigo [inverter] CCA Total`).
 - **Config entry migration from any source** — Entries from upstream (v5), Tim Laing's PR stack (v6 serial, v7 discovery) or earlier fork versions all migrate to v8 by adding only missing settings, so a serial entry stays serial and a discovery choice is kept.
 - **Health checks re-render only what changed** — When an optimizer goes quiet or comes back, only its entities and the strings and totals containing it are refreshed, instead of every entity. (#34)

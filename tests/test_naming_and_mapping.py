@@ -69,8 +69,8 @@ def test_string_label() -> None:
 def test_device_names_with_inverter() -> None:
     """Multi-gateway installs put the inverter first."""
     assert optimizer_device_name("Master", "2", "P01") == "Tigo Master S2 P01"
-    assert optimizer_device_name("Master", "Discovered", "", "4-5DB467Z") == (
-        "Tigo Master Discovered 4-5DB467Z"
+    assert optimizer_device_name("Master", "Discovered", "", "4-000010J") == (
+        "Tigo Master Discovered 4-000010J"
     )
     assert string_device_name("Master", "2") == "Tigo Master String 2"
     assert total_device_name("Master") == "Tigo Master Total"
@@ -350,7 +350,7 @@ async def test_options_rename_string_rejects_existing_name(
 def test_optimizer_entity_ids_are_the_barcode() -> None:
     from custom_components.pytap.naming import optimizer_object_id
 
-    assert optimizer_object_id("4-5DB467Z") == "tigo_4_5db467z"
+    assert optimizer_object_id("4-000010J") == "tigo_4_000010j"
 
 
 async def test_migration_keeps_settings_from_any_source(hass: HomeAssistant) -> None:

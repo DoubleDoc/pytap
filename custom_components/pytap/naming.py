@@ -16,7 +16,7 @@ Examples::
     inverter="",       string="East", module="P01" -> "Tigo East P01"
 
 Optimizer entity IDs are built from the barcode alone, which never changes:
-``sensor.tigo_4_5db467z_power``. Moving a module to another string or
+``sensor.tigo_4_000010j_power``. Moving a module to another string or
 inverter, or renaming it, never changes them. Entity IDs that already exist
 are never changed.
 """
@@ -52,7 +52,7 @@ def optimizer_device_name(
 
 
 def optimizer_object_id(barcode: str) -> str:
-    """Entity ID base of an optimizer: ``tigo_4_5db467z``."""
+    """Entity ID base of an optimizer: ``tigo_4_000010j``."""
     return slugify(_join(PREFIX, barcode))
 
 

@@ -4,7 +4,7 @@
 
 ## Optimizer sensors
 
-Each Tigo TS4 optimizer PyTap tracks (added by hand or by [discovery](configuration.md#step-2-add-modules)) has these sensors:
+Each Tigo TS4 optimizer PyTap tracks (imported from a spreadsheet, discovered or added by hand; see [Assign your modules](configuration.md#step-2-assign-your-modules)) has these sensors:
 
 | Sensor | Unit | Device Class |
 | --- | --- | --- |
@@ -70,7 +70,7 @@ Each gateway (each PyTap entry, i.e. each CCA) has a **Bus status** sensor on it
 While the status isn't normal, the `last_data` attribute shows when data last arrived.
 ## Device naming
 
-**Entity IDs are the optimizer's barcode**, which never changes: `sensor.tigo_4_5db467z_power` for barcode `4-5DB467Z`. Moving a module to another string or inverter, renaming it, or changing its position never changes its entity IDs, so dashboards, automations and history keep working through maintenance. The barcode is printed on the optimizer and shown on its device page.
+**Entity IDs are the optimizer's barcode**, which never changes: `sensor.tigo_4_000010j_power` for barcode `4-000010J`. Moving a module to another string or inverter, renaming it, or changing its position never changes its entity IDs, so dashboards, automations and history keep working through maintenance. The barcode is printed on the optimizer and shown on its device page.
 
 **Device names are for reading** and follow every change. They're built from up to four levels, leaving out any that aren't set:
 

@@ -18,25 +18,53 @@ PyTap is configured entirely through the Home Assistant UI — no YAML needed.
 > to save them anyway. PyTap then keeps retrying in the background and connects
 > when the converter becomes available.
 
-## Step 2: Add Modules
+## Step 2: Assign your modules
 
-After entering connection details, you'll see a modules menu. **Module discovery** is on by default for new setups, so you can select **Finish setup** without adding anything:
+PyTap needs to know each optimizer's **barcode**, and for useful names and totals also its **name** (position), **string**, **rating** and, with several inverters on one CCA, each string's **inverter**. There are three ways to give it this; most installations should use the first.
 
-- **Discovery on (Automatic):** every optimizer PyTap hears on the bus is added by itself, usually the first morning after setup (see [First start](#first-start-what-to-expect)). It starts with no name (its device is `Tigo [inverter] Discovered <barcode>`; its entity IDs are `sensor.tigo_<barcode>_…`, as for every optimizer), in string **Discovered**, with an unknown rating (0 Wp). Until it has a rating, its performance entities and those of the totals it belongs to are disabled. Name it, set its string and rating under **Configure → Edit a module**. Its entity IDs don't change. Discovery only listens; it never sends anything to the gateway.
-- **Discovery off (Manual):** only the modules you add are tracked. Turn it off under **Module discovery**.
+### Recommended: import a spreadsheet (CSV)
 
-You can also add modules yourself, with or without discovery:
+Most Tigo installations already have this data in a spreadsheet: the installer's commissioning sheet or the panel layout lists every optimizer's barcode next to its panel. Importing that sheet is usually the quickest and least error-prone way to set up, and it's the same for 6 panels or 600.
 
-1. Click **"Add a module"**.
-2. Fill in the fields:
-   - **String group** — Required label to group optimizers by string (e.g., `1`, `2`, `East`).
-   - **Name** — The optimizer's position within the string (e.g., `P01`). The device name adds the inverter and string for you, so don't repeat them here.
-   - **Barcode** — The Tigo optimizer barcode printed on the module (e.g., `A-1234567B`).
-   - **Peak power (Wp)** — The panel's peak power rating in watts (1–1000, default 455 Wp). Used to calculate performance percentage.
-3. Repeat for each optimizer you want to monitor.
-4. Click **"Finish setup"** when done (with discovery off, add at least one module first).
+1. In Step 1's modules menu, leave **Module discovery** on and select **Finish setup**.
+2. Prepare the CSV. In your spreadsheet, keep (or add) these columns, with these names in the first row, and save or export as CSV:
 
-Installations set up before discovery existed keep manual mode; turn discovery on under **Configure → Change module discovery**. A diagnostic **Module discovery** sensor on the Total device shows *Waiting for modules* until the first optimizer is tracked.
+   | Column | Required | Example | Meaning |
+   | --- | --- | --- | --- |
+   | `barcode` | yes | `4-000002B` | The barcode printed on the optimizer (`X-NNNNNNNC`) |
+   | `name` | | `P01` | The panel's position; device names add the inverter and string, so don't repeat them |
+   | `string` | | `2` | The string label (`1`, `2`, `East` …) |
+   | `peak_power` | | `455` | The panel's rating in Wp (0 = unknown), for performance % |
+   | `inverter` | | `Master` | The inverter this string is wired to, for one CCA with several inverters (needs `string`) |
+
+   ```csv
+   barcode,name,string,peak_power,inverter
+   4-000002B,P01,2,455,Master
+   4-000009I,P02,2,455,Master
+   4-000016P,P01,2,455,Slave
+   ```
+3. Go to **Settings → Devices & services → PyTap → Configure → Import modules from CSV**, paste the CSV text, and submit.
+4. Fix anything listed: every problem is shown with its line number (a mistyped barcode, a duplicate, a rating out of range, two inverters for one string), and nothing is applied until the whole sheet is valid.
+5. Check the preview (new, changed, unchanged) and submit, then select **Save and close**.
+
+You can import before the panels have ever been heard: the barcodes are tracked from then on and resolve at the first node table, normally the next morning (see [First start](#first-start-what-to-expect)). You can also import again at any time, for example after maintenance: only the columns in the sheet are changed, optimizers not in it are left alone, and entity IDs never change. **Configure → Export modules as CSV** gives the current assignments in the same format, as a backup or a starting point.
+
+### Automatic discovery
+
+**Module discovery** is on by default for new setups. Every optimizer PyTap hears on the bus is added by itself, usually the first morning after setup. A discovered optimizer has no name (its device is `Tigo [inverter] Discovered <barcode>`; its entity IDs are `sensor.tigo_<barcode>_…`, as for every optimizer), is in string **Discovered** and has an unknown rating (0 Wp); until it has a rating, its performance entities and those of the totals it belongs to are disabled. Discovery only listens; it never sends anything to the gateway.
+
+Discovery finds the optimizers but can't know where they are, so it works best together with a CSV import: discovery tracks everything on the bus, and the import names and assigns it. Without a spreadsheet, export the discovered optimizers (**Export modules as CSV**), fill in the columns, and import the result.
+
+Turn discovery off under **Module discovery** (or later **Configure → Change module discovery**) to track only the optimizers you list. Installations set up before discovery existed keep manual mode. A diagnostic **Module discovery** sensor on the Total device shows *Waiting for modules* until the first optimizer is tracked.
+
+### Secondary: adding or editing one module at a time
+
+For a single change, for example a replaced optimizer, the forms are quicker than a CSV:
+
+- **Add a module** (in the setup menu, or **Configure → Add a module**): enter the **String group**, **Name** (the position, such as `P01`), **Barcode** (such as `A-1234567B`) and **Peak power** (1–1000 Wp, default 455). With discovery off, add at least one module before **Finish setup**.
+- **Configure → Edit a module**: change one optimizer's name, string or rating, including discovered ones.
+
+For more than a few optimizers, use the CSV import instead.
 
 ## First start: what to expect
 
@@ -62,14 +90,14 @@ The log also explains what's happening: `Power report for node … waiting for n
 
 ## Finding Barcodes
 
-Barcodes are printed on each Tigo TS4 optimizer module. If you can't physically access them, PyTap will log any **unconfigured** barcodes it discovers on the bus:
+The installer's spreadsheet or panel layout usually lists every optimizer's barcode by panel, which is what the [CSV import](#recommended-import-a-spreadsheet-csv) needs. Barcodes are also printed on each Tigo TS4 optimizer module. If you have neither, PyTap logs any **unconfigured** barcodes it discovers on the bus:
 
 ```
 INFO: Discovered unconfigured Tigo optimizer barcode: A-9999999Z
       (gateway=1, node=55). Add it to your PyTap module list to start tracking.
 ```
 
-With [module discovery](#step-2-add-modules) on, they're added automatically instead, and the log says `Automatically tracking Tigo optimizer A-9999999Z`. Barcodes are discovered from the node table, so they appear in the log after the first node table is seen, normally the first morning after setup (see [First start: what to expect](#first-start-what-to-expect)).
+With [module discovery](#automatic-discovery) on, they're added automatically instead, and the log says `Automatically tracking Tigo optimizer A-9999999Z`. Barcodes are discovered from the node table, so they appear in the log after the first node table is seen, normally the first morning after setup (see [First start: what to expect](#first-start-what-to-expect)).
 
 ## Managing Modules After Setup
 
@@ -79,21 +107,15 @@ Go to **Settings → Devices & Services → PyTap → Configure** to:
 - **Change reporting settings** — Toggle live reporting, set the averaged reporting interval (see [Reporting modes](#reporting-modes)), and turn estimating silent optimizers on or off.
 - **Change stale reading behaviour** — What an optimizer's live sensors show at night and when silent by day (see [When readings stop](readings.md#when-readings-go-to-0-or-unavailable)).
 - **Change inverter name** — Set or clear the inverter name used in device names.
-- **Add** new optimizer modules (if the barcode was previously seen on the bus, it resolves instantly).
-- **Change module discovery** — Turn automatic discovery on or off (see [Step 2](#step-2-add-modules)). Turning it on also adds optimizers PyTap logged earlier in manual mode; turning it off keeps the ones already tracked.
+- **Import modules from CSV** — Name, assign, rate and set inverters for many optimizers at once (see [Import a spreadsheet](#recommended-import-a-spreadsheet-csv)). **Export modules as CSV** gives the current assignments in the same format.
+- **Add** a single optimizer module (if the barcode was previously seen on the bus, it resolves instantly).
+- **Change module discovery** — Turn automatic discovery on or off (see [Automatic discovery](#automatic-discovery)). Turning it on also adds optimizers PyTap logged earlier in manual mode; turning it off keeps the ones already tracked.
 - **Change packet capture retention** — How many days [packet captures](capture.md) are kept before they're deleted automatically (default 14; 0 keeps them).
 - **Edit** a module's string, name or peak power (0 = unknown), including discovered optimizers. The barcode can't be edited; remove and re-add the module to replace an optimizer.
   Entity IDs never change (see [Device naming](entities.md#device-naming)).
 - **Set a string's inverter** — For one CCA serving several inverters: name the inverter a string is wired to (see [Device naming](entities.md#device-naming)).
 - **Rename a string** for all of its modules. The String device's sensors keep their history.
 - **Remove** modules you no longer want to track. A removed optimizer is excluded, so discovery won't add it back; add it again to track it. You can also delete an optimizer's device from its device page (same effect), or an empty string device. The Total device and strings with modules can't be deleted.
-- **Import modules from CSV** — Name, assign and rate many optimizers at once, at any time. Paste CSV text whose first line names the columns: `barcode` (required) and any of `name`, `string`, `peak_power` (0 = unknown) and `inverter` (the string's inverter; needs `string`). Only the columns given are changed, optimizers not listed are left alone, and new barcodes are added. Every problem is listed with its line before anything is applied, then a preview shows what's new and what changes.
-  ```csv
-  barcode,name,string,peak_power,inverter
-  4-5C393EP,P01,2,455,Master
-  4-745B68W,P01,2,455,Slave
-  ```
-- **Export modules as CSV** — The current assignments in the same format, to keep as a backup or edit and import.
 - **Save and close** to apply changes.
 
 ## One entry per bus, one bus per optimizer

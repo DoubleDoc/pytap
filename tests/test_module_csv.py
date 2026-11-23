@@ -17,8 +17,8 @@ from custom_components.pytap.const import (
 )
 from custom_components.pytap.coordinator import barcode_owners
 
-A = "4-5C393EP"
-B = "4-745B68W"
+A = "4-000002B"
+B = "4-000016P"
 
 
 def test_parse_only_given_columns() -> None:
@@ -43,8 +43,8 @@ def test_parse_reports_every_problem_with_its_line() -> None:
         f"{A},2,9999,\n"
         f"{B},3,455,Master\n"
         f"{B},3,455,Master\n"
-        "4-5C3962J,3,455,Slave\n"
-        "4-5DB480M,,455,Master\n"
+        "4-000006F,3,455,Slave\n"
+        "4-000011K,,455,Master\n"
     )
     assert rows and len(problems) == 6
     assert problems[0] == "Unknown column(s): colour."
@@ -84,14 +84,14 @@ async def test_import_in_options(hass: HomeAssistant) -> None:
         },
     )
     entry.add_to_hass(hass)
-    barcode_owners(hass).set_entry("elsewhere", {"4-5DB480M"})
+    barcode_owners(hass).set_entry("elsewhere", {"4-000011K"})
     flow = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(
         flow["flow_id"], {"next_step_id": "import_modules"}
     )
     # A barcode owned by another entry is refused; nothing is applied.
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"csv": "barcode,string\n4-5DB480M,2\n"}
+        result["flow_id"], {"csv": "barcode,string\n4-000011K,2\n"}
     )
     assert result["errors"] == {"base": "csv_invalid"}
     assert "remove it there first" in result["description_placeholders"]["problems"]

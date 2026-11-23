@@ -232,7 +232,7 @@ Flag entities derive from `PyTapFlagEntity`: they write state only when it chang
 
 Optimizer devices link to their string's device by `via_device_id`: the sensor platform registers each string device first to get its registry ID (Home Assistant 2026.11 deprecated linking by identifier). Names are display-only and follow every edit.
 
-**Entity IDs.** Unique IDs are `pytap_<barcode>_<key>` for optimizer entities and `pytap_<entry_id>_<string|inverter|installation>_…` for aggregates. Optimizer entity IDs are set explicitly from the barcode (`sensor.tigo_4_5db467z_power`, `naming.optimizer_object_id()`), so moving, renaming or re-stringing a panel never changes them; inverter totals use `sensor.tigo_inverter_<name>_…` so they can't collide with the entry's Total. Existing entity IDs are never renamed.
+**Entity IDs.** Unique IDs are `pytap_<barcode>_<key>` for optimizer entities and `pytap_<entry_id>_<string|inverter|installation>_…` for aggregates. Optimizer entity IDs are set explicitly from the barcode (`sensor.tigo_4_000010j_power`, `naming.optimizer_object_id()`), so moving, renaming or re-stringing a panel never changes them; inverter totals use `sensor.tigo_inverter_<name>_…` so they can't collide with the entry's Total. Existing entity IDs are never renamed.
 
 ## Key design decisions
 

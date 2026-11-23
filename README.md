@@ -42,7 +42,8 @@ You need Home Assistant 2026.11 or later and a Tigo CCA with its TAP(s) and TS4 
 1. **Connect to the bus.** Wire an RS-485 to TCP converter (for example a Waveshare RS485 to Ethernet), a serial RS-485 adapter or an ESPHome serial proxy to the CCA's GATEWAY A and B terminals. [Hardware and wiring →](https://github.com/DoubleDoc/pytap/blob/main/docs/hardware.md)
 2. **Install.** In **Settings → Marketplace**, select **Add from link**, enter `DoubleDoc/pytap`, install **PyTap** and restart Home Assistant. [Installation →](https://github.com/DoubleDoc/pytap/blob/main/docs/installation.md)
 3. **Add the integration.** **Settings → Devices & services → Add integration → PyTap**, choose your connection, and select **Finish setup**: discovery adds your optimizers. [Configuration →](https://github.com/DoubleDoc/pytap/blob/main/docs/configuration.md)
-4. **Wait for sunrise.** PyTap learns which optimizer is which when the optimizers power up in the morning; after that, readings flow and restarts resolve straight away. [First start →](https://github.com/DoubleDoc/pytap/blob/main/docs/configuration.md#first-start-what-to-expect)
+4. **Import your panel list.** Most installations have a spreadsheet of optimizer barcodes by panel: save it as CSV (`barcode,name,string,peak_power,inverter`) and paste it under **Configure → Import modules from CSV** to name and assign every panel at once. [Import a spreadsheet →](https://github.com/DoubleDoc/pytap/blob/main/docs/configuration.md#recommended-import-a-spreadsheet-csv)
+5. **Wait for sunrise.** PyTap learns which optimizer is which when the optimizers power up in the morning; after that, readings flow and restarts resolve straight away. [First start →](https://github.com/DoubleDoc/pytap/blob/main/docs/configuration.md#first-start-what-to-expect)
 
 ## Documentation
 

@@ -415,7 +415,7 @@
       },
       "import_modules": {
         "title": "Import modules from CSV",
-        "description": "Paste CSV text. The first line names the columns: `barcode` (required) and any of `name`, `string`, `peak_power` (0 = unknown) and `inverter` (the string's inverter; needs `string`). Only the columns given are changed. Optimizers not listed are left alone, and new barcodes are added. You'll see the changes before anything is applied, and they're saved with **Done**. Entity IDs don't change.\n\n```\nbarcode,name,string,peak_power,inverter\n4-5C393EP,P01,2,455,Master\n```\n\n{problems}",
+        "description": "Paste CSV text. The first line names the columns: `barcode` (required) and any of `name`, `string`, `peak_power` (0 = unknown) and `inverter` (the string's inverter; needs `string`). Only the columns given are changed. Optimizers not listed are left alone, and new barcodes are added. You'll see the changes before anything is applied, and they're saved with **Done**. Entity IDs don't change.\n\n```\nbarcode,name,string,peak_power,inverter\n4-000002B,P01,2,455,Master\n```\n\n{problems}",
         "data": {
           "csv": "CSV"
         }

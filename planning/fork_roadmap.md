@@ -26,8 +26,8 @@ Discovery finds the optimizers, but naming them, putting them in strings, rating
 
 ```csv
 barcode,name,string,peak_power,inverter
-4-5C393EP,P01,2,455,Master
-4-745B68W,P01,2,455,Slave
+4-000002B,P01,2,455,Master
+4-000016P,P01,2,455,Slave
 ```
 
 - `barcode` required; the other columns optional, and only columns present are changed (so a sheet with just `barcode,name` renames).

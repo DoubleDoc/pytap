@@ -43,7 +43,7 @@ from custom_components.pytap.sensor import async_setup_entry as sensor_setup
 from tests.test_write_interval import MOCK_MODULES
 
 KNOWN = "A-1234567B"
-NEW = "4-5DB467Z"
+NEW = "4-000010J"
 
 
 def _entry(entry_id="disc", *, auto=True, excluded=(), modules=MOCK_MODULES):
@@ -141,11 +141,11 @@ async def test_discovered_entity_ids_use_the_barcode(hass) -> None:
     added: list = []
     await sensor_setup(hass, entry, added.extend)
     ids = {e.entity_id for e in added if getattr(e, "_barcode", None) == NEW}
-    assert "sensor.tigo_4_5db467z_power" in ids
-    assert "sensor.tigo_4_5db467z_data_validity" in ids
+    assert "sensor.tigo_4_000010j_power" in ids
+    assert "sensor.tigo_4_000010j_data_validity" in ids
     assert any(type(e).__name__ == "PyTapDiscoverySensor" for e in added)
     device_names = {e.device_info["name"] for e in added if getattr(e, "_barcode", None) == NEW}
-    assert device_names == {"Tigo Master Discovered 4-5DB467Z"}
+    assert device_names == {"Tigo Master Discovered 4-000010J"}
 
 
 async def test_naming_a_discovered_optimizer_keeps_its_entity_ids(
@@ -162,7 +162,7 @@ async def test_naming_a_discovered_optimizer_keeps_its_entity_ids(
         CONF_MODULE_PEAK_POWER: 0}})
     reg = er.async_get(hass)
     reg.async_get_or_create("sensor", DOMAIN, f"{DOMAIN}_{NEW}_power", config_entry=entry,
-                            suggested_object_id="tigo_4_5db467z_power")
+                            suggested_object_id="tigo_4_000010j_power")
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(
@@ -177,7 +177,7 @@ async def test_naming_a_discovered_optimizer_keeps_its_entity_ids(
     assert result["type"] is FlowResultType.CREATE_ENTRY
 
     assert reg.async_get_entity_id("sensor", DOMAIN, f"{DOMAIN}_{NEW}_power") == (
-        "sensor.tigo_4_5db467z_power"
+        "sensor.tigo_4_000010j_power"
     )
     (module,) = entry.data[CONF_MODULES]
     assert module[CONF_MODULE_NAME] == "P07"

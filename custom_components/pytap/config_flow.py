@@ -396,7 +396,7 @@ def _modules_description(modules: list[dict[str, Any]]) -> str:
 
 
 def _module_label(module: dict[str, Any]) -> str:
-    """'P01 (4-5DB467Z)', or '(not named yet) (…)' for a discovered optimizer."""
+    """'P01 (4-000010J)', or '(not named yet) (…)' for a discovered optimizer."""
     return f"{module.get(CONF_MODULE_NAME) or '(not named yet)'} ({module[CONF_MODULE_BARCODE]})"
 
 

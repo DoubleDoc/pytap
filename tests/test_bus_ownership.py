@@ -39,7 +39,7 @@ from custom_components.pytap.pytap.core.events import (
 )
 from tests.test_module_discovery import KNOWN, NEW, _coordinator
 
-OTHERS = ["4-5C393EP", "4-745B68W"]
+OTHERS = ["4-000002B", "4-000016P"]
 
 
 def _module(barcode, string="2", name="P01"):
