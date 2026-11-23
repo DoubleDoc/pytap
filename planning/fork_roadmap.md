@@ -62,7 +62,7 @@ barcode,name,string,peak_power,inverter
 2. **Energy authority:** the device's counters become the source of truth, with PyTap reading them, so a Home Assistant outage loses nothing. That needs care with counter resets, device replacement and the migration from PyTap's own counters.
 3. **Time and day boundaries:** the device needs reliable time (NTP) for daily counters and midnight resets.
 4. **Updates and safety:** OTA updates, and a hardware guarantee that it can't transmit (receive-only transceiver, or the driver-enable line tied off), as with the converter today.
-5. **Hardware (the current blocker):** no suitable ready-made device found yet. Concerns: packaging, durability, isolation and protection, power, cost, and the processor and storage (type and capacity).
+5. **Hardware (the current blocker):** no suitable ready-made device found yet. Concerns: packaging, durability, isolation and protection, power, cost, and the processor and storage (type and capacity). Choose hardware with room to grow: the same device could later become a **CCA replacement**, managing the TAPs itself instead of only listening (see upstream [discussion #27](https://github.com/azebro/pytap/discussions/27)). That would be a separate, much larger step: it means transmitting on the bus, which reverses question 4's receive-only guarantee, and taking over the CCA's role, so it needs its own research.
 
 **Steps:**
 
