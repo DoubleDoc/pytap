@@ -35,12 +35,23 @@ Most Tigo installations already have this data in a spreadsheet: the installer's
    | `name` | | `P01` | The panel's position; device names add the inverter and string, so don't repeat them |
    | `string` | | `2` | The string label (`1`, `2`, `East` …) |
    | `peak_power` | | `455` | The panel's rating in Wp (0 = unknown), for performance % |
-   | `inverter` | | `Master` | The inverter this string is wired to, for one CCA with several inverters (needs `string`) |
+   | `inverter` | | `Master` | **Only when one CCA feeds several inverters:** the inverter this string is wired to (needs `string`). **With one inverter per CCA, leave this column out** (or leave it empty); the inverter name from Step 1, if any, is used. |
+
+   One inverter on this CCA (the usual case), no `inverter` column:
+
+   ```csv
+   barcode,name,string,peak_power
+   4-000002B,P01,1,455
+   4-000009I,P02,1,455
+   4-000016P,P01,2,455
+   ```
+
+   One CCA feeding two inverters, with each string's inverter:
 
    ```csv
    barcode,name,string,peak_power,inverter
-   4-000002B,P01,2,455,Master
-   4-000009I,P02,2,455,Master
+   4-000002B,P01,1,455,Master
+   4-000009I,P02,1,455,Master
    4-000016P,P01,2,455,Slave
    ```
 3. Go to **Settings → Devices & services → PyTap → Configure → Import modules from CSV**, paste the CSV text, and submit.
