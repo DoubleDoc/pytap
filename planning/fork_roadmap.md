@@ -62,11 +62,11 @@ barcode,name,string,peak_power,inverter
 2. **Energy authority:** the device's counters become the source of truth, with PyTap reading them, so a Home Assistant outage loses nothing. That needs care with counter resets, device replacement and the migration from PyTap's own counters.
 3. **Time and day boundaries:** the device needs reliable time (NTP) for daily counters and midnight resets.
 4. **Updates and safety:** OTA updates, and a hardware guarantee that it can't transmit (receive-only transceiver, or the driver-enable line tied off), as with the converter today.
-5. **Hardware packaging (the current blocker):** the converter in use now is a Waveshare RS-485-to-Ethernet unit, enclosed, powered over Ethernet, on a wired network. A replacement needs the same: an ESP32 (or similar) with wired Ethernet and PoE, an isolated RS-485 receiver, in a closed enclosure that mounts next to the CCA. Bare development boards on Wi-Fi aren't acceptable for a permanent install. No ready-made product meeting this has been found yet; boards with Ethernet and PoE exist and are the place to start evaluating.
+5. **Hardware (the current blocker):** no suitable ready-made device found yet. Concerns: packaging, durability, isolation and protection, power, cost, and the processor and storage (type and capacity).
 
 **Steps:**
 
-1. Survey hardware against item 5 (enclosed, PoE, wired, isolated receive-only RS-485).
+1. Survey hardware against question 5.
 2. Run tigo_server's ESPHome variant alongside PyTap on one gateway (it only listens, so both can share the bus), and compare readings, energy and dropouts with PyTap and the inverter, using the daily captures as the reference.
 3. Decide the device protocol (question 1).
 4. Build the PyTap side: the device as a new connection type, energy authority, migration.
